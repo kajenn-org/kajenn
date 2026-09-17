@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="574" viewBox="0 0 660 574" role="img" aria-labelledby="title desc">
+<title id="title">WebSocket: choose the protocol owner</title><desc id="desc">The server-state gate applies to both modes. An application with serve_websocket owns raw handling; otherwise WsxConnection handles its handshake and routes WSX messages without HTTP middleware.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#527184"/></marker></defs>
+<rect width="660" height="574" rx="16" fill="#f4f7fa"/>
+<g font-family="Arial, Helvetica, sans-serif" fill="#183042">
+<text x="30" y="36" font-size="19" font-weight="700">WebSocket: choose the protocol owner</text>
+<rect x="30" y="62" width="600" height="68" rx="9" fill="#fff" stroke="#bfced8"/>
+<text x="48" y="89" font-size="17" font-weight="700">Common server-state gate</text>
+<text x="48" y="113" font-size="15">Not running → refuse the handshake before accept.</text>
+<path d="M 330 133 V 161" fill="none" stroke="#527184" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="30" y="166" width="600" height="68" rx="9" fill="#fff" stroke="#bfced8"/>
+<text x="48" y="193" font-size="17" font-weight="700">Application defines serve_websocket?</text>
+<text x="48" y="217" font-size="15">Choose the raw seam or the built-in WSX protocol.</text>
+<path d="M 330 234 V 276 H 175 V 292" fill="none" stroke="#527184" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 330 276 H 485 V 292" fill="none" stroke="#527184" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="196" y="291" font-size="14">Yes</text><text x="506" y="291" font-size="14">No</text>
+<rect x="30" y="298" width="290" height="90" rx="9" fill="#fff" stroke="#bfced8"/>
+<text x="48" y="325" font-size="17" font-weight="700">Raw application</text>
+<text x="48" y="349" font-size="15">Owns accept / close,</text>
+<text x="48" y="371" font-size="15">Origin, identity and protocol.</text>
+<rect x="340" y="298" width="290" height="90" rx="9" fill="#fff" stroke="#bfced8"/>
+<text x="358" y="325" font-size="17" font-weight="700">WsxConnection</text>
+<text x="358" y="349" font-size="15">Checks Origin, home app,</text>
+<text x="358" y="371" font-size="15">required cookie and identity.</text>
+<path d="M 175 391 V 415" fill="none" stroke="#527184" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M 485 391 V 415" fill="none" stroke="#527184" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="30" y="420" width="290" height="68" rx="9" fill="#e6f3ef" stroke="#76a99b"/>
+<text x="48" y="447" font-size="17" font-weight="700">Application handles frames</text>
+<text x="48" y="471" font-size="15">No WSX gate or registry.</text>
+<rect x="340" y="420" width="290" height="68" rx="9" fill="#e6f3ef" stroke="#76a99b"/>
+<text x="358" y="447" font-size="17" font-weight="700">WSX message → WSK route</text>
+<text x="358" y="471" font-size="15">ID → reply; ordinary event → none.</text>
+<text x="30" y="548" font-size="14">HTTP middleware does not run on the WSX handshake or its messages.</text>
+</g></svg>
