@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kajenn"
-version = "0.0.0"
+version = "0.1.0"
 description = "ASGI server with sessions, authentication, websocket channels, tasks, MCP, storage and a base server application included"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["asgi", "web", "async", "http", "server"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
@@ -26,13 +26,53 @@ classifiers = [
     "Framework :: AsyncIO",
 ]
 
-# 0.0.0 reserves the name on PyPI. Dependencies arrive with 0.1.0.
-dependencies = []
+dependencies = [
+    "uvicorn>=0.30",
+    # uvicorn speaks websocket only with a backend, and none of its own: the
+    # server holds websockets, so the backend is a dependency of this package
+    # and not of whoever installs it. `websockets` is what is needed, and
+    # nothing more — never `uvicorn[standard]`, which drags in what is not.
+    "websockets>=13.0",
+    "genro-bag>=0.22.0",
+    "genro-builders>=0.23.0",
+    "genro-toolbox>=0.14.0",
+    "genro-tytx>=0.15.0",
+    "genro-routes>=0.30.0",
+    "genro-storage[encryption]>=0.8.0",
+    "pyjwt>=2.0",
+    "cryptography>=42.0",
+    "httpx>=0.27",
+    "psutil>=6.0",
+]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-asyncio>=0.23"]
-dev = ["kajenn[test]", "ruff>=0.1.0", "mypy>=1.0"]
-docs = ["sphinx>=7.0", "sphinx-rtd-theme>=2.0", "sphinx-autodoc-typehints>=2.0", "myst-parser>=2.0"]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.23",
+    # The suite exercises the TYTX msgpack transport branch of response.py:
+    # without this extra that coverage silently vanishes in a clean env.
+    "genro-tytx[msgpack]>=0.15.0",
+]
+dev = [
+    "kajenn[test]",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+internals = [
+    # The reader for the internals/ dossier (mkdocs.yml at the repo root).
+    "mkdocs>=1.6",
+    "mkdocs-material>=9.6",
+]
+docs = [
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
+    "sphinx-autodoc-typehints>=2.0",
+    "myst-parser>=2.0",
+]
+
+[project.scripts]
+kajenn = "kajenn.__main__:main"
 
 [project.urls]
 Homepage = "https://kajenn.org"
@@ -44,6 +84,7 @@ packages = [
     "src/kajenn",
     "src/kajenn_server_app",
 ]
+exclude = ["**/tests/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -58,13 +99,115 @@ asyncio_default_fixture_loop_scope = "function"
 line-length = 100
 target-version = "py311"
 
-# Frozen default rule set, as in genro-asgi: adopting a rule is a per-rule decision.
+# Freeze the historical default rule set: ruff 0.16 widened its defaults
+# (isort, naming, RUF/UP families), some of which collide with deliberate
+# idioms here (e.g. implicit-Optional grammar signatures, see the mypy
+# block on config.elements). Adopting new rules is a per-rule decision,
+# not a side effect of whatever version CI happens to install.
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
 
-# mypy is a non-blocking advisor: non-strict, findings reviewed but never gating.
+# mypy is a non-blocking advisor (parent policy): non-strict, findings
+# reviewed but never gating.
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
-exclude = ["tests/"]
+exclude = ["tests/", ".*/tests/"]
+
+# The channel client's Optionals are constructor/connect invariants mypy
+# cannot narrow: __init__ parses exactly one address form (uds or tcp), so
+# _tcp is a tuple whenever _uds_path is None; connect() assigns _stream
+# before the receive loop ever reads it. Silence only the two codes this
+# boundary produces, scoped to this module.
+[[tool.mypy.overrides]]
+module = "kajenn.channel.client"
+disable_error_code = ["misc", "union-attr"]
+
+# CommunicationMixin forwards __call__ cooperatively to the next class in
+# the MRO (mixins compose BEFORE BaseServer, D16). mypy sees the mixin's
+# static superclass as object and calls super().__call__ "undefined",
+# although the composition always provides it at runtime — the dynamic
+# mixin category the parent policy explicitly anticipates.
+[[tool.mypy.overrides]]
+module = "kajenn.communication"
+disable_error_code = ["misc"]
+
+# MiddlewareMixin (middleware/__init__.py) forwards __call__ cooperatively
+# to the next class in the MRO — the same dynamic-mixin category as
+# CommunicationMixin above.
+[[tool.mypy.overrides]]
+module = "kajenn.middleware"
+disable_error_code = ["misc"]
+
+# SessionMixin forwards __init__ cooperatively to the next class in the MRO
+# (composed BEFORE MiddlewareMixin/BaseServer, D16) — the same dynamic-mixin
+# category as CommunicationMixin: mypy sees the static superclass as object
+# and rejects super().__init__(**kwargs), although the composition always
+# provides it at runtime.
+[[tool.mypy.overrides]]
+module = "kajenn.session.mixin"
+disable_error_code = ["misc"]
+
+# AuthMixin forwards __init__ cooperatively (misc, as SessionMixin) and also
+# calls self.session(request) — the §4 contract method supplied by the composed
+# MRO (SessionMixin or BaseServer), which mypy cannot see on the static bases
+# (object). The same dynamic-mixin category the parent policy anticipates.
+[[tool.mypy.overrides]]
+module = "kajenn.auth.mixin"
+disable_error_code = ["misc", "attr-defined"]
+
+# ServerApplication's login surface reaches server capabilities supplied by
+# the composed mixins (session_store/promote_session from SessionMixin,
+# user_store wired in Macro 5b) through the statically-typed BaseServer
+# handle (`self.server`/`request.server` -> BaseServer | None) — the same
+# dynamic-mixin category as AuthMixin above: the attributes exist on every
+# runtime composition but not on the static base.
+[[tool.mypy.overrides]]
+module = "kajenn_server_app.server_app"
+disable_error_code = ["attr-defined", "union-attr"]
+
+# LocalTaskExecutor reaches server.storage (supplied by StorageMixin) and
+# app.route (supplied by RoutedApplication) through statically-typed handles
+# (`server` -> BaseServer, `server.mounts`/`primary` -> BaseApplication) — the
+# same dynamic-mixin category as server_app above: the attributes exist on every
+# runtime composition but not on the static bases.
+[[tool.mypy.overrides]]
+module = "kajenn.tasks.executor"
+disable_error_code = ["attr-defined"]
+
+# Grammar element signatures declare what an attribute ACCEPTS, and `= None`
+# means "attribute absent" rather than a value: the annotation is what builders
+# reads into call_args_validations, so implicit Optional is the idiom here —
+# widening to `| None` would change the dtype builders infers from the signature.
+# (`implicit_optional = true` cannot cover this: mypy applies it to plain
+# annotations only, never to explicit unions like `str | BagResolver`.)
+[[tool.mypy.overrides]]
+module = "kajenn.config.elements"
+disable_error_code = ["assignment"]
+
+# TaskMixin forwards __init__/__call__ cooperatively to the next class in the
+# MRO (composed BEFORE BaseServer, D16 — same misc category as
+# CommunicationMixin) and builds TaskManager(self): mypy sees the mixin's
+# static self as object/TaskMixin, not the BaseServer the composition always
+# supplies at runtime. The dynamic-mixin category the parent policy anticipates.
+# TaskGrammar's element signatures share config.elements' implicit-Optional
+# idiom (`assignment`, see that block's comment).
+[[tool.mypy.overrides]]
+module = "kajenn.tasks.mixin"
+disable_error_code = ["misc", "arg-type", "assignment"]
+
+# TaskManager reaches server.storage / server.session_store — attributes present
+# only when StorageMixin / SessionMixin are composed (which the running server
+# always does), invisible to mypy's static BaseServer. Same attr-defined category
+# as tasks.executor. (scheduler.py stays clean: it goes through the manager.)
+[[tool.mypy.overrides]]
+module = "kajenn.tasks.manager"
+disable_error_code = ["attr-defined"]
+
+# TasksSection reaches server.tasks through the static BaseServer | None handle
+# (present only when TaskMixin is composed and a request is in flight) — the
+# same dynamic-composition category as server_app.
+[[tool.mypy.overrides]]
+module = "kajenn_server_app.server_sections.tasks_section"
+disable_error_code = ["union-attr", "no-any-return"]

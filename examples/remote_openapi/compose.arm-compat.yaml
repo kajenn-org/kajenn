@@ -1,0 +1,6 @@
+# Optional workaround for OpenSSL CPU feature detection in older ARM Docker VMs.
+# Use together with compose.yaml; normal installations do not need this override.
+services:
+  app:
+    environment:
+      OPENSSL_armcap: "0"

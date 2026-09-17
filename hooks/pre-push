@@ -1,13 +1,134 @@
 #!/bin/bash
-# pre-push hook - run the test suite before pushing
+# pre-push hook - Run tests before pushing
 #
 # Install: cp hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
-# Skip:    SKIP_TESTS=1 git push   (use with caution, say why in the PR)
+#
+# Usage:
+#   git push              # Standard push (runs pytest when the range has Python)
+#   SKIP_TESTS=1 git push # Skip tests (use with caution)
+#   RUN_ACT=1 git push    # Run ACT validation (GitHub Actions locally)
+#
+# Test selection: the pushed range comes from stdin, one line per ref as
+#   <local ref> <local sha> <remote ref> <remote sha>
+# A range whose changes contain no .py file runs no test at all - unless it
+# touches pyproject.toml or hooks/, which run the whole suite regardless. A
+# range with no usable base - a new branch, a remote commit this clone does not
+# have - runs the whole suite, never nothing.
+#
+# Which suite, per changed path, the union over the range deciding:
+#   src/kajenn_server_app/, tests/server_app/     -> tests/server_app
+#   src/kajenn/, tests/core/                      -> tests/core
+#   pyproject.toml, hooks/, any .py outside those -> the whole suite
+#   anything else (docs, README, ...)             -> nothing
+# Both suites in one range runs the whole suite.
 
 set -e
+
+# Allow skipping tests with SKIP_TESTS=1
 if [ "$SKIP_TESTS" = "1" ]; then
-    echo "SKIP_TESTS=1: skipping pre-push tests"
+    echo "⚠️  SKIP_TESTS=1: Skipping pre-push tests"
     exit 0
 fi
-echo "Running pre-push checks: pytest tests/"
-pytest tests/ -q
+
+ZERO_SHA="0000000000000000000000000000000000000000"
+
+changed_files=""
+pushed_something=0
+base_unknown=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "$local_sha" ] && continue
+    if [ "$local_sha" = "$ZERO_SHA" ]; then
+        continue                        # ref deletion: nothing to test
+    fi
+    pushed_something=1
+    if [ "$remote_sha" = "$ZERO_SHA" ] \
+       || ! git rev-parse --verify --quiet "${remote_sha}^{commit}" >/dev/null; then
+        base_unknown=1                  # no base to diff against
+        continue
+    fi
+    changed_files="${changed_files}
+$(git diff --name-only "$remote_sha" "$local_sha")"
+done
+
+if [ "$pushed_something" = "0" ]; then
+    echo "Nothing to push: no checks run"
+    exit 0
+fi
+
+test_target="tests/"
+
+if [ "$base_unknown" = "1" ]; then
+    echo "Pushed range has no usable base (new branch or unknown remote commit)"
+    echo "  → running the whole suite"
+else
+    want_core=0
+    want_server_app=0
+    want_all=0
+
+    while read -r path; do
+        [ -z "$path" ] && continue
+        case "$path" in
+            src/kajenn_server_app/*|tests/server_app/*) want_server_app=1 ;;
+            src/kajenn/*|tests/core/*) want_core=1 ;;
+            pyproject.toml|hooks/*|*.py) want_all=1 ;;
+        esac
+    done <<EOF
+$(printf '%s\n' "$changed_files" | sed '/^$/d' | sort -u)
+EOF
+
+    if [ "$want_all" = "1" ]; then
+        echo "A shared path changed: running the whole suite"
+    elif ! printf '%s\n' "$changed_files" | grep -qE '\.py$'; then
+        echo "No Python file in the pushed range: no test run"
+        printf '%s\n' "$changed_files" | sed '/^$/d' | sort -u | sed 's/^/    /'
+        exit 0
+    elif [ $((want_core + want_server_app)) -gt 1 ]; then
+        echo "Both suites changed: running the whole suite"
+    elif [ "$want_server_app" = "1" ]; then
+        test_target="tests/server_app"
+    elif [ "$want_core" = "1" ]; then
+        test_target="tests/core"
+    fi
+fi
+
+echo "Running pre-push checks..."
+
+# Run pytest
+echo "  [1/1] Running pytest ($test_target)..."
+if ! pytest "$test_target" -q; then
+    echo "  ❌ FAILED: pytest found test failures"
+    echo "  Run 'pytest $test_target' to see details"
+    echo ""
+    echo "  To skip tests (use with caution):"
+    echo "    SKIP_TESTS=1 git push"
+    exit 1
+fi
+echo "  ✅ PASSED: pytest"
+
+# Optional ACT validation
+if [ "$RUN_ACT" = "1" ]; then
+    echo ""
+    echo "  [ACT] Running GitHub Actions validation..."
+
+    # Detect architecture
+    ARCH=$(uname -m)
+
+    if [ "$ARCH" = "arm64" ]; then
+        # ARM Mac: run only ubuntu-latest
+        echo "  [ACT] ARM architecture detected, running ubuntu-latest only..."
+        if ! act push -j test --matrix os:ubuntu-latest --container-architecture linux/amd64; then
+            echo "  ❌ FAILED: ACT validation failed"
+            exit 1
+        fi
+    else
+        # x86_64: run all
+        if ! act push; then
+            echo "  ❌ FAILED: ACT validation failed"
+            exit 1
+        fi
+    fi
+    echo "  ✅ PASSED: ACT"
+fi
+
+echo "✅ All pre-push checks passed!"

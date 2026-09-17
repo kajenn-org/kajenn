@@ -1,0 +1,15 @@
+name: genro-opaque-docker-poc
+services:
+  app:
+    image: genro-opaque-openapi:issue72
+    build:
+      context: ../..
+      dockerfile: examples/remote_openapi/Dockerfile
+    ports:
+      - "127.0.0.1:${REMOTE_PORT:-18765}:8765"
+    environment:
+      GNR_ASGI_FRAME_MAX_BYTES: "${GNR_ASGI_FRAME_MAX_BYTES:-268435456}"
+      GNR_ASGI_FRAME_WARN_BYTES: "${GNR_ASGI_FRAME_WARN_BYTES:-1048576}"
+      GNR_ASGI_FRAME_WARN_INTERVAL_SECONDS: "${GNR_ASGI_FRAME_WARN_INTERVAL_SECONDS:-60}"
+      GNR_ASGI_HTTP_MAX_BODY_BYTES: "${GNR_ASGI_HTTP_MAX_BODY_BYTES:-${GNR_ASGI_FRAME_MAX_BYTES:-268435456}}"
+    stop_grace_period: 8s

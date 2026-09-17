@@ -1,0 +1,35 @@
+# Copyright 2025 Softwell S.r.l.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Concrete applications built on ``RoutedApplication``.
+
+Each application in this package is a ready-to-mount ASGI app for one
+transport dialect. ``OpenApiApplication`` wraps an API surface as REST +
+OpenAPI 3.1 with a Swagger docs page; ``McpApplication`` and
+``McpOpenApiApplication`` expose a router as MCP tools over stateless
+Streamable HTTP. Two worlds are not here, each a package of its own beside the
+core: the SPA front and its worker pool (``kajenn_orchestra``) and the
+server application with its sections (``kajenn_server_app``).
+"""
+
+from __future__ import annotations
+
+from .mcp import McpApplication, McpOpenApiApplication
+from .openapi import OpenApiApplication
+
+__all__ = [
+    "McpApplication",
+    "McpOpenApiApplication",
+    "OpenApiApplication",
+]
