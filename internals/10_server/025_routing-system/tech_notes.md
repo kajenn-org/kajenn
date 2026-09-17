@@ -22,7 +22,8 @@ Historical interviews were recovered in the original repository's
 on 2026-08-29). These are local archives, not files promised in a new checkout
 and not owner ratifications by themselves. Do not recreate absent answers or
 start implementation steps from an old scaffold. Current tests live under
-`tests/core/` and `tests/spa/`; their `x/` directories still contain initializers.
+`tests/core/`, `tests/server_app/` and `tests/docs/`; `tests/core/x/` still
+contains an initializer.
 
 ## August audit trail (preserved)
 

@@ -75,8 +75,9 @@ Behavior evidence: [`startup`](../../../src/kajenn/lifespan.py#L116), [`shutdown
 ## Remaining design distance
 
 The configuration handler has no general `apply_configuration` mutator or
-subscribers that mount/unmount applications. The narrower SPA group-profile
-apply mechanism does not deliver that server-wide design. Historical D7's empty
+subscribers that mount/unmount applications. A narrower apply mechanism owned
+by one application over its own subtree does not deliver that server-wide
+design. Historical D7's empty
 socket and August coverage figures describe earlier revisions, not this one.
 
 Target evidence: [recorded target](decisions.md); this paragraph records unresolved

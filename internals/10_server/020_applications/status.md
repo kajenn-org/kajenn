@@ -68,14 +68,14 @@ Behavior evidence: [`__call__`](../../../src/kajenn/routed_application.py#L173),
 collections as JSON or the requested TYTX transport, handles text/bytes/paths,
 and applies node metadata. A returned `StreamingResponse` instead emits chunks
 without collecting them; `SseStream` provides framing, keepalive and iterator
-cleanup. This core streaming path does not make the SPA worker channel stream:
-`AsgiSeam` collects a hosted response into one reply.
+cleanup. Streaming is a property of this process: an application served through
+an adapter that buffers a whole response loses it, and the adapter says so.
 
 `Request.db` resolves the configured database handler and registers its
 `closeConnection` cleanup on the current request item. `get_db(name)` only
 looks up the handler. The handler-specific thread cleanup hook is a separate seam.
 
-Claim anchors: [`Response`](../../../src/kajenn/response.py#L57), [`set_result`](../../../src/kajenn/response.py#L192), [`StreamingResponse`](../../../src/kajenn/streaming.py#L41), [`SseStream`](../../../src/kajenn/sse.py#L50), [`AsgiSeam`](../../../src/kajenn_orchestra/environ.py#L71), [`Request`](../../../src/kajenn/request.py#L107), [`db`](../../../src/kajenn/request.py#L374), [`get_db`](../../../src/kajenn/request.py#L400).
+Claim anchors: [`Response`](../../../src/kajenn/response.py#L57), [`set_result`](../../../src/kajenn/response.py#L192), [`StreamingResponse`](../../../src/kajenn/streaming.py#L41), [`SseStream`](../../../src/kajenn/sse.py#L50), [`Request`](../../../src/kajenn/request.py#L107), [`db`](../../../src/kajenn/request.py#L374), [`get_db`](../../../src/kajenn/request.py#L400).
 
 ## WebSocket and package boundaries
 
@@ -83,13 +83,13 @@ Applications can receive WSX messages as synthetic HTTP scopes with method
 `WSK`; the server can also hand an application its raw `serve_websocket` scope.
 The HTTP middleware does not run per WSX message.
 
-`OpenApiApplication`, `McpApplication`, `McpOpenApiApplication`,
-`ServerApplication` and `ConfigurationProfilesApplication` live in the core.
-`SpaApplication` and its grammar live in `kajenn_orchestra`, shipped by
-the same distribution. The old SPA import paths have no compatibility re-export.
+`OpenApiApplication`, `McpApplication` and `McpOpenApiApplication` ship in
+`kajenn`; `ServerApplication` ships in `kajenn_server_app`. An application that
+brings its own vocabulary arrives from its own distribution and is mounted by
+class reference, so the core ships no list of the applications that exist.
 Dynamic movability/removal/failure declarations remain design distance.
 
-Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#L365), [`_call_application`](../../../src/kajenn/wsx.py#L348), [`SpaApplication`](../../../src/kajenn_orchestra/spa_app.py#L517).
+Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#L365), [`_call_application`](../../../src/kajenn/wsx.py#L361), [`OpenApiApplication`](../../../src/kajenn/applications/openapi.py#L66), [`McpApplication`](../../../src/kajenn/applications/mcp.py#L280).
 
 ## Source and test evidence
 
@@ -100,7 +100,6 @@ Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#L365), [`_call
 - [src/kajenn/streaming.py](../../../src/kajenn/streaming.py)
 - [src/kajenn/sse.py](../../../src/kajenn/sse.py)
 - [src/kajenn/server.py](../../../src/kajenn/server.py)
-- [src/kajenn_orchestra/environ.py](../../../src/kajenn_orchestra/environ.py)
 - [tests/core/test_contract.py](../../../tests/core/test_contract.py)
 - [tests/core/test_routed_application.py](../../../tests/core/test_routed_application.py)
 - [tests/core/test_request.py](../../../tests/core/test_request.py)
@@ -108,4 +107,3 @@ Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#L365), [`_call
 - [tests/core/test_streaming.py](../../../tests/core/test_streaming.py)
 - [tests/core/test_sse.py](../../../tests/core/test_sse.py)
 - [tests/core/test_websocket_raw_seam.py](../../../tests/core/test_websocket_raw_seam.py)
-- [tests/spa/orchestration/test_orchestration_asgi_seam.py](../../../tests/spa/orchestration/test_orchestration_asgi_seam.py)

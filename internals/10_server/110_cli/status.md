@@ -15,12 +15,13 @@ registry; `stop` signals the recorded process; `remove` removes its registry
 entry according to the command's checks.
 
 `serve --reload` runs through `reloading.factory`, which marks the child
-shutdown mode `QUITTING` so SPA shutdown preserves restart state. `--debug`
+shutdown mode `QUITTING`, so an application's `on_shutdown` can tell a reload
+from a real stop and preserve restart state. `--debug`
 declares a usage mode and is not the reload mechanism. The default listener
 and explicit/configured address precedence are shared with `AsgiServer`.
 
 These commands do not implement the proposed general administrative restart
-liturgy or a deployment/subcommander controller.
+liturgy.
 
 Claim anchors: [`apps`](../../../src/kajenn/__main__.py#L459), [`remove`](../../../src/kajenn/__main__.py#L127), [`remove`](../../../src/kajenn/__main__.py#L489), [`factory`](../../../src/kajenn/__main__.py#L498), [`AsgiServer`](../../../src/kajenn/asgi_server.py#L91).
 

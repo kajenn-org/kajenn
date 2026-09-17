@@ -25,77 +25,52 @@ away by that one refusal.
 
 Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#L86), [`on_websocket`](../../../src/kajenn/server.py#L365).
 
-## Page channel binding, worker dispatch and sequential calls
+## Page channel binding and the openchannel seam
 
-**The channel of a page** — `WsxControl` under the front's `_wsx` root
-([spa_app.py](../../../src/kajenn_orchestra/spa_app.py)),
-`SpaCommander.serve_wsx_request`
-([spa_commander.py](../../../src/kajenn_orchestra/orchestration/spa_commander.py)),
-`SpaWorker.serve_wsx` and the `WsxCommands` branch
-([spa_worker.py](../../../src/kajenn_orchestra/orchestration/spa_worker.py)),
-14 contract tests in
-`tests/spa/orchestration/test_orchestration_websocket_e2e.py` that enter where a
-real message enters — the socket — over a real pool. `openchannel` is
-validated by the front against `page_connection_map`, written on the page's row
-by the worker through the same prologue a request goes through, and bound to
-the socket by the CONNECTION, only on a 200.
+**The channel of a page** — `WsxConnection._call_application`
+([wsx.py](../../../src/kajenn/wsx.py)) looks twice at exactly one message,
+the one whose path is `OPENCHANNEL_PATH` under the `_wsx` root. The
+application the path names decides whether that page may speak here. Only on
+a 200 does the connection call `WebSocketRegistry.bind_page(page_id, socket)`.
+A page that was refused is never bound at all.
 
-**One resolution for every form** — `SpaCommander.resolve_worker` is what
-`serve_request` and `serve_wsx_request` both call: the barrier, the
-reception-first rule, the placement.
+**The registry is the whole binding** — `bind_page` and `get_page_socket` on
+`WebSocketRegistry` ([websocket.py](../../../src/kajenn/websocket.py)), proven
+by the 12 contract tests in `tests/core/test_websocket_registry.py`: a rebind
+follows a reconnected page, and `unregister` drops only the pages bound to
+THAT socket.
 
-**The queue of a page** — `call_lock` on `PageRow`
-([register_row.py](../../../src/kajenn_orchestra/register_row.py)), an
-`asyncio.Lock` among the fields the parcel leaves behind, taken around the
-whole call when the page opened its channel with `sequential`. The CHANNEL
-itself travels: a user parked for being idle and woken by his next request
-never lost his websocket, so a row that came back without `wsx` would refuse
-the very next message of a page that is still connected.
-
-**The way back** — `SpaWorker.send_message`, the `websocket` branch the front
-attaches under `CommanderOperations`, and `BaseServer.send_message` at the end
-of it. A page the vertex no longer knows is reachable by nobody, because the
-branch validates before it writes.
-
-**The channel is the price of being addressed** — a call that names a page is
-refused unless that page opened its channel: `openchannel` is what makes a page
-addressable, and a message that skips it is a client out of step with its own
-row. A request that names no page — the ordinary HTTP of the site — is
-untouched.
+**The channel is the price of being addressed** — a message carries `page_id`
+only when it belongs to a page, and the server writes back to a page only once
+that page is bound. A message that names no page — the ordinary HTTP of the
+site — is untouched.
 
 **The request itself, for a handler that needs it** — the `_request` injection
 moved from the `_server` app's own `bind_kwargs` into
-`RoutedApplication.bind_kwargs`: the seam is nobody's private business, and
-`openchannel` is its second reader.
+`RoutedApplication.bind_kwargs`: the seam is nobody's private business, and the
+channel command is its second reader.
 
-Claim anchors: [`WsxControl`](../../../src/kajenn_orchestra/spa_app.py#L454), [`SpaCommander`](../../../src/kajenn_orchestra/orchestration/spa_commander.py#L494), [`serve_wsx_request`](../../../src/kajenn_orchestra/orchestration/spa_commander.py#L726), [`serve_wsx`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L1416), [`SpaWorker`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L564), [`WsxCommands`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L492), [`websocket`](../../../src/kajenn/config/elements.py#L142), [`openchannel`](../../../src/kajenn_orchestra/spa_app.py#L471), [`openchannel`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L507), [`resolve_worker`](../../../src/kajenn_orchestra/orchestration/spa_commander.py#L753).
+**What the seam leaves open** — the core decides that a page is bound and to
+which socket. Which process serves the message, and how a request is placed
+among several, is left to whatever mounts an application above the core. The
+core names no such extension and imports none.
 
-## Hosted ASGI and WSGI worker seams
+Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#L206), [`_call_application`](../../../src/kajenn/wsx.py#L361), [`OPENCHANNEL_PATH`](../../../src/kajenn/wsx.py#L96), [`WebSocketRegistry`](../../../src/kajenn/websocket.py#L303), [`bind_page`](../../../src/kajenn/websocket.py#L335), [`get_page_socket`](../../../src/kajenn/websocket.py#L349), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L115), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L298), [`websocket`](../../../src/kajenn/config/elements.py#L142).
 
-**One seam on the worker** — `SpaWorker.asgi_app`, and the property
-`hosted_app_seam`
-([spa_worker.py](../../../src/kajenn_orchestra/orchestration/spa_worker.py)),
-which is the one road out of `_serve_request`: `AsgiSeam` on the assigned
-application, or `AsgiSeam(WsgiSeam(wsgi_app, worker))` when the consumer took
-the shortcut. Both assigned is a contradiction, and `WorkerEntry` kills the
-process at boot; NEITHER is the base worker, which
-[worker_entry.py](../../../src/kajenn_orchestra/orchestration/worker_entry.py)
-declares legitimate — it serves its orders, and an http CALL is refused with
-the property's message (owner, 2026-09-07, N29).
+## The synchronous pool behind a blocking call
 
-**The two seams** — [environ.py](../../../src/kajenn_orchestra/environ.py), verified by
-`tests/spa/orchestration/test_orchestration_asgi_seam.py`. `AsgiSeam` turns the
-`http` dict into an ASGI scope and calls the application as a server would;
-`WsgiSeam` is an ASGI application around a WSGI callable, its dict entrance
-gone with its two readers. `SCRIPT_NAME` is `root_path` and `PATH_INFO` what is
-left of `path`; `Set-Cookie` and `Location` travel like any other header; the
-callable runs through `SpaWorker.run_sync`, which is the traffic pool with this
-CALL's slot following onto the thread.
+**One pool, reached by one method** — `BaseServer.run_sync`
+([server.py](../../../src/kajenn/server.py)) dispatches a blocking callable
+onto the server's pool and awaits it. An application that must run blocking
+code during a request calls `self.server.run_sync(...)`; an async handler
+stays on the loop and never touches the pool. The core exposes no second pool
+and no private executor.
 
-**What did not change**: the whole existing rig passes untouched. The bridge
-assigns `wsgi_app` and knows nothing of the adapter it now goes through.
+**Why it is a method on the server** — a server that places requests
+differently overrides `run_sync` and every application follows it without
+changing a line. The base implementation makes that override optional.
 
-Claim anchors: [`SpaWorker`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L564), [`hosted_app_seam`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L689), [`_serve_request`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L2222), [`AsgiSeam`](../../../src/kajenn_orchestra/environ.py#L71), [`WsgiSeam`](../../../src/kajenn_orchestra/environ.py#L174), [`WorkerEntry`](../../../src/kajenn_orchestra/orchestration/worker_entry.py#L90), [`run_sync`](../../../src/kajenn/server.py#L222), [`run_sync`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L719).
+Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#L128), [`run_sync`](../../../src/kajenn/server.py#L274).
 
 ## Server-initiated page messages
 
@@ -105,15 +80,16 @@ Claim anchors: [`SpaWorker`](../../../src/kajenn_orchestra/orchestration/spa_wor
 and writes one message with the shape of a request and NO `id`: not an answer,
 and nobody answers it. `True` says it was written to the socket, `False` that
 the page speaks on none or that its socket already closed — delivered means
-written, never executed by the page. The name and the signature are
-`SpaWorker.send_message`'s, which calls it from a worker through the commander.
+written, never executed by the page. The name and the signature are the ones
+an extension reuses when it sends from another process through the server that
+owns the socket.
 
 Reduced from the plan by the owner (2026-09-07, N28): the sending lives on the
 server, which knows the protocol, and the registry stays a map. There is no
 sending by identity or by connection, and the registry does not learn a
 socket's identity, because nothing reads either yet.
 
-Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#L86), [`send_message`](../../../src/kajenn/server.py#L248), [`send_message`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L1511), [`SpaWorker`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L564).
+Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#L86), [`send_message`](../../../src/kajenn/server.py#L248).
 
 ## WSX handshake, registry and concurrency configuration
 
@@ -220,11 +196,11 @@ through. So at the handshake `scope["auth"]` and `scope["session"]` are NOT
 already there — which is why the handshake resolves the identity itself
 ([decisions.md](decisions.md) §5).
 
-**The front receives synthetic HTTP scopes.** `SpaApplication.__call__`
-([spa_app.py:837-844](../../../src/kajenn_orchestra/spa_app.py))
-demultiplexes between its own router and the hosted site on the PATH, and never
-reads the scope's type. It receives WSX messages as synthetic HTTP scopes from the connection motor.
-The raw handshake scope stays with the server's WebSocket entry point.
+**An application receives synthetic HTTP scopes.** The connection motor builds
+one HTTP scope per message and hands it to `server.demux`, so an application
+that demultiplexes on the PATH never reads the scope's type and serves a WSX
+message exactly as it serves a request. The raw handshake scope stays with the
+server's WebSocket entry point and reaches no application.
 
 **The pieces used by the motor.** The demux
 (`server.py:247-273`), the request registry (`server.py:95`, registered in the
@@ -235,24 +211,25 @@ walk (`routed_application.py:173-218`), and the lane's own envelope, which
 already speaks WSX with the same four fields (`channel/frame.py:15-23,
 94-100`).
 
-Claim anchors: [`middleware`](../../../src/kajenn/config/elements.py#L167), [`BaseServer`](../../../src/kajenn/server.py#L86), [`on_websocket`](../../../src/kajenn/server.py#L365), [`MiddlewareMixin`](../../../src/kajenn/middleware/__init__.py#L80), [`SpaApplication`](../../../src/kajenn_orchestra/spa_app.py#L517).
+Claim anchors: [`middleware`](../../../src/kajenn/config/elements.py#L167), [`BaseServer`](../../../src/kajenn/server.py#L86), [`on_websocket`](../../../src/kajenn/server.py#L365), [`MiddlewareMixin`](../../../src/kajenn/middleware/__init__.py#L80).
 
-## SPA cookie gate, worker refusals and buffered protocol
+## The handshake cookie an application may require
 
-**The SPA requires its connection cookie.** `BaseApplication.handshake_cookie`
-returns `None`; `SpaApplication.handshake_cookie` overrides it with
-`spa_connection_id` (#70 / PR #71). A missing cookie is accepted then closed
-1008. `SpaApplication.gateway_response` also preserves explicit worker refusal
-status and text, including the 409 for a page that skipped `openchannel`.
-Evidence: `tests/spa/test_spa_application.py` and
-`tests/spa/orchestration/test_orchestration_websocket_e2e.py`.
+**The gate an application arms.** `BaseApplication.handshake_cookie`
+([application.py](../../../src/kajenn/application.py)) returns `None`: no
+cookie is demanded and every handshake passes. An application that returns a
+cookie name has the handshake accepted and then closed 1008 when that cookie
+is absent — `WsxConnection._open_gate` reads the property off the application
+the path resolves to (#70 / PR #71).
 
-**The worker protocol is still the buffered baseline.** `pack_http` uses a
-JSON-safe dict with base64 body, and `AsgiSeam` collects the response. Issue #72
-has not changed that protocol in this revision.
+**Why the core owns the refusal and not the name.** An application that keeps
+per-connection state elsewhere must be able to refuse a socket that carries no
+identity of its own, before any message is served. The core supplies the gate
+and the close code; the cookie's name and its meaning belong to whoever
+returns it.
 
 `SPECIFICATION.md` §6 Q1 is marked RESOLVED as of this phase: the design it
 asked for is [decisions.md](decisions.md) and [design.md](design.md), and the
 code follows in phases 1 to 5.
 
-Claim anchors: [`handshake_cookie`](../../../src/kajenn_orchestra/spa_app.py#L524), [`SpaApplication`](../../../src/kajenn_orchestra/spa_app.py#L517), [`gateway_response`](../../../src/kajenn_orchestra/spa_app.py#L1096), [`openchannel`](../../../src/kajenn_orchestra/spa_app.py#L471), [`openchannel`](../../../src/kajenn_orchestra/orchestration/spa_worker.py#L507), [`pack_http`](../../../src/kajenn_orchestra/spa_app.py#L1163), [`AsgiSeam`](../../../src/kajenn_orchestra/environ.py#L71).
+Claim anchors: [`BaseApplication`](../../../src/kajenn/application.py#L108), [`handshake_cookie`](../../../src/kajenn/application.py#L199), [`WsxConnection`](../../../src/kajenn/wsx.py#L206), [`_open_gate`](../../../src/kajenn/wsx.py#L244).

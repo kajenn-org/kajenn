@@ -22,21 +22,17 @@ Claim anchors: [`StorageMixin`](../../../src/kajenn/storage_mixin.py#L74).
 ## Existing direct filesystem consumers
 
 The storage-node rule is a design policy, not a literal description of every
-filesystem call in the repository. `FreezeHandler` and worker parcel methods
-use Path/OS/pickle directly. Session snapshot persistence also uses Path and
-pickle, while CLI/reload support reads local files. The declared freezer
-exception remains visible; this documentation task does not migrate these
-consumers or silently approve new exceptions.
+filesystem call in the repository. Session snapshot persistence uses Path and
+pickle directly, and CLI/reload support reads local files. Those exceptions
+remain visible; this documentation task does not migrate them or silently
+approve new ones.
 
-Claim anchors: [`FreezeHandler`](../../../src/kajenn_orchestra/orchestration/freeze_handler.py#L88).
+Claim anchors: [`SessionStore`](../../../src/kajenn/session/store.py#L53), [`StorageMixin`](../../../src/kajenn/storage_mixin.py#L79).
 
 ## Source and test evidence
 
 - [src/kajenn/storage_mixin.py](../../../src/kajenn/storage_mixin.py)
 - [src/kajenn/config/builder.py](../../../src/kajenn/config/builder.py)
 - [src/kajenn/session/store.py](../../../src/kajenn/session/store.py)
-- [src/kajenn_orchestra/orchestration/freeze_handler.py](../../../src/kajenn_orchestra/orchestration/freeze_handler.py)
-- [src/kajenn_orchestra/orchestration/spa_worker.py](../../../src/kajenn_orchestra/orchestration/spa_worker.py)
 - [tests/core/test_storage_mixin.py](../../../tests/core/test_storage_mixin.py)
 - [tests/core/test_session.py](../../../tests/core/test_session.py)
-- [tests/spa/orchestration/test_orchestration_freeze_handler.py](../../../tests/spa/orchestration/test_orchestration_freeze_handler.py)

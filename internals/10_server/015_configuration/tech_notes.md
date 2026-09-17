@@ -22,7 +22,8 @@ Historical interviews were recovered in the original repository's
 on 2026-08-29). These are local archives, not files promised in a new checkout
 and not owner ratifications by themselves. Do not recreate absent answers or
 start implementation steps from an old scaffold. Current tests live under
-`tests/core/` and `tests/spa/`; their `x/` directories still contain initializers.
+`tests/core/`, `tests/server_app/` and `tests/docs/`; `tests/core/x/` still
+contains an initializer.
 
 ## August audit trail (preserved)
 
@@ -59,7 +60,6 @@ words live in this tree:
 | `applications` | [020 applications](../020_applications/README.md); each entry's children are the app's own |
 | `databases` | [065 db](../065_db/README.md) |
 | `plugins` | [025 routing system](../025_routing-system/README.md) |
-| `applications.<code>.orchestration` | [20_spa/020 orchestration](../../20_spa/020_orchestration/README.md) — the SPA front's whole pool subtree, NOT a top-level section |
 
 A change to the read stack or to the layering reaches all of them. A change to
 one section's words reaches only its owner.
@@ -84,9 +84,9 @@ entirely unbuilt.
 
 **The pool clause** — `elements.py:55-58`, and behind it R11 amended and R12
 superseded on 2026-08-18 (`temp/design_m4_2026-08-18.md:5`, :186, :201): a pool
-belongs to the application that owns it, so several SPA fronts on one server
-are legitimate. The earlier reading had `commander` as a top-level section; the
-owner corrected it. `test_config.py:885` is the guard.
+belongs to the application that owns it, so several applications each with a
+pool of their own on one server are legitimate. The earlier reading had the
+pool as a top-level section; the owner corrected it. `test_config.py:885` is the guard.
 
 ## Traps
 
@@ -125,9 +125,7 @@ entries will drift.**
 
 S3 and S4 are the ones with real design content: whether a write is validated
 before it touches the tree or after the notification, and what happens when one
-subscriber complies and another fails. S4 has a precedent worth reading first —
-the partially-applied-fold problem recorded as F48/F49 in the orchestration
-register.
+subscriber complies and another fails.
 
 And S7 is a debt, not a defect: the recipe at the foot of `design.md` must stay
 executable. Writing it found two real defects in it that reading had not (a

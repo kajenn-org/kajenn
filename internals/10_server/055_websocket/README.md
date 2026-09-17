@@ -16,11 +16,11 @@ Identity is judged once, at the handshake, because the handshake is the only
 HTTP request of the connection. Everything after it is a message, and a message
 carries no cookie of its own.
 
-For the SPA the message becomes an ordinary CALL on the worker's lane, in the
-`http` form the worker already serves: no new socket, no port in the worker, no
-third lane on the wire. The user's barrier and his placement are the ones an
-HTTP request meets, so a freeze or a transfer is invisible to the browser — the
-next message simply reaches the worker that now hosts him.
+An application that serves a message elsewhere receives it in the same shape
+it receives an HTTP request, so it needs no second protocol and no second
+socket. The whole seam is the synthetic scope and the binding of a page to its
+socket: where the answer is produced is the application's business, and the
+browser cannot tell.
 
 Its parts:
 
@@ -30,8 +30,8 @@ Its parts:
   `reply_path`, and what a message without an `id` means
 - **a message is a request** — the synthetic scope, `WSK`, and what an
   application does *not* have to implement
-- **the SPA's road to the worker** — the CALL, `openchannel`, the per-page
-  queue, and the addressed message coming back
+- **a page opens its channel** — `openchannel`, the binding to the socket,
+  and the addressed message coming back
 - **what does not travel here** — datachanges and dbevents stay pull
 - **the admitted seam** — an application that wants the raw websocket
 

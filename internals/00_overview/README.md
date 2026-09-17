@@ -2,11 +2,10 @@
 
 **Version**: 0.6 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
 
-kajenn as three worlds, read in order: **10_server** (the machine and
-everything an installation runs on), **20_spa** (the SPA world and its
-orchestration), **30_deploy** (how installations ship, update and scale —
-today entirely unratified proposals). Inside each world the numbered
-folders ARE the reading order: no entry needs a concept that comes later.
+kajenn is one world: **10_server**, the machine and everything an
+installation runs on. Inside it the numbered folders ARE the reading order:
+no entry needs a concept that comes later. Extensions built on kajenn carry
+their own dossiers, with the same structure and the same rules.
 
 A **feature** is a human term before a technical one: a need users or
 admins have, and our idea to solve it. A few entries are **shelves**
@@ -311,8 +310,8 @@ from inside a single one. The assembly point today is `.phased/roadmap.md`.
   not be made dynamic. Immobility is a limit we have not yet removed, never a
   property to celebrate. *(Owner, 2026-08-23; ratified as D32 on 2026-08-25.)*
 - **A feature lives where it is born.** Restart is born in the server world;
-  what the SPA, the subcommanders or Kubernetes add to it are sections of
-  its own documents — never twin folders.
+  what anything built above it adds to restart is a section of restart's own
+  documents — never a twin folder.
 - **Contribution contract, not name-knowledge.** A server-level surface
   (monitor, inspector) grows by CALLING each application for its panel —
   the `app_snapshot`/`app_panel`/`panel_source` style — never by knowing an
@@ -334,17 +333,8 @@ from inside a single one. The assembly point today is `.phased/roadmap.md`.
 
 ## The whole building at a glance
 
-Three worlds, each standing on the one below. What lives inside each is the
-three tables that follow — a diagram of those lists would only redraw them.
-
-```mermaid
-flowchart TB
-    D30["<b>30_deploy</b><br/>shipping, updating, scaling<br/>🔴 proposals"]
-    D20["<b>20_spa</b><br/>the SPA world and its orchestration"]
-    D10["<b>10_server</b><br/>the machine every installation runs on"]
-    D30 -->|stands on| D20
-    D20 -->|stands on| D10
-```
+One world, listed in the table that follows — a diagram of that list would
+only redraw it.
 
 ## 10_server — the machine, in reading order
 
@@ -364,39 +354,12 @@ flowchart TB
 | [080 task-thermometers](../10_server/080_task-thermometers/README.md) | see a batch move, stop it politely |
 | [090 server-application](../10_server/090_server-application/README.md) | the `_server` app and its sections · [monitor](../10_server/090_server-application/monitor/README.md) · [inspector](../10_server/090_server-application/inspector/README.md) |
 | [110 cli](../10_server/110_cli/README.md) | drive installations from the shell |
-| [120 restart](../10_server/120_restart/README.md) | born here; enriched by spa → subcommanders → kube |
+| [120 restart](../10_server/120_restart/README.md) | stop and start without betraying the people working on it |
 
-## 20_spa — the SPA world
-
-| Entry | In one line |
-|---|---|
-| [010 spa-application](../20_spa/010_spa-application/README.md) | a stable, stateless front to the hosted site |
-| [020 orchestration](../20_spa/020_orchestration/README.md) | many users with live state, scaled across processes, never split |
-| [030 channel](../20_spa/030_channel/README.md) | the wire: frames, hub, the lane (shelf) |
-| [040 global-store](../20_spa/040_global-store/README.md) | one shared state, safe read-modify-write |
-| [070 console](../20_spa/070_console/README.md) | ask a live pool the questions nobody predicted |
-| [080 bridge-contract](../20_spa/080_bridge-contract/README.md) | what genropy-asgi implements and consumes — generalized core, legacy logic in the bridge |
-
-## 30_deploy — shipping, updating, scaling (🔴 proposals)
-
-| Entry | In one line |
-|---|---|
-| [010 deployment-bundles](../30_deploy/010_deployment-bundles/README.md) | immutable bundles on S3, channels, cohorts, promotion without rebuild |
-| [020 kubernetes-deploy](../30_deploy/020_kubernetes-deploy/README.md) | the cluster runs, the commander decides |
-| [030 subcommanders](../30_deploy/030_subcommanders/README.md) | delegated authority: root → subcommander → group → worker |
-
-## How the verticals stand on each other
+## How the entries stand on each other
 
 ```mermaid
 flowchart LR
-    SPA[spa-application] --> ORC[orchestration]
-    GS[global-store] --> ORC
-    BRC[bridge-contract] --> SPA
-    CON[console] -->|eval over the lane| ORC
-    ORC --> CH[channel]
-    BUN[deployment-bundles] --> ORC
-    K8S[kubernetes-deploy] --> ORC
-    SUB[subcommanders] --> ORC
     TH[task-thermometers] --> TSK[tasks]
     SRVA[server-application] --> MON[monitor] & INS[inspector] & TSK & AUTH[authentication]
     CLI[cli] --> CFG[configuration]
@@ -404,17 +367,12 @@ flowchart LR
 
 ## Vocabulary in historical records
 
-Older records use several informal words alongside the public names. They do
-not name additional classes or architectural layers.
+Older records use informal words alongside the public names. They do not name
+additional classes or architectural layers.
 
 | Historical word | Name to search |
 |---|---|
-| vertex | `SpaCommander`, the coordinator of the multiworker application |
-| photo | `WorkerHandler.worker_snapshot`, the last worker observation carried by an envelope |
-| lane | the channel carrying CALL/REPLY frames between worker and front |
-| turn | `GlobalStoreLease`, holding the commander's store lock until release |
 | motor | `WsxConnection`, owning the WSX connection protocol |
 
 These mappings follow the existing source docstrings and decision registers.
-They are reading aids, not new API names. The bridge's delivery machinery is
-described in its own contract; it is not part of the generic core.
+They are reading aids, not new API names.

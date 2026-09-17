@@ -22,7 +22,8 @@ Historical interviews were recovered in the original repository's
 on 2026-08-29). These are local archives, not files promised in a new checkout
 and not owner ratifications by themselves. Do not recreate absent answers or
 start implementation steps from an old scaffold. Current tests live under
-`tests/core/` and `tests/spa/`; their `x/` directories still contain initializers.
+`tests/core/`, `tests/server_app/` and `tests/docs/`; `tests/core/x/` still
+contains an initializer.
 
 ## August audit trail (preserved)
 
@@ -50,7 +51,7 @@ which four later entries assume.
 | the dispatch the middleware chain wraps, and the exceptions they answer | [030 middleware](../030_middleware/README.md) |
 | the request their identity rides on | [050 authentication](../050_authentication/README.md), [040 sessions](../040_sessions/README.md) |
 | a lens on the same tree | [openapi](openapi/README.md), [mcp](mcp/README.md) |
-| the base class they subclass | [090 server-application](../090_server-application/README.md), [20_spa/010 spa-application](../../20_spa/010_spa-application/README.md) |
+| the base class they subclass | [090 server-application](../090_server-application/README.md) |
 | the streaming they push over | [070 tasks](../070_tasks/README.md) (SSE push), [090 inspector](../090_server-application/inspector/README.md) |
 
 A change to the four obligations reaches every one of them. A change to the
@@ -174,12 +175,10 @@ shapes are ratified or conventional, and whether the arrival wants a streaming
 request body. S7 in particular cannot be closed by a "no" alone — the overview's
 first rule requires the reason to be written where the limit is accepted.
 
-**Four cannot be settled inside this entry.** S6 (the WebSocket entry point) is
-recorded in the same wording in
-[20_spa/030 channel](../../20_spa/030_channel/README.md), S14 in
-[030 middleware](../030_middleware/README.md), S12 in both
+**Four cannot be settled inside this entry.** S14 is recorded in the same
+wording in [030 middleware](../030_middleware/README.md), S12 in both
 [010 server](../010_server/README.md) and [015 configuration](../015_configuration/README.md),
-S13 in 015, and S11 in 010. All five were seeded there by this audit and carry
+S13 in 015, and S11 in 010. All four were seeded there by this audit and carry
 the same text on both sides. Settling one of them means editing two documents
 in one change; answering it in only one place is how the dossier would start
 disagreeing with itself again.

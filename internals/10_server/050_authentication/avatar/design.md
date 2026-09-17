@@ -7,4 +7,4 @@
 `session/avatar.py`: the identity the session holds — user, tags, the
 projection every surface consults.
 
-Interactions: sessions (it lives there) · authentication (it is its product) · spa-application (the avatar can steer group choice).
+Interactions: sessions (it lives there) · authentication (it is its product) · every application that reads an identity.

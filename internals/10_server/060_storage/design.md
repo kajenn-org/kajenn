@@ -8,4 +8,4 @@ Filesystem access goes ONLY through storage nodes: logical volumes
 (a named volume and a path within it), pinned synchronous (D22 — `StorageMixin` calls
 `set_sync()`; never `await` a storage node here).
 
-Interactions: orchestration (freezer parcels) · sessions (snapshots) · tasks (spool).
+Interactions: sessions (snapshots) · tasks (spool).

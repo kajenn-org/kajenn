@@ -3,8 +3,8 @@
 **Version**: 0.3 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
 
 How a message on a socket becomes a method call: who holds the connection, what
-a message looks like, how it reaches an application in this process or a worker
-in another, and how the server addresses one page by itself.
+a message looks like, how it reaches the application its path names, and how
+the server addresses one page by itself.
 
 ## The anatomy
 
@@ -15,8 +15,7 @@ in another, and how the server addresses one page by itself.
 | `WsxConnection` | one per connection: it accepts, gates, resolves the identity once, then reads messages and serves each on a task of its own under a per-connection ceiling |
 | `WebSocketRegistry` | every live connection of the server, and the `page_id → socket` association `openchannel` writes. Neutral: it knows no application |
 | `BaseServer.on_websocket` | the entrance: it checks server state before demux, hands the raw socket to an application that defines `serve_websocket`, and otherwise builds a `WsxConnection` and drives it |
-| `WsxControl` | the front's routing class under `_wsx`: `openchannel`, the command a page sends before anything of its own |
-| `WsxCommands` | the worker's dispatcher branch for the same command, where the channel is written on the page's row |
+| `OPENCHANNEL_PATH` | the one path under `_wsx` the connection looks at twice: the application answering it decides whether the page may speak here |
 | `server/websocket` | the config element: `origins`, `max_concurrent` |
 
 ## 1. The handshake, in order
@@ -67,64 +66,55 @@ exactly like an HTTP request: the shutdown waits for it, `Request.db` closes
 what it opened, and the in-flight picture is complete. A message with no `id`
 is an event: executed, unanswered, unregistered.
 
-## 3. The SPA's road
+## 3. A page opens its channel
 
-For the SPA the synthetic request is packed and sent down the lane, and the
-worker serves it as it serves an HTTP request:
+A message belongs to a page when its envelope carries `page_id`, and it says
+where an unsolicited answer should arrive when it carries `reply_path`. Both
+reach the application as `genro.page_id` and `genro.reply_path` on the
+synthetic scope. Absent in the envelope means absent in the scope — not
+`None`.
 
-```
-browser → WsxConnection → SpaApplication → SpaCommander.serve_request
-        → CALL http → SpaWorker._serve_request → hosted_app_seam → the page
-```
+`openchannel` is the first message of a page, addressed under the `_wsx` root.
+The connection resolves it through the ordinary demux, like any other message,
+and looks at the answer a second time: on a 200, and only then, the page is
+bound to this socket in the registry. The application decides; the core writes
+the association.
 
-Three things ride along the way:
-
-- **`page_id` and `reply_path`**, added to the `http` dict beside the
-  connection id when the envelope carries them, and written into the environ
-  and the scope as `genro.page_id` and `genro.reply_path`. Absent in the
-  envelope means absent in the environ — not `None`.
-- **`openchannel`**, the mandatory first message of a page. It is a route under
-  the front's own `_wsx` root, and it carries a payload form of its own — no
-  `http` dict — down to the worker, through the same barrier and the same
-  placement a request meets. At the worker it shares the prologue of a request,
-  because the page's user may be frozen and the row must be in memory before
-  `wsx` can be written on it.
-- **The per-page queue.** With `sequential` declared, the row's own lock is
-  taken around the serving, in the CALL's own task, with the slot open and the
-  pendings counted. Without it, messages of the same page are served in
-  parallel, like the page's HTTP calls.
-
-**The cid validates, it does not choose.** At `openchannel`, at every message
-addressed to the SPA and at every push, the front checks that the commander's
-`page_connection_map` names the same connection id the handshake carried. A
-page that is not the caller's own is answered 403. The map is already up to
-date when the browser sends `openchannel`, because the birth of a page rides
-the REPLY of the HTTP request that created it.
+That division is the seam. An application that keeps a page's state in another
+process answers `openchannel` from there and needs no protocol of its own to
+be bound here, because the core asks nothing about where the answer was
+produced. An application that has no pages never answers under `_wsx`, and
+nothing is bound.
 
 ## 4. The server speaks first
 
-A page is addressed by `SpaWorker.send_message(page_id, path, data)`. The
-worker reads the connection off the page's row and places a CALL upward; the
-front's `websocket` branch, mounted under the commander's operations, finds the
-socket the `page_id` is associated with, validates it against
-`page_connection_map`, and writes a message in the shape of a request — no
-`id`. The reply says «written on the socket» or «no websocket for this page».
+A page is addressed by `BaseServer.send_message(page_id, path, data)`. The
+server finds the socket that page speaks on and writes one message shaped like
+a request and carrying no `id`: not an answer, and nobody answers it. `True`
+says it was written to the socket, `False` that the page speaks on none or
+that its socket already closed. Delivered means written, never executed by the
+page.
+
+The method is the whole seam for writing to a browser. An application that
+runs elsewhere reaches a page by reaching the server that holds the socket,
+with this signature and no other.
 
 Reconnection and death need no protocol of their own. A new `openchannel` for
 the same `page_id` on another socket replaces the association; closing a socket
-removes only the associations still pointing at it; a page the fold already
-dropped fails validation at the first touch and is discarded. A `page_id` is
-never reused.
+removes only the associations still pointing at it; a page nobody binds any
+more is simply unreachable. A `page_id` is never reused.
 
 ## 5. Order, honestly
 
-At the server every message is a task created in the order the socket is read.
-The CALL goes down in the order the tasks reach the commander, and the per-page
-lock is FIFO among those waiting. But a message that meets the user's barrier
-during a transfer and one that arrives after it can swap places. So the core
-guarantees ordering *in the absence of transfers*, and mutual exclusion always.
-Whoever needs total ordering between its own writes waits for the answer or
-carries a revision of its own: a save barrier is the application's.
+Every message is a task created in the order the socket is read, and messages
+of one connection run in parallel up to `max_concurrent`. The core therefore
+guarantees the order of *arrival*, never the order of *completion*: two
+messages of the same page can finish in either order.
+
+An application that needs mutual exclusion between its own messages serializes
+them itself, and whoever needs total ordering between its own writes waits for
+the answer or carries a revision of its own. A save barrier is the
+application's.
 
 ## 6. What stands beside this
 
@@ -138,5 +128,6 @@ carries a revision of its own: a save barrier is the application's.
   handshake, and the 401-vs-403 rule the refusal follows.
 - **[040 sessions](../040_sessions/README.md)** — the session read from the
   cookie at the handshake and kept for the connection.
-- **[20 spa](../../20_spa/README.md)** — the front, the commander and the worker
-  the SPA's messages travel through, and the ASGI seam of the worker.
+- **[020 applications](../020_applications/README.md)** — the application the
+  demux picks for a message, and the `handshake_cookie` it may arm the gate
+  with.

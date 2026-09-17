@@ -29,9 +29,9 @@ live sessions, including the Bag. `SessionMixin(save_session=...)` loads before
 lifespan and saves on exit; named CLI instances wire that snapshot path.
 A custom `SessionStore` used with snapshots must supply the snapshot methods too.
 
-The authenticating SPA connection link described in the decisions is absent
-from `Session` and from the SPA response-building path. A pool connection's
-user identity is not automatically a core session avatar.
+The authenticating connection link described in the decisions is absent from
+`Session`. An identity an application keeps on a connection of its own does
+not automatically become a core session avatar.
 
 Claim anchors: [`dump`](../../../src/kajenn/session/store.py#L79), [`dump`](../../../src/kajenn/session/store.py#L139), [`restore`](../../../src/kajenn/session/store.py#L83), [`restore`](../../../src/kajenn/session/store.py#L179), [`save_snapshot`](../../../src/kajenn/session/store.py#L152), [`load_snapshot`](../../../src/kajenn/session/store.py#L167), [`SessionMixin`](../../../src/kajenn/session/mixin.py#L55), [`Session`](../../../src/kajenn/session/session.py#L60), [`save_session`](../../../src/kajenn/session/mixin.py#L83), [`SessionStore`](../../../src/kajenn/session/store.py#L53).
 
@@ -41,7 +41,6 @@ Claim anchors: [`dump`](../../../src/kajenn/session/store.py#L79), [`dump`](../.
 - [src/kajenn/session/store.py](../../../src/kajenn/session/store.py)
 - [src/kajenn/session/mixin.py](../../../src/kajenn/session/mixin.py)
 - [src/kajenn/middleware/session.py](../../../src/kajenn/middleware/session.py)
-- [src/kajenn_orchestra/spa_app.py](../../../src/kajenn_orchestra/spa_app.py)
 - [tests/core/test_session.py](../../../tests/core/test_session.py)
 - [tests/core/test_middleware_std.py](../../../tests/core/test_middleware_std.py)
 - [tests/core/test_cli.py](../../../tests/core/test_cli.py)

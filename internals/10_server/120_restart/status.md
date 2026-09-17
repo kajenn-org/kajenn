@@ -30,33 +30,34 @@ not guaranteed.
 `BaseServer.leaving` is the awaitable half of that turn, set by the `state`
 setter and never cleared. A source of an endless response reads its queue
 through `BaseServer.get_until_leaving`, which answers `None` as soon as the
-server starts leaving: the MCP push channel and the SPA inspector stream both
-end by themselves, unsubscribing on their own `finally`, instead of being
-cancelled when the grace runs out. Measured 2026-09-12 on a real
+server starts leaving: the MCP push channel ends by itself, unsubscribing on
+its own `finally`, instead of being cancelled when the grace runs out. Any
+other endless source reads the same awaitable and ends the same way. Measured 2026-09-12 on a real
 `kajenn serve` with an SSE stream open: SIGTERM to process exit, 0.36 s.
 
 Claim anchors: [`Lifespan`](../../../src/kajenn/lifespan.py#L89), [`shutdown_timeout_seconds`](../../../src/kajenn/server.py#L402), [`UvicornServer`](../../../src/kajenn/server.py#L104).
 
-## SPA save and lazy restoration
+## The shutdown hook an application saves through
 
-`SpaApplication.on_shutdown` calls the commander's `quit` path for QUITTING and
-`stop` for a dry shutdown. `SpaCommander.quit` gathers users into reboot state
-and persists its routing registers. `adopt_frozen_registers` restores frozen
-placement information; users wake lazily through the usual request path.
-The global store is not part of that restored state.
+`on_shutdown` is where an application persists what must survive the stop, and
+the reason it is told WHY the server is stopping: `reloading.factory` selects
+QUITTING for a reload child, so an application can save for a return and save
+differently for a dry shutdown. The core calls the hook and carries the state;
+what is written, and what is read back on the way up, belongs to whoever
+implements it.
 
-`reloading.factory` selects QUITTING for a reload child. Session snapshots are
-separate and can preserve complete live sessions for a named instance.
+Session snapshots are separate and can preserve complete live sessions for a
+named instance.
 
-Claim anchors: [`SpaApplication`](../../../src/kajenn_orchestra/spa_app.py#L517), [`on_shutdown`](../../../src/kajenn_orchestra/spa_app.py#L1002), [`quit`](../../../src/kajenn_orchestra/orchestration/spa_commander.py#L1710), [`SpaCommander`](../../../src/kajenn_orchestra/orchestration/spa_commander.py#L494), [`adopt_frozen_registers`](../../../src/kajenn_orchestra/orchestration/spa_commander.py#L1642).
+Claim anchors: [`on_shutdown`](../../../src/kajenn/application.py#L254), [`FACTORY_TARGET`](../../../src/kajenn/reloading.py#L46).
 
 ## Remaining restart target
 
 The general owner-directed hard/soft restart ceremony, user notices,
 administrative command and `execv` sequence are not delivered as a single
 server command. The earlier blanket claim that none of restart exists is
-obsolete: the state/drain, reload survival and SPA persistence pieces above
-are implemented. Kubernetes and subcommander reconstruction remain proposals.
+obsolete: the state/drain, reload survival and shutdown-hook pieces above are
+implemented.
 
 Target evidence: [recorded target](design.md); this paragraph records unresolved
 design distance, not an executable contract.
@@ -68,13 +69,7 @@ design distance, not an executable contract.
 - [src/kajenn/lifespan.py](../../../src/kajenn/lifespan.py)
 - [src/kajenn/reloading.py](../../../src/kajenn/reloading.py)
 - [src/kajenn/session/mixin.py](../../../src/kajenn/session/mixin.py)
-- [src/kajenn_orchestra/spa_app.py](../../../src/kajenn_orchestra/spa_app.py)
-- [src/kajenn_orchestra/orchestration/spa_commander.py](../../../src/kajenn_orchestra/orchestration/spa_commander.py)
 - [tests/core/test_reloading.py](../../../tests/core/test_reloading.py)
 - [tests/core/test_lifespan.py](../../../tests/core/test_lifespan.py)
 - [tests/core/test_sse.py](../../../tests/core/test_sse.py)
 - [tests/core/test_mcp_push.py](../../../tests/core/test_mcp_push.py)
-- [tests/spa/test_inspector_section.py](../../../tests/spa/test_inspector_section.py)
-- [tests/spa/orchestration/test_orchestration_no_speculative_birth.py](../../../tests/spa/orchestration/test_orchestration_no_speculative_birth.py)
-- [tests/spa/orchestration/test_orchestration_foundations_e2e.py](../../../tests/spa/orchestration/test_orchestration_foundations_e2e.py)
-- [tests/spa/orchestration/test_orchestration_spa_commander.py](../../../tests/spa/orchestration/test_orchestration_spa_commander.py)

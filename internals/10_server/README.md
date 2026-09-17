@@ -25,4 +25,4 @@ comes later.
 | [080 task-thermometers](080_task-thermometers/README.md) | see a batch move, stop it politely |
 | [090 server-application](090_server-application/README.md) | the `_server` app and its sections · [monitor](090_server-application/monitor/README.md) · [inspector](090_server-application/inspector/README.md) |
 | [110 cli](110_cli/README.md) | drive installations from the shell |
-| [120 restart](120_restart/README.md) | born here; enriched by spa → subcommanders → kube |
+| [120 restart](120_restart/README.md) | stop and start without betraying the people working on it |

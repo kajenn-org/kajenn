@@ -93,8 +93,9 @@ own:
   the authentication layer, so a process that must not be reachable cannot be
   made reachable by a configuration mistake. It is not a flag, it is a
   different composition;
-- the **sub-commander**, which is the public server with its link to a parent
-  armed — the same class, one argument different.
+- a **server with a link to a parent armed**, which is the public server with
+  one argument different — the same class, so a hierarchy of installations
+  needs no fourth composition.
 
 The order of the layers is not decorative: a layer that reads another's work
 must sit above it, and a layer that must wrap the server's own start-up must
@@ -383,8 +384,8 @@ administrative surface is never something an installation can forget.
 Everything else in kajenn is one of two things: a **capability mixin**
 stacked on the server, or an **application** it hosts. Authentication,
 sessions, the middleware chain, storage and background work are the first kind.
-The administrative surface, the SPA front and the machine-readable interfaces
-are the second. Both rest on exactly what is described above, and neither
+The administrative surface and the machine-readable interfaces are the
+second, and so is every application that arrives from its own distribution. Both rest on exactly what is described above, and neither
 changes any of it.
 
 ## A configuration that includes it

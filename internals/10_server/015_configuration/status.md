@@ -34,29 +34,28 @@ include session, tasks and websocket. `websocket.origins` is a comma-separated
 recipe value converted to a list; `max_concurrent` defaults to 16.
 
 Storage mounts use the storage application's foreign grammar. Each application
-mounts its own `app_class.grammar`, so the multiworker SPA's pool is under
-`applications.<code>.orchestration.commander`, never a server-level section.
+mounts its own `app_class.grammar` under `applications.<code>`, so whatever an
+application adds to the vocabulary is read from its own subtree and never from
+a server-level section. That is what lets an application arrive with words the
+core has never heard of.
 The `authentication` section declares the `users`/`tokens` store descriptors
 (their `store_class` is the class the server builds) and the `credentials`
 children; it carries no bootstrap password, because the server creates no user.
 
 Claim anchors: [`websocket`](../../../src/kajenn/config/elements.py#L142), [`authentication`](../../../src/kajenn/config/elements.py#L195), [`identity_kwargs`](../../../src/kajenn/config/handler.py#L120).
 
-## Live group settings versus general live configuration
-
-SPA group profiles support live apply and reload. `SpaApplication` composes
-defaults, recipe settings, a profile and environment settings. `GroupPolicy`
-validates the result before `SpaCommander.apply_group_settings` commits it under
-its configuration lock. A named profile requires exactly one group.
-
-See [configuration profiles](../020_applications/configuration_profiles/README.md).
+## The tree is read-only at runtime
 
 The general writable configuration tree remains unimplemented: there is no
-`apply_configuration` or handler mutator and no server subscriber for dynamic
-application installation. The group-settings API is a bounded operation on an
-existing pool, not evidence that the general live-tree design has landed.
+`apply_configuration` or handler mutator, and no server subscriber for dynamic
+application installation. `ConfigurationHandler` exposes reading only.
 
-Claim anchors: [`SpaApplication`](../../../src/kajenn_orchestra/spa_app.py#L517), [`GroupPolicy`](../../../src/kajenn_orchestra/orchestration/group_policy.py#L70), [`SpaCommander`](../../../src/kajenn_orchestra/orchestration/spa_commander.py#L494), [`apply_group_settings`](../../../src/kajenn_orchestra/orchestration/spa_commander.py#L1448).
+An application that applies settings of its own while running does so over its
+own subtree, with its own validation and its own lock. Nothing in the core
+commits such a change, and a bounded operation of that kind is not evidence
+that the general live-tree design has landed.
+
+Claim anchors: [`ConfigurationHandler`](../../../src/kajenn/config/handler.py#L69).
 
 ## Source and test evidence
 
@@ -65,11 +64,5 @@ Claim anchors: [`SpaApplication`](../../../src/kajenn_orchestra/spa_app.py#L517)
 - [src/kajenn/config/elements.py](../../../src/kajenn/config/elements.py)
 - [src/kajenn/config/handler.py](../../../src/kajenn/config/handler.py)
 - [src/kajenn/asgi_server.py](../../../src/kajenn/asgi_server.py)
-- [src/kajenn_orchestra/spa_app.py](../../../src/kajenn_orchestra/spa_app.py)
-- [src/kajenn_orchestra/orchestration/group_policy.py](../../../src/kajenn_orchestra/orchestration/group_policy.py)
-- [src/kajenn_orchestra/orchestration/spa_commander.py](../../../src/kajenn_orchestra/orchestration/spa_commander.py)
 - [tests/core/test_config.py](../../../tests/core/test_config.py)
 - [tests/core/test_config_env.py](../../../tests/core/test_config_env.py)
-- [tests/spa/test_spa_profile_grammar.py](../../../tests/spa/test_spa_profile_grammar.py)
-- [tests/spa/test_spa_app_profiles.py](../../../tests/spa/test_spa_app_profiles.py)
-- [tests/spa/test_apply_group_settings.py](../../../tests/spa/test_apply_group_settings.py)

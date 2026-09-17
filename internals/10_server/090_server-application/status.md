@@ -22,26 +22,24 @@ Claim anchors: [`AsgiServer`](../../../src/kajenn/asgi_server.py#L90), [`ServerA
 
 Behavior evidence: [`MonitorSection`](../../../src/kajenn_server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../src/kajenn_server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../src/kajenn_server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../src/kajenn_server_app/server_sections/tasks_section.py#L60).
 
-## SPA inspector and unfinished administration
+## Attached sections and unfinished administration
 
-The inspector is not imported by the core server application. A SPA front
-attaches its own inspector at startup when `GNR_ASGI_INSPECTOR` is present.
-That diagnostic surface has no route auth rule; its mounting gate differs from
-the monitor's `SERVER_ADMIN` protection.
+`attach_section` links a `RoutingClass` under `/_server/<name>` and lists it in
+`sections`, and the four shipped sections arrive through the same call in
+`__init__`. An application outside the core attaches its diagnostic surface
+the same way; that surface has no route auth rule, so its mounting gate
+differs from the monitor's `SERVER_ADMIN` protection.
 
 Per-section configurable tags, a plugin configuration page, general dynamic
 application installation and monitor/workbench proposals are not delivered by
 the current section list.
 
-Behavior evidence: [`on_startup`](../../../src/kajenn_orchestra/spa_app.py#L631), [`InspectorSection`](../../../src/kajenn_orchestra/inspector_section.py#L61).
+Behavior evidence: [`attach_section`](../../../src/kajenn_server_app/server_app.py#L269), [`sections`](../../../src/kajenn_server_app/server_app.py#L260).
 
 ## Source and test evidence
 
 - [src/kajenn/asgi_server.py](../../../src/kajenn/asgi_server.py)
 - [src/kajenn_server_app/server_app.py](../../../src/kajenn_server_app/server_app.py)
 - [src/kajenn/routed_application.py](../../../src/kajenn/routed_application.py)
-- [src/kajenn_orchestra/spa_app.py](../../../src/kajenn_orchestra/spa_app.py)
-- [src/kajenn_orchestra/inspector_section.py](../../../src/kajenn_orchestra/inspector_section.py)
 - [tests/server_app/test_server_application.py](../../../tests/server_app/test_server_application.py)
 - [tests/server_app/test_server_monitor.py](../../../tests/server_app/test_server_monitor.py)
-- [tests/spa/test_inspector_section.py](../../../tests/spa/test_inspector_section.py)

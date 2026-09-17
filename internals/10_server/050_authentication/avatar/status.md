@@ -14,7 +14,7 @@ this common type and `Session` stores it in keyed slots, with `root` the default
 
 `Request.avatar()` reads the HTTP scope's root auth verdict; other avatar keys
 are resolved through the session. Avatar data is distinct from session data.
-The type itself does not select a SPA group or create the proposed
+The type itself steers no placement and creates no proposed
 connection-to-session link.
 
 Claim anchors: [`Avatar`](../../../../src/kajenn/session/avatar.py#L31), [`identity`](../../../../src/kajenn/session/avatar.py#L43), [`tags`](../../../../src/kajenn/session/avatar.py#L48), [`Session`](../../../../src/kajenn/session/session.py#L60), [`Request`](../../../../src/kajenn/request.py#L107), [`avatar`](../../../../src/kajenn/session/session.py#L93), [`avatar`](../../../../src/kajenn/request.py#L349).

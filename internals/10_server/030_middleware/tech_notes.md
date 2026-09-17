@@ -22,7 +22,8 @@ Historical interviews were recovered in the original repository's
 on 2026-08-29). These are local archives, not files promised in a new checkout
 and not owner ratifications by themselves. Do not recreate absent answers or
 start implementation steps from an old scaffold. Current tests live under
-`tests/core/` and `tests/spa/`; their `x/` directories still contain initializers.
+`tests/core/`, `tests/server_app/` and `tests/docs/`; `tests/core/x/` still
+contains an initializer.
 
 ## August audit trail (preserved)
 
@@ -50,7 +51,7 @@ elsewhere.
 | the middleware chain that answers what they raise | [020 applications](../020_applications/README.md) |
 | the other side of its login challenge | [090 server-application](../090_server-application/README.md) |
 | the thing it is confused with | [025 routing system](../025_routing-system/README.md) |
-| the boundary its scope filter draws | [20_spa/030 channel](../../20_spa/030_channel/README.md) |
+| the boundary its scope filter draws | [055 websocket](../055_websocket/README.md) |
 
 A change to the ordering numbers reaches every request on the machine. A change
 inside one layer reaches only what that layer does.
@@ -155,7 +156,7 @@ so that pass can begin.**
 
 **Four of the eleven are cross-entry** and are written in the same words on
 both sides: S1 with [020 applications](../020_applications/README.md) S14, S2 with
-[20_spa/030 channel](../../20_spa/030_channel/README.md) and 020's S6, S3 with
+[055 websocket](../055_websocket/README.md), S3 with
 [015 configuration](../015_configuration/README.md) S6 and
 [025 routing system](../025_routing-system/README.md) S3, S11 with 020's S18.
 

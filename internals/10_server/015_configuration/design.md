@@ -121,9 +121,9 @@ That last one is the interesting case, because it is how the description stays
 open without becoming untyped. When a recipe declares an application, it hands
 over **the application class**, and that class carries its grammar. From that
 node down, the words are the application's own — the site dialect steps aside
-and lets the application's grammar govern its own children. So a SPA front
-declares its pool and its groups in its own words, under its own entry, and
-the server never learned what a pool is.
+and lets the application's grammar govern its own children. So an application
+that runs a pool declares that pool and its groups in its own words, under its
+own entry, and the server never learned what a pool is.
 
 The consequence for anyone adding a feature: **a new capability or application
 brings its own words with it**, declared next to the code that reads them.
