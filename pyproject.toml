@@ -53,6 +53,9 @@ test = [
     # The suite exercises the TYTX msgpack transport branch of response.py:
     # without this extra that coverage silently vanishes in a clean env.
     "genro-tytx[msgpack]>=0.15.0",
+    # tests/docs/test_internals_reader.py builds the internals dossier with
+    # mkdocs: the suite needs the reader, not only the developer who reads.
+    "kajenn[internals]",
 ]
 dev = [
     "kajenn[test]",
