@@ -1,7 +1,5 @@
 # Sessions
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 ## What it does
 
 Gives a caller continuity across requests: a session cookie identifies a stored

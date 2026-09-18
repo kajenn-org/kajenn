@@ -26,7 +26,7 @@ other libraries. kajenn ships those parts and feeds them from configuration.
 | Storage | none | genro-storage mounted on the server, named volumes, optional encryption at rest |
 | Database | none | a handler contract for a mounted database, reachable as `request.db` |
 | Configuration | environment variables and your own loader | a recipe file the server reads itself from, with resolvers that keep secrets out of it |
-| Server application | none | `/_server` with login, users, tokens, tasks and monitor sections, mounted like any other application |
+| Server application | none | `/_server` with login, users, tokens, tasks and monitor sections, declared like any other application when you want it |
 
 ## The mental model, side by side
 
@@ -101,19 +101,13 @@ application chose.
   from. `kajenn serve application=./hello.py:Hello` is the closer analogue for a
   single application with no recipe of its own.
 - **The OpenAPI prefix.** `/_meta/docs` and `/_meta/schema_json`, not `/docs`.
+- **Reverse-proxy headers.** The core reads no `X-Forwarded-*`; the public base
+  address is declared with `external_url`. See the [FAQ](faq.md).
 
 ## Where to go next
 
 - **[Getting started](getting-started.md)** — the runnable hello-world.
 - **[Core concepts](concepts.md)** — the server/application model in full.
 - **[How-to guides](guides/index.md)** — auth, sessions, OpenAPI, MCP, tasks.
-
-<!-- sources, verified in genropy/genro-asgi at 9ebfa56: auth src/kajenn/auth/ and
-     middleware/authentication.py · sessions src/kajenn/session/ and middleware/session.py ·
-     wsx src/kajenn/{websocket,wsx,wsx_payload}.py · channel src/kajenn/channel/ ·
-     tasks src/kajenn/tasks/ · mcp src/kajenn/mcp/ and applications/mcp.py · storage
-     src/kajenn/storage_mixin.py · db src/kajenn/db.py · configuration src/kajenn/config/ ·
-     openapi src/kajenn/applications/openapi.py and plugins/openapi/ · streaming
-     src/kajenn/{streaming,sse}.py · error_codes src/kajenn/application.py:93 · serve
-     src/kajenn/asgi_server.py:288 · cli src/kajenn/__main__.py · server application
-     src/kajenn_server_app/ -->
+- **[Architecture overview](architecture/overview.md)** — a diagram per
+  subsystem, with the modules each one lives in.

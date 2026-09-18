@@ -1,7 +1,5 @@
 # Getting Started
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 Welcome to **kajenn**. This page takes you from installation to a running
 server that answers real HTTP requests, then explains the hello-world line by
 line so you know *why* each piece is there before you reach for anything more
@@ -45,12 +43,12 @@ These pages describe the development checkout. A released package can lag behind
 ```bash
 git clone --branch develop https://github.com/kajenn-org/kajenn.git
 cd kajenn
-python -m pip install -e '.[docs]'
+python -m pip install -e .
 ```
 
-The `kajenn` distribution supplies `kajenn` and `kajenn_server_app`. The
-hello-world uses only the core; install the separate `kajenn-orchestra`
-distribution when your application needs a pool of worker processes.
+The `kajenn` distribution supplies both import packages: the core `kajenn` and
+the base server application `kajenn_server_app`. The hello-world below uses only
+the core.
 
 ## Hello world
 
@@ -90,14 +88,23 @@ And call it:
 
 ```console
 $ curl http://127.0.0.1:8000/index
-{"hello": "world"}
+{"hello":"world"}
 $ curl "http://127.0.0.1:8000/greet?name=genro"
-{"hello": "genro"}
+{"hello":"genro"}
 $ curl "http://127.0.0.1:8000/greet"
-{"hello": "world"}
+{"hello":"world"}
 $ curl -i http://127.0.0.1:8000/nowhere
 HTTP/1.1 404 Not Found
 ```
+
+The same two files run without an entry point of your own:
+
+```console
+$ kajenn serve application=./hello.py:Hello --port 8000
+kajenn serving http://127.0.0.1:8000
+```
+
+See [the `kajenn` command](guides/cli.md).
 
 ## Line by line
 
@@ -197,12 +204,21 @@ maps an unmatched path to `HTTPNotFound` and turns raised HTTP exceptions into
 proper responses. You will meet the rest of the middleware chain in the
 [middleware guide](guides/middleware.md).
 
-## The always-present `_server` app
+## The `_server` app, when you ask for it
 
-Every server, even a hand-built one like the hello-world above, automatically
-mounts an internal `_server` application at `/_server/`. It exposes system
-endpoints — login, task management, and (on request) a Swagger view of those
-endpoints. You do not configure it; it is always there. See the
+The management surface — login, users, tokens, task management, monitor — is
+`ServerApplication`, and it is **not** mounted for you. The hello-world above
+answers `404` under `/_server/`, because it declared no such application. To
+have it, declare it like any other:
+
+```python
+from kajenn_server_app import ServerApplication
+
+server = AsgiServer(applications=[ServerApplication, Hello])
+```
+
+Its endpoints then live under `/_server/…` and never leak into your own app's
+route tree. It serves JSON, not HTML pages. See the
 [authentication](guides/authentication.md) and [tasks](guides/tasks.md) guides
 for what lives under it.
 
@@ -210,6 +226,8 @@ for what lives under it.
 
 - **[Core concepts](concepts.md)** — the server/application model, the demux
   rule, routing, and the design principles behind them.
+- **[Architecture overview](architecture/overview.md)** — the whole machine in
+  one page, with a diagram per subsystem.
 - **[How-to guides](guides/index.md)** — task-focused recipes:
   [authentication](guides/authentication.md),
   [sessions](guides/sessions.md),
