@@ -36,8 +36,8 @@ WHICH source that is, the RECIPE declares (``default_config`` on
   skip.
 
 ``base_dir`` resolves with precedence: the explicit argument → the env var
-``KAJENN_HOME`` → ``~/.kajenn``. The same variable is honoured by the
-CLI's ``AppsRegistry``, so ONE variable relocates everything kajenn keeps
+``KAJENN_HOME`` → ``~/.kajenn``. The CLI's ``SitesRegistry`` takes its own
+``base_dir`` from this class, so ONE variable relocates everything kajenn keeps
 outside a deployment — containers and test runs included.
 """
 

@@ -45,11 +45,13 @@ Section → constructor kwarg:
 - ``databases`` → one descriptor per entry, registered by the server after the
   cooperative chain has run.
 - ``plugins`` → ``plugins`` ({code: bool | dict} switches).
-- ``openapi`` → no core-1a consumer; read and skipped.
-- ``orchestration`` → the SPA front's whole orchestration subtree: its own three
-  words, and under it ``commander`` — the vertex's kwargs and one kwargs set per
-  declared group (the two installation paths folded in, the child's own keys
-  gathered into its ``worker_kwargs``).
+- ``openapi`` → no consumer in the core; read and skipped.
+- ``applications.<code>.orchestration`` → the orchestration subtree an
+  application declares in its own grammar: its three words, and under it
+  ``commander`` — the vertex's kwargs and one kwargs set per declared group (the
+  two installation paths folded in, the child's own keys gathered into its
+  ``worker_kwargs``). The words are none of this dialect's; the helpers only
+  read them for the application that owns the subtree.
 """
 
 from __future__ import annotations
@@ -197,9 +199,9 @@ class ConfigurationHandler(ConfigHandler):
         A section carrying only its ``storage_key`` and no mount is legitimate —
         "the default layout, plus this key" — so it yields an EMPTY mount list
         rather than an error; the composition reads that as "use the default
-        ``site:`` mount". With ``BaseConfiguration`` layered underneath the
-        merged tree normally carries the ``site`` mount anyway, so this is the
-        shape a handler built without parents produces.
+        ``site:``/``home:`` layout". With ``BaseConfiguration`` layered
+        underneath the merged tree normally carries those two mounts anyway, so
+        this is the shape a handler built without parents produces.
         """
         node = self.node("storage")
         if node is None:
@@ -286,7 +288,7 @@ class ConfigurationHandler(ConfigHandler):
         Returns:
             ``profiles_path``, ``profile_name`` and ``control_enabled``, the
             three the recipe actually wrote, or ``None`` when the node is absent
-            — which is a front that declares no pool at all.
+            — an application that declares no pool at all.
         """
         if self.node(f"applications.{code}.orchestration") is None:
             return None
@@ -302,13 +304,13 @@ class ConfigurationHandler(ConfigHandler):
 
         Args:
             code: the application whose pool this is — a pool belongs to the
-                front that owns it, so the words live under
+                application that owns it, so the words live under
                 ``applications.<code>.orchestration.commander``.
 
         Returns:
             The vertex's kwargs, or ``None`` when the node is absent — an
-            orchestration node with no commander under it, which the front
-            refuses.
+            orchestration node with no commander under it, which the owning
+            application refuses.
 
         ``instance_dir`` is NOT among them: the sockets are the workers' business,
         so that path is folded into every group instead (``group_kwargs``). The

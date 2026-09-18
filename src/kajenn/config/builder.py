@@ -78,14 +78,14 @@ class AsgiConfigBuilder(ConfigBuilder, AsgiServerGrammar):
     """The folder this site owns (``SiteHome``), written into the ``site`` section.
 
     It also anchors the default ``home:`` storage mount. Unset, the site is
-    homeless and ``home:`` sits on the folder of ``site:``, as it always has.
+    homeless and ``home:`` sits on the folder of ``site:``.
     """
 
     def site_section(self, cfg: Any) -> None:
         """The ``site`` section — written only when this recipe names a site.
 
-        A recipe that names neither writes no element at all, so the tree of a
-        homeless site is the tree it has always been.
+        A recipe that declares neither ``site_name`` nor ``site_home`` writes no
+        element at all: a homeless site has no ``site`` node in its tree.
         """
         if self.site_name is None and self.site_home is None:
             return
@@ -100,7 +100,7 @@ class AsgiConfigBuilder(ConfigBuilder, AsgiServerGrammar):
         RECIPE RUNS, which is boot, so a site follows whatever directory it
         starts from. ``home:`` is the space the site keeps its own things in
         (``static``, ``data/frozen_users``, ``data/sessions``, ``sockets``,
-        ``logs``): the folder the card names, and with no home declared the
+        ``logs``): the folder ``site_home`` names, and with no home declared the
         folder of ``site:``.
 
         Both are ``DEFAULT_SITE_MOUNT`` / ``DEFAULT_HOME_MOUNT`` written as

@@ -26,11 +26,10 @@ introspection endpoints:
 - ``_meta/index`` — an HTML splash linking to the docs.
 
 The schema is built STANDALONE from the app's own router
-(``router_openapi(app.route)``): there is no dependency on a ``_server``
-application (that surface belongs to a later macro). The mounted routing
-class is linked as an eager ``instance`` branch, so it inherits the app
-router's plugins — pydantic among them — and its handler signatures are
-captured into the neutral ``params``/``result`` blocks the
+(``router_openapi(app.route)``): it depends on no other application of the
+site. The mounted routing class is linked as an eager ``instance`` branch, so
+it inherits the app router's plugins — pydantic among them — and its handler
+signatures are captured into the neutral ``params``/``result`` blocks the
 ``OpenAPITranslator`` reads; in direct mode the same plugins reach the app's
 own router through the server's plugin arming (``PluginMixin`` config).
 
@@ -38,7 +37,7 @@ The docs and splash HTML live in dedicated resource files next to this module
 and are read at USE time (never at import): a swap of the template file takes
 effect without re-importing the package.
 
-Kwargs peeled by the cooperative ``__init__`` (D16): ``routing_class`` (a
+Kwargs peeled by the cooperative ``__init__``: ``routing_class`` (a
 ``RoutingClass`` instance to mount), ``module`` (``"pkg.mod:ClassName"``
 import path, an alternative to ``routing_class``), ``docs`` (documentation
 style — ``"swagger"`` or ``"off"``) and ``api_name`` (the segment the mounted
@@ -111,8 +110,8 @@ class OpenApiApplication(RoutedApplication):
 
         Every operation of the document gains one response entry on
         ``validation_error_status`` — 400 under the strict reading, 422 for an
-        application declaring the FastAPI convention (issue #87) — so a client
-        reads the code it will actually receive.
+        application declaring the FastAPI convention — so a client reads the
+        code it will actually receive.
         """
         status = str(self.validation_error_status)
         for path_item in paths.values():
