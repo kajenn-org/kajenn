@@ -36,8 +36,6 @@ https://github.com/kajenn-org/kajenn-orchestra.
 
    getting-started
    configuration
-   coming-from-fastapi
-   building
 
 .. toctree::
    :maxdepth: 2
@@ -82,3 +80,10 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Migration and contributing
+
+   coming-from-fastapi
+   building

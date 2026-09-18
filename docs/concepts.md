@@ -14,32 +14,6 @@ kajenn separates two roles cleanly:
 - An **application** owns behaviour: a tree of `@route`-decorated methods that
   answer requests. An application knows nothing about ports or middleware.
 
-### `BaseServer` and `AsgiServer`
-
-`BaseServer` is the minimal substrate every server shares: the uvicorn loop, a
-monitored thread pool for blocking work, the applications it serves,
-lifespan, and the request registry.
-
-`AsgiServer` is the shipped, batteries-included server. It is a **composition of
-capability mixins** stacked over `BaseServer` in a single MRO — communication,
-auth, session, middleware, plugins, storage, and tasks. Each mixin contributes a
-feature configured through constructor keyword arguments. Sessions, auth
-middleware and the task backbone are active on the shipped composition:
-
-```python
-server = AsgiServer(
-    applications=[App()],
-    auth={...},          # configures header credentials
-    middleware={...},    # arms other middleware
-    tasks=True,          # default; False disables the task backbone
-    plugins={...},       # tunes fixed OpenAPI / pydantic plugins and adds extras
-)
-```
-
-The mixins exist whether or not you configure them — you never subclass to *add*
-a capability, you pass config to *feed* it. This is what "objects always exist,
-backends come from config" means in practice.
-
 ### Applications: code and mount
 
 There is one category of application, not two. A server is composed with the
@@ -53,6 +27,10 @@ applications it serves, and each one carries both halves of its own identity:
 no other mount claims. It is a value like any other, not a missing one — and no
 application is obliged to take it.
 
+The following composition fragments assume the imports from the quick start
+and your own `Api` and `Admin` application classes. They illustrate placement,
+not complete runnable applications.
+
 ```python
 class Shop(RoutedApplication):
     mount = ""          # answers / and everything unclaimed
@@ -64,7 +42,8 @@ server = AsgiServer(applications=[Shop, (Api, {"code": "api"})])
 ```
 
 Because the code and the placement are distinct, the same class can be served
-twice under different names: `Shop(code="outlet", mount="outlet")`.
+twice under different names, using entries such as
+`(Shop, {"code": "outlet", "mount": "outlet"})` in `applications`.
 
 ### The one demux rule
 
@@ -130,6 +109,7 @@ Key forms you will use across the guides:
 
 ### `auth_rule` and default-deny
 
+An **avatar** is the caller’s identity and authorization tags.
 A route carrying `auth_rule="admin"` is protected: the caller's avatar must carry
 the matching tag. Protection is **default-deny**: an anonymous caller gets `401`, including when
 no auth middleware is configured; an authenticated caller with insufficient
@@ -139,7 +119,9 @@ guide](guides/authentication.md) covers the credential side.
 ## Requests and responses
 
 - `Request.init()` reads and decodes the complete body before a routed handler
-  runs. Query and form fields become kwargs; JSON normally becomes `body_data`.
+  runs. Query and form fields become handler arguments. A handler can accept a JSON
+  object as `body_data`, or declare scalar parameters that the validation plugin
+  fills from matching JSON keys.
   See [Requests and errors](guides/requests.md) for multipart uploads and validation.
 - Return a `dict` for JSON or a string with `media_type="text/html"` for HTML.
   A `Response` is an ASGI callable for applications that handle the ASGI triple
@@ -148,6 +130,38 @@ guide](guides/authentication.md) covers the credential side.
   `SseStream.response()` (see [streaming](guides/streaming.md)).
 
 Both `Request` and `Response` are importable from `kajenn`.
+
+## Advanced: how capabilities compose
+
+### `BaseServer` and `AsgiServer`
+
+`BaseServer` is the minimal substrate every server shares: the uvicorn loop, a
+monitored thread pool for blocking work, the applications it serves,
+lifespan, and the request registry.
+
+`AsgiServer` is the shipped, batteries-included server. It is a **composition of
+capability mixins** stacked over `BaseServer` in a single MRO — communication,
+auth, session, middleware, plugins, storage, and tasks. Each mixin contributes a
+feature configured through constructor keyword arguments. Sessions, auth
+middleware and the task backbone are active on the shipped composition.
+This is a configuration sketch: replace the ellipses with real option dictionaries
+and provide your application class before running it.
+
+```python
+server = AsgiServer(
+    applications=[App],
+    auth={...},          # configures header credentials
+    middleware={...},    # arms other middleware
+    tasks=True,          # default; False disables the task backbone
+    plugins={...},       # tunes fixed OpenAPI / pydantic plugins and adds extras
+)
+```
+
+A mixin is a class contributing one capability to the combined server. Python
+uses its method resolution order (MRO) to compose those classes. Most applications
+only need the shipped AsgiServer: configure its capabilities rather than build a
+new composition. Activation and resource creation are separate; for example,
+the task manager is lazy and accessing it with tasks disabled raises an error.
 
 ## Design principles
 

@@ -16,7 +16,9 @@
 
 *A spicy ASGI application server.*
 
-**Status**: Pre-Alpha · version 0.0.0 reserves the name on PyPI. The server arrives with 0.1.0.
+**Status**: Pre-Alpha. This README describes the `main` checkout; the PyPI badge
+shows the published package version. For the examples documented here, follow
+the [checkout installation instructions](docs/getting-started.md#installation).
 
 kajenn is an ASGI application server with the features FastAPI leaves to the user — sessions, authentication,
 websocket channels, tasks, MCP, storage — and a base server application included.

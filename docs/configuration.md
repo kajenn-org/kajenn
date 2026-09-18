@@ -12,6 +12,41 @@ internal capabilities can own a configuration vocabulary. A site recipe brings
 those vocabularies together without putting every component's settings into one
 central schema.
 
+## Configure the quick-start application
+
+Keep `hello.py` from the quick start in the same directory. Save this second file
+as `config.py`; it imports that application and declares its deployment:
+
+```python
+from hello import Hello
+from kajenn import AsgiServer
+from kajenn.config import AsgiConfigBuilder
+
+
+class ServerConfiguration(AsgiConfigBuilder):
+    default_config = False  # ignore optional machine-level defaults in this demo
+
+    def main(self, root):
+        cfg = root.configuration()
+        cfg.server(host="127.0.0.1", port=8000)
+        cfg.applications().application(code="hello", mount="", app_class=Hello)
+
+
+if __name__ == "__main__":
+    server = AsgiServer(config=ServerConfiguration)
+    print(server.config("server.port"))  # 8000
+    server.serve()
+```
+
+Run `python config.py`, then `curl http://127.0.0.1:8000/greet?name=Ada`.
+The answer is `{"hello":"Ada"}`. Stop with Ctrl-C. Change the recipe's port to
+8001 and restart; both the printed value and the listening address change.
+
+A **grammar** declares which configuration elements, attributes and children
+are allowed. A **recipe** uses that grammar to build a tree of settings. Here,
+`server` describes the listener and `applications` declares what it serves.
+The application code is unchanged.
+
 ## Why a recipe instead of YAML?
 
 YAML is a data format; it can describe nested settings well, and a framework can
@@ -52,6 +87,14 @@ handler; it is not a separate configuration mechanism.
 
 ## A site with several components
 
+```{admonition} In revisione
+:class: warning
+
+This is an integration illustration, not a standalone starter. ShopDatabase
+belongs to your project; its real driver and connection lifecycle must be
+verified there. See the database guide for an executable contract example.
+```
+
 This example combines a listener, sessions, tasks, middleware, two storage
 mounts, a database and an application with its own catalog grammar.
 
@@ -81,6 +124,7 @@ class ShopGrammar(ApplicationGrammar):
 
 class Shop(RoutedApplication):
     grammar = ShopGrammar
+    db_name = "main"  # selects this registration when a handler reads request.db
 
     @route()
     def index(self) -> dict:
@@ -135,6 +179,9 @@ The omitted `page_size` is supplied by `ShopGrammar`: reading
 `server.applications["shop"].config("catalog.page_size")` returns `20`.
 The `media` and `exports` mounts are available to the server's storage manager;
 merely declaring a mount does not expose its files over HTTP.
+
+The [storage](guides/storage.md) and [database](guides/databases.md) guides show
+how handlers use these resources after configuration.
 
 ## Each component can own its vocabulary
 
