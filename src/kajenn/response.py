@@ -14,21 +14,23 @@
 
 """HTTP response: one flat, buffered, TYTX-aware class.
 
-``Response`` is a single slotted class — no subclass hierarchy (no
-JSON/HTML/Streaming/File variants). It buffers the body in memory and, as an
+``Response`` is a single slotted class, with no subclass per content shape: one
+type answers every buffered case. It buffers the body in memory and, as an
 ASGI application, emits exactly two messages (``http.response.start`` +
 ``http.response.body``). It can be built with content or created empty and
 configured through ``set_header``/``set_cookie``/``set_result``/``set_error``
-before being sent.
+before being sent. A chunked answer is ``StreamingResponse`` (streaming.py),
+a separate class.
 
 ``set_result`` dispatches by result type: ``dict``/``list`` → JSON bytes via
 ``genro_tytx.json_dumps`` (or TYTX serialization — media type from
 ``media_types.TRANSPORT_MIME`` — when the bound request is in TYTX mode),
 ``Path`` → file bytes, ``bytes`` → as-is, ``str`` → UTF-8 text, ``None`` →
-empty. ``set_error`` maps an exception to a status:
-``HTTPException`` subtypes carry their own status; ``ValueError``/``TypeError``
-→ 400, ``FileNotFoundError`` → 404, ``PermissionError`` → 403, anything else
-→ 500 (logged). ``set_cookie`` appends a ``set-cookie`` header.
+empty, anything else → its ``str``. ``set_error`` maps an exception to a
+status: ``HTTPException`` subtypes carry their own status;
+``ValueError``/``TypeError`` → 400, ``FileNotFoundError`` → 404,
+``PermissionError`` → 403, anything else → 500 (logged). ``set_cookie``
+appends a ``set-cookie`` header.
 
 The ``request`` binding is optional (``request=None``); every request-dependent
 branch (the TYTX path) guards for its absence.

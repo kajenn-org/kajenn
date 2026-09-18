@@ -3,9 +3,17 @@
 
 """Serve an application factory in a fresh process over UDS or loopback TCP.
 
-Readiness follows application startup. SIGTERM stops admission, drains bounded
-calls, then shuts down only this application's lifespan. The listener never
-unlinks a preexisting socket and never controls an externally owned process.
+``RemoteApplicationRunner`` imports a ``module:callable`` factory, calls it,
+runs that application's startup and only then starts listening — readiness
+answers ``/_ready`` after startup, never before. SIGTERM or SIGINT closes the
+listener, so no further call is admitted, drains the calls in flight within
+``shutdown_timeout`` and cancels what is left, then runs the shutdown of this
+application alone.
+
+The listener never unlinks a pathname it did not create, and at the end it
+removes only the one still naming its own socket. It holds no authority over a
+process it did not start. ``RemoteRunnerCommand`` is the ``python -m`` entry
+point that wires the command line to the runner.
 """
 
 import argparse
@@ -35,6 +43,28 @@ class RemoteApplicationRunner:
                  shutdown_timeout: float = 5.0, request_timeout: float = 30.0,
                  max_calls: int = 16, allow_network_listener: bool = False,
                  instance_id: str | None = None) -> None:
+        """Import the factory, build the application and prepare the listener.
+
+        A factory answering a ``BaseApplication`` is given the mount and a
+        ``BaseServer`` of its own; any other ASGI callable is driven through
+        the raw lifespan protocol instead.
+
+        Args:
+            factory: ``module:callable`` answering the application to serve.
+            address: ``uds:<path>`` or ``tcp:<loopback-ip>:<port>``.
+            mount: the mount the caller forwards under; it must match the
+                routing metadata of every call.
+            shutdown_timeout: seconds to drain the calls in flight.
+            request_timeout: seconds one call may take, read and serve alike.
+            max_calls: how many calls and how many connections are admitted.
+            allow_network_listener: bind a non-loopback IP.
+            instance_id: the launch identity to present on ``/_ready``.
+
+        Raises:
+            ValueError: a timeout is not positive, ``max_calls`` is below 1,
+                the factory is not a ``module:callable``, or the address is
+                not one of the two forms.
+        """
         if shutdown_timeout <= 0 or request_timeout <= 0 or max_calls < 1:
             raise ValueError("timeouts and max_calls must be positive")
         module, separator, name = factory.partition(":")
@@ -62,6 +92,14 @@ class RemoteApplicationRunner:
         self._lifespan_output: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
     async def run(self) -> None:
+        """Live this service: startup, listen, wait for the stop, drain, shut down.
+
+        Returns when SIGTERM or SIGINT has been handled and the application's
+        shutdown has run. Whatever happened, the ``finally`` closes the
+        listener, unlinks the socket it owns, drains the calls in flight
+        within ``shutdown_timeout``, cancels the connections and runs the
+        shutdown.
+        """
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.add_signal_handler(sig, self._stop.set)
@@ -88,6 +126,18 @@ class RemoteApplicationRunner:
             await self._lifecycle("shutdown")
 
     async def _lifecycle(self, phase: str) -> None:
+        """Run ``startup`` or ``shutdown`` on the application.
+
+        A ``BaseApplication`` gets its ``on_<phase>`` hook. Any other ASGI
+        callable is driven through the lifespan protocol: startup creates the
+        lifespan task, shutdown awaits it.
+
+        Raises:
+            RuntimeError: the application did not complete the phase, or a
+                shutdown was asked for without a startup.
+            TimeoutError: the phase outlasted its bound — ``shutdown_timeout``
+                for a shutdown, ten seconds for a startup.
+        """
         async with asyncio.timeout(self.shutdown_timeout if phase == "shutdown" else 10):
             if isinstance(self.application, BaseApplication):
                 result = getattr(self.application, "on_" + phase)()
@@ -108,6 +158,16 @@ class RemoteApplicationRunner:
                 await self._lifespan_task
 
     async def _accept(self, reader, writer) -> None:
+        """Read frames off one accepted connection, each served on its own task.
+
+        A connection arriving past ``max_calls`` connections, or after the
+        stop, is closed without being read. Admission is taken before the read,
+        so a peer that sends slowly holds a slot instead of buffering behind
+        one. A read that fails, times out or ends closes the connection.
+
+        Raises:
+            RuntimeError: this callback runs outside a task.
+        """
         if len(self._connections) >= self.max_connections or self._stop.is_set():
             writer.close()
             await writer.wait_closed()
@@ -143,6 +203,16 @@ class RemoteApplicationRunner:
             await stream.close()
 
     async def _serve(self, stream: FrameStream, frame: Frame) -> None:
+        """Serve one frame and write its reply, releasing the admission slot.
+
+        ``/_ready`` answers readiness and the launch identity. ``/http``
+        decodes the request record, rebuilds the identity the caller vouched
+        for and serves it through the buffered endpoint; an ``HTTPException``
+        becomes that status as a plain-text answer. Anything else — another
+        method, another path, routing metadata that does not match this mount,
+        an identity of the wrong shape — replies with the error's type name
+        under ``error`` instead of failing the connection.
+        """
         try:
             if frame.method != "CALL":
                 raise ValueError("remote service expects CALL")
@@ -188,6 +258,11 @@ class RemoteRunnerCommand:
     """Command-line wiring for the reusable application runner."""
 
     def run(self) -> None:
+        """Parse the command line and run one ``RemoteApplicationRunner``.
+
+        The launch identity is taken out of the environment, so it is not
+        inherited by anything this process starts in turn.
+        """
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--factory", required=True)
         parser.add_argument("--address", required=True)

@@ -3,9 +3,10 @@
 
 """Process-wide buffered transport policy, read when codecs are constructed.
 
-Configure every peer identically before startup. Spawned workers inherit the
-parent environment; independently deployed peers need the same settings.
-Values are bytes, except the warning interval (seconds). No capacity is reserved.
+The policy comes from the environment, so every peer is configured identically
+before startup: spawned workers inherit the parent environment, independently
+deployed peers are given the same settings. Values are bytes, except the
+warning interval (seconds). Reading a limit reserves no capacity.
 """
 
 import os
@@ -15,6 +16,12 @@ DEFAULT_WARN_FRAME_SIZE = 1024 * 1024
 
 
 def integer_setting(name: str, default: int, *, minimum: int = 0) -> int:
+    """The integer environment variable ``name``, or ``default`` when unset.
+
+    Raises:
+        ValueError: the variable does not read as an integer, or the result is
+            below ``minimum``.
+    """
     value = os.environ.get(name)
     try:
         result = default if value is None else int(value)
@@ -26,7 +33,12 @@ def integer_setting(name: str, default: int, *, minimum: int = 0) -> int:
 
 
 def frame_max_size() -> int:
-    # Each section length is an unsigned 32-bit integer on the wire.
+    """The ceiling in bytes on one channel frame.
+
+    Raises:
+        ValueError: the configured value is below 1 or does not fit an
+            unsigned 32-bit integer — each section length is one on the wire.
+    """
     value = integer_setting("GNR_ASGI_FRAME_MAX_BYTES", DEFAULT_MAX_FRAME_SIZE, minimum=1)
     if value > 2**32 - 1:
         raise ValueError("GNR_ASGI_FRAME_MAX_BYTES must fit an unsigned 32-bit integer")
@@ -34,6 +46,7 @@ def frame_max_size() -> int:
 
 
 def http_max_body_size() -> int:
+    """The ceiling in bytes on one buffered HTTP body, the frame ceiling by default."""
     return integer_setting("GNR_ASGI_HTTP_MAX_BODY_BYTES", frame_max_size())
 
 

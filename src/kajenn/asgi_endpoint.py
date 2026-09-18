@@ -14,10 +14,15 @@
 
 """A neutral, bounded endpoint for calling a buffered ASGI application.
 
-The endpoint presents one complete request message and buffers one complete
-response.  It deliberately keeps transport routing and SPA state outside the
-application call.  WSK response conversion happens here because this is the
-endpoint at which the application that produced the media type is available.
+``BufferedAsgiEndpoint`` presents one complete request message to an ASGI
+application and buffers its whole response, bounded on both sides by
+``max_body_size``. It passes on the scope it is given and holds no state of
+its own, so whoever routes and whatever keeps state across calls stays outside
+the application call — a seam an extension builds on.
+
+A ``WSK`` request has its answer adapted here, through
+``WsxResponseEncoder``: this is the last place where the application that
+produced the media type is known.
 """
 
 import asyncio
@@ -39,6 +44,20 @@ class BufferedAsgiEndpoint:
         max_body_size: int | None = None,
         reject_streaming: bool = True,
     ) -> None:
+        """Bind to an ASGI application.
+
+        Args:
+            application: the ASGI callable this endpoint serves.
+            max_body_size: the ceiling in bytes on the request body and on the
+                response body alike; ``None`` reads the process-wide policy.
+            reject_streaming: when true, a chunked or event-stream answer is
+                refused instead of buffered.
+
+        Raises:
+            TypeError: ``application`` is not callable, ``max_body_size`` is
+                not an integer, or ``reject_streaming`` is not a boolean.
+            ValueError: ``max_body_size`` is negative.
+        """
         max_body_size = http_max_body_size() if max_body_size is None else max_body_size
         if not callable(application):
             raise TypeError("application must be callable")
@@ -53,7 +72,28 @@ class BufferedAsgiEndpoint:
         self.reject_streaming = reject_streaming
 
     async def serve(self, scope: Scope, body: bytes) -> dict[str, Any]:
-        """Serve one buffered request and return its complete buffered response."""
+        """Serve one buffered request and return its complete buffered response.
+
+        Args:
+            scope: the ASGI scope handed to the application as it is.
+            body: the whole request body.
+
+        Returns:
+            ``{"status", "headers", "body"}`` — headers as ``[name, value]``
+            text pairs. A ``WSK`` scope has its body and its content headers
+            replaced by the browser json adaptation.
+
+        Raises:
+            TypeError: ``scope`` is not a dict, ``body`` is not bytes, or the
+                application sent a message of the wrong shape.
+            ValueError: the application declared trailers, started or completed
+                its response twice, sent a body before the start, sent an
+                invalid status, or streamed while ``reject_streaming`` holds.
+            HttpBodyTooLarge: the request or the response body passes
+                ``max_body_size``.
+            RuntimeError: the application returned without starting or without
+                completing its response.
+        """
         if not isinstance(scope, dict):
             raise TypeError("scope must be a dictionary")
         if not isinstance(body, bytes):
@@ -146,6 +186,7 @@ class BufferedAsgiEndpoint:
         return {"status": status, "headers": headers, "body": response_body}
 
     def _decode_headers(self, raw_headers: Any) -> list[list[str]]:
+        """ASGI byte header pairs as latin-1 ``[name, value]`` text pairs."""
         if not isinstance(raw_headers, (list, tuple)):
             raise TypeError("response headers must be a sequence")
         headers: list[list[str]] = []
@@ -159,6 +200,7 @@ class BufferedAsgiEndpoint:
         return headers
 
     def _is_sse(self, headers: list[list[str]]) -> bool:
+        """Whether these headers declare ``text/event-stream``."""
         for name, value in headers:
             if name.lower() == "content-type":
                 return value.split(";", 1)[0].strip().lower() == "text/event-stream"
@@ -167,6 +209,12 @@ class BufferedAsgiEndpoint:
     def _encode_wsk_response(
         self, body: bytes, headers: list[list[str]]
     ) -> tuple[bytes, list[list[str]]]:
+        """The answer adapted to browser json, with its content headers redone.
+
+        Returns:
+            The json bytes and the headers, ``content-type`` and
+            ``content-length`` replaced to match them.
+        """
         content_type = next(
             (value for name, value in headers if name.lower() == "content-type"), ""
         )

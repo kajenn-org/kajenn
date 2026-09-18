@@ -12,14 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""A bounded, versioned record carrying HTTP metadata and opaque body bytes."""
+"""A bounded, versioned record carrying HTTP metadata and opaque body bytes.
+
+One record is ``b"HTTP"``, a version byte, the length of the metadata and then
+the metadata as ascii JSON, followed by the body bytes. The body is never
+interpreted; the metadata is checked to be a JSON tree of finite numbers,
+string keys and no duplicate key, so what one peer wrote is what the other
+reads. ``encode_request``/``decode_request`` carry an ASGI http scope reduced
+to its transportable fields; ``encode_response``/``decode_response`` carry a
+status, text headers and a body.
+"""
 
 import json
-from collections.abc import Mapping
 import math
 import struct
+from collections.abc import Mapping
 from typing import Any
-
 
 from .transport_limits import DEFAULT_MAX_FRAME_SIZE, HttpBodyTooLarge, http_max_body_size
 
@@ -47,6 +55,16 @@ class HttpRecord:
     )
 
     def __init__(self, max_body_size: int | None = None) -> None:
+        """Build a codec bounded at ``max_body_size`` bytes of body.
+
+        Args:
+            max_body_size: the ceiling in bytes; ``None`` reads the
+                process-wide policy.
+
+        Raises:
+            TypeError: ``max_body_size`` is not an integer.
+            ValueError: ``max_body_size`` is negative.
+        """
         max_body_size = http_max_body_size() if max_body_size is None else max_body_size
         if isinstance(max_body_size, bool) or not isinstance(max_body_size, int):
             raise TypeError("max_body_size must be an integer")
@@ -55,6 +73,14 @@ class HttpRecord:
         self.max_body_size = max_body_size
 
     def encode(self, metadata: dict[str, Any], body: bytes) -> bytes:
+        """One record: the header, the metadata as ascii JSON, then the body.
+
+        Raises:
+            TypeError: ``body`` is not bytes or ``metadata`` is not a dict.
+            ValueError: the metadata is not a JSON tree of finite numbers and
+                string keys, or it nests deeper than the decoder can read.
+            HttpBodyTooLarge: the body passes ``max_body_size``.
+        """
         self._check_body(body)
         if not isinstance(metadata, dict):
             raise TypeError("metadata must be a dictionary")
@@ -74,6 +100,15 @@ class HttpRecord:
         return self._HEADER.pack(self.MAGIC, self.VERSION, len(encoded_metadata)) + encoded_metadata + body
 
     def decode(self, payload: bytes) -> tuple[dict[str, Any], bytes]:
+        """The metadata and the body of one record.
+
+        Raises:
+            TypeError: ``payload`` is not bytes.
+            ValueError: the header is truncated or carries another magic or
+                version, the metadata is truncated, is not a JSON object, or
+                carries a duplicate key or a non-finite number.
+            HttpBodyTooLarge: the body passes ``max_body_size``.
+        """
         if not isinstance(payload, bytes):
             raise TypeError("payload must be bytes")
         if len(payload) < self._HEADER.size:
@@ -107,6 +142,17 @@ class HttpRecord:
         return metadata, payload[metadata_end:]
 
     def encode_request(self, scope: Mapping[str, Any], body: bytes) -> bytes:
+        """One request record: the transportable scope fields and the body.
+
+        Only the fields of ``_REQUEST_FIELDS`` travel; bytes fields become
+        latin-1 text and ``server``/``client`` a host/port pair.
+
+        Raises:
+            TypeError: ``scope`` is not a mapping, or a field it carries is of
+                the wrong type.
+            ValueError: the scope declares a type other than ``http``, or a
+                field holds a value the wire cannot carry.
+        """
         if not isinstance(scope, Mapping):
             raise TypeError("scope must be a mapping")
         if "type" in scope and scope["type"] != "http":
@@ -116,6 +162,14 @@ class HttpRecord:
         return self.encode({"record_type": "request", "scope": normalized}, body)
 
     def decode_request(self, payload: bytes) -> tuple[dict[str, Any], bytes]:
+        """The ASGI http scope and the body of one request record.
+
+        The scope comes back with ``type`` set to ``http``.
+
+        Raises:
+            ValueError: the envelope is not a request envelope, its scope is
+                not an object, or it names a field outside ``_REQUEST_FIELDS``.
+        """
         metadata, body = self.decode(payload)
         if set(metadata) != {"record_type", "scope"} or metadata.get("record_type") != "request":
             raise ValueError("invalid request metadata envelope")
@@ -129,6 +183,15 @@ class HttpRecord:
         return scope, body
 
     def encode_response(self, response: dict[str, Any]) -> bytes:
+        """One response record from ``{"status", "headers", "body"}``.
+
+        Raises:
+            TypeError: ``response`` is not a dict, or a header name or value
+                is not a string.
+            ValueError: the dict carries other keys than those three, the
+                status is not an integer from 100 to 599, or a header is not a
+                pair.
+        """
         if not isinstance(response, dict):
             raise TypeError("response must be a dictionary")
         if set(response) != {"status", "headers", "body"}:
@@ -144,6 +207,13 @@ class HttpRecord:
         )
 
     def decode_response(self, payload: bytes) -> dict[str, Any]:
+        """One response record as ``{"status", "headers", "body"}``.
+
+        Raises:
+            ValueError: the envelope is not a response envelope, the status is
+                not an integer from 100 to 599, or a header is not a string
+                pair.
+        """
         metadata, body = self.decode(payload)
         if set(metadata) != {"record_type", "status", "headers"} or metadata.get("record_type") != "response":
             raise ValueError("invalid response metadata envelope")

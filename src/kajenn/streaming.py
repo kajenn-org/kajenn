@@ -18,9 +18,9 @@
 body in memory. A stream is a different shape, not a variant, so it is a
 separate slotted class rather than a subclass: ``StreamingResponse`` sends the
 ``http.response.start`` once, then one ``http.response.body`` per chunk with
-``more_body=True``, and a terminal empty body with ``more_body=False``. It has
-NO ``set_result`` (the buffered type-dispatch is deliberately not carried over):
-the body is an async iterator of ``bytes`` the caller supplies.
+``more_body=True``, and a terminal empty body with ``more_body=False``. There
+is no ``set_result`` here and no dispatch by result type: the body is an async
+iterator of ``bytes`` the caller supplies.
 
 The iterator is the whole contract — a plain ``async for`` over user chunks, an
 ``SseStream`` (sse.py), or any bounded event source. This class only frames the

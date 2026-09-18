@@ -22,16 +22,14 @@ and ``send_bytes()`` write one, ``close()`` ends the connection once, and
 iterating the object yields the incoming texts until the client leaves.
 
 **It knows nothing of WSX.** The protocol lives in ``wsx.py`` and the motor in
-the server; this object is the transport, so the admitted raw seam — an
-application that wants the socket itself — is served by the same class
-(`internals/10_server/055_websocket/decisions.md`).
+the server; this object is the transport, so an application that wants the
+socket itself is served by the same class.
 
 **The state is one boolean.** ``connected`` is true between the accept and the
 end, and everything that depends on the state reads it: an accept happens once,
-a close writes once, and a read or a write with nothing accepted raises. There
-is no exported state type, because the three readers of the state are those
-three rules and each is a question with a yes or a no (owner, 2026-09-06; the
-precedent is ``WorkerConnector.connected``).
+a close writes once, and a read or a write with nothing accepted raises. No
+state type is exported: the three readers of the state are those three rules,
+and each is a question with a yes or a no.
 
 **A disconnect is an exception, never a value.** Every read raises
 ``WebSocketDisconnect`` when the client is gone, so a read loop never has to

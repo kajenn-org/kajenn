@@ -24,7 +24,7 @@ blank line. ``data`` that is not a string is JSON-encoded.
 
 The framing is shaped like ``channel/frame.py`` (a slotted codec, its own wire
 format) but has no bytes in common — SSE is a text protocol over HTTP, not the
-length-prefixed wsx envelope. ``SseStream`` is SELF-CONTAINED: it wraps ANY
+length-prefixed channel frame. ``SseStream`` is SELF-CONTAINED: it wraps ANY
 async source of event dicts (a user generator, a task hub subscription) and
 yields wire ``bytes``; the source is the caller's concern. Resumability
 (``Last-Event-ID`` → a snapshot baseline then the live source) is built by the
