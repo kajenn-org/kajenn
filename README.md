@@ -1,5 +1,12 @@
 # kajenn
 
+[![PyPI](https://img.shields.io/pypi/v/kajenn)](https://pypi.org/project/kajenn/)
+[![Tests](https://github.com/kajenn-org/kajenn/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/kajenn-org/kajenn/actions/workflows/tests.yml)
+[![Codecov](https://codecov.io/gh/kajenn-org/kajenn/branch/main/graph/badge.svg)](https://app.codecov.io/gh/kajenn-org/kajenn)
+[![Documentation](https://readthedocs.org/projects/kajenn/badge/?version=latest)](https://kajenn.readthedocs.io/en/latest/)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://github.com/kajenn-org/kajenn/blob/main/pyproject.toml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/branding/kajenn-logo-dark.png">
