@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Auth core: credential configuration and header verification (salvage Q5).
+"""Auth core: credential configuration and header verification.
 
 ``AuthCore`` holds the whole credential configuration and the verification
 logic for the ``basic``, ``bearer`` and ``jwt`` schemes. It is router-free —
@@ -82,9 +82,9 @@ class AuthCore:
     def __init__(self, api_key_store: ApiKeyStore | None = None, **entries: Any) -> None:
         """Build the credential store from the configured sections.
 
-        ``api_key_store`` is the wired registry the ``AuthMixin`` passes: when
-        present, an inbound ``gak_`` bearer token is verified against it before
-        the static-bearer/JWT chain.
+        ``api_key_store`` is the wired registry the ``AuthMixin`` passes: an
+        inbound ``gak_`` bearer token is verified against it INSTEAD of the
+        static-bearer/JWT chain, and a miss is final (see ``_auth_bearer``).
         """
         self._api_key_store = api_key_store
         self._basic: dict[str, dict[str, Any]] = {}
@@ -138,7 +138,7 @@ class AuthCore:
             )
 
     def _configure_default(self, credentials: Any) -> None:
-        """Unknown config section — ignored (salvage semantics)."""
+        """Unknown config section — ignored."""
 
     @property
     def signing_jwt_config(self) -> dict[str, Any] | None:

@@ -22,15 +22,15 @@ the instance logger. Responses are built with the ``Response`` class; an
 exception's ``headers`` (e.g. a ``WWW-Authenticate`` challenge) are forwarded
 onto the response.
 
-Content negotiation (D4 error-body reconciliation): the error body follows the
-caller's ``Accept``. A caller asking for JSON (``application/json`` or ``*/*``,
-never ``text/html``) gets the ``{"error": ...}`` document built by
-``Response.set_error`` — the single live JSON error path; anyone else keeps the
-historical ``text/plain`` body. A missing ``Accept`` stays ``text/plain`` (the
-pre-existing default).
+Content negotiation: the error body follows the caller's ``Accept``. A
+caller asking for JSON (``application/json`` or ``*/*``, never
+``text/html``) gets the ``{"error": ...}`` document built by
+``Response.set_error`` — the single JSON error path. Anyone else gets a
+``text/plain`` body, and a missing ``Accept`` is ``text/plain`` too, so a
+browser navigation never receives the JSON document.
 
 A 401 is answered exactly like any other error: the bare status with the
-exception's ``WWW-Authenticate`` challenge forwarded onto it (D-SA-4). The core
+exception's ``WWW-Authenticate`` challenge forwarded onto it. The core
 never points a caller at a login page — it does not own one; an application
 that wants to redirect a browser to its own login surface does it in its own
 routes, not here.
@@ -115,7 +115,7 @@ class ErrorMiddleware(BaseMiddleware):
     def _wants_json(self, headers: dict[str, str]) -> bool:
         """True when the caller's ``Accept`` asks for JSON (never for a browser navigation).
 
-        A missing ``Accept`` keeps the historical ``text/plain`` default; an
+        A missing ``Accept`` keeps the ``text/plain`` default; an
         ``Accept`` naming ``text/html`` (a browser) also stays text; only an API
         caller (``application/json`` or ``*/*``) gets the JSON error document.
         """

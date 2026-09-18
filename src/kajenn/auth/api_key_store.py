@@ -19,8 +19,8 @@ revocable at any moment: unlike a JWT (stateless, valid until it expires), a
 key is checked against this registry on every request, so disabling the
 record kills the credential instantly.
 
-Contract (clients depend on this, never on files or SQL — a future
-``DbApiKeyStore`` swaps behind it)::
+Contract (clients depend on this, never on files or SQL — another backend
+swaps behind it)::
 
     ApiKeyStore:
         load_all() -> list[dict]                       # every record
@@ -41,9 +41,9 @@ only once, as ``issue``'s return value.
 ``FileApiKeyStore`` is the filesystem backend: one JSON file per key at
 ``<mount>:<prefix>/<key_id>.json`` over genro-storage nodes, defaulting to
 ``site:api_keys``. Every record is written ``encrypted=True``: credentials are
-ciphertext at rest, and without installed key material the write hard-fails
-(D5 — no plain-text fallback). All I/O is synchronous (core 1b ratified: async
-callers wrap in ``server.run_sync()``).
+ciphertext at rest, and without installed key material the write hard-fails —
+there is no plain-text fallback. All I/O is synchronous: an async caller wraps
+it in ``server.run_sync()``.
 
 The record::
 

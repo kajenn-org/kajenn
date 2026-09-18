@@ -17,9 +17,9 @@
 ``BaseMiddleware(app, server, **options)`` receives BOTH ends at construction
 (dual parent-child): ``app`` is the next ASGI callable in the chain, ``server``
 the owning server — never discovered by walking wrappers. Subclasses declare
-``middleware_order`` (lower = outermost; errors 100, logging 200, security 300,
-auth 400, business 500-800, transformation 900) and ``middleware_default``
-(their on/off state when the config does not name them).
+``middleware_order`` (lower = outermost; the shipped ones are errors 100,
+logging 200, cors 300, session 400, auth 450, and the class default is 500) and
+``middleware_default`` (their on/off state when the config does not name them).
 
 ``build_chain(config, innermost, server, registry)`` assembles the chain from
 explicit inputs — ``config`` maps ``{name: bool | dict}`` (a dict value means
@@ -30,8 +30,8 @@ and no import-time registration anywhere. Enabled middlewares are sorted by
 outermost. A config name missing from the registry raises ``ValueError``.
 
 ``headers_dict(scope)`` parses the ASGI headers into a lowercase-keyed dict
-cached as ``scope["_headers"]`` — the one header-parse shared by the session
-and auth middlewares downstream. ``cookie_value(scope, name)`` reads one
+cached as ``scope["_headers"]`` — the one header-parse every reader of the
+scope's headers shares. ``cookie_value(scope, name)`` reads one
 cookie off it, pair by pair, so a malformed sibling cookie never costs the
 request the cookies that are well-formed.
 """

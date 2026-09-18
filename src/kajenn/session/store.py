@@ -14,15 +14,15 @@
 
 """Session store — the storage Protocol and the in-memory default.
 
-``SessionStore`` is a runtime-checkable ``Protocol`` (get/create/delete/
+``SessionStore`` is a runtime-checkable ``Protocol`` (get/create/save/delete/
 purge_expired/dump/restore). Its test suite is a shared CONTRACT suite driven
 by a store factory (§5.9), so a custom backend plugs into the SAME tests.
 ``MemorySessionStore`` is the dict-backed only shipped store: ``secrets``
 tokens, a ``default_ttl`` for new sessions, lazy expiry on ``get``, and a
 delta-checked ``purge_expired`` at ``create`` time — the mass reap runs only
-when ``PURGE_INTERVAL`` has elapsed since the last one (no background task:
-this REPLACES the former TaskManager purge loop, a ratified revision of core
-1e/◆D22). ``dump``/``restore`` persist meta and the keyed avatars'
+when ``PURGE_INTERVAL`` has elapsed since the last one, with no background
+task and no purge loop anywhere else.
+``dump``/``restore`` persist meta and the keyed avatars'
 identity/tags only — never the data Bag. The serialized shape is
 ``avatars: {key: {identity, tags}}``, the whole wardrobe of the session.
 ``save_snapshot``/``load_snapshot`` are the OTHER persistence pair — one

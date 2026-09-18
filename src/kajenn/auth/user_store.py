@@ -20,8 +20,8 @@ verifies credentials. Its tags are the verified claims of the local source;
 they ride in the authentication result as trusted input (the receiving app
 stays sovereign on what it keeps — the two-phase model).
 
-Contract (clients depend on this, never on files or SQL — a future
-``DbUserStore`` swaps behind it)::
+Contract (clients depend on this, never on files or SQL — another backend
+swaps behind it)::
 
     UserStore:
         load_all() -> list[dict]                    # every record
@@ -33,9 +33,9 @@ Contract (clients depend on this, never on files or SQL — a future
 ``FileUserStore`` is the filesystem backend: one JSON file per user at
 ``<mount>:<prefix>/<userkey>.json`` over genro-storage nodes, defaulting to
 ``site:users``. Every record is written ``encrypted=True``: credentials are
-ciphertext at rest, and without installed key material the write hard-fails
-(D5 — no plain-text fallback). All I/O is synchronous (core 1b ratified: async
-callers wrap in ``server.run_sync()``).
+ciphertext at rest, and without installed key material the write hard-fails —
+there is no plain-text fallback. All I/O is synchronous: an async caller wraps
+it in ``server.run_sync()``.
 
 The record::
 
@@ -49,12 +49,13 @@ The record::
     }
 
 ``failed_attempts``/``last_failed_at`` are OPTIONAL (absent until the first
-failure): the store-backed login-lockout counter the ``_server`` login route
-maintains — incremented on failure, reset on success (``applications/server_app.py``).
+failure): the store-backed login-lockout counter a login surface maintains on
+the record — incremented on failure, reset on success. The store itself neither
+reads nor enforces them.
 
 Passwords are hashed with ``hashlib.scrypt`` (stdlib, zero new deps): a random
 per-user salt and the cost parameters are embedded in the hash string, so a
-future parameter upgrade needs no migration. Comparison is constant-time
+parameter upgrade needs no migration. Comparison is constant-time
 (``hmac.compare_digest``). Plain-text passwords never persist anywhere.
 
 ``verify`` returns the full record on success and None on ANY failure (unknown
