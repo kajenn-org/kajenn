@@ -62,8 +62,8 @@ class RemoteAddress:
 
         Raises:
             ValueError: the address is neither form, its TCP part does not
-                name an IP and a port, or that IP is not loopback and no
-                listener opt-in was given.
+                name an IP and a port, the port is outside 0–65535, or the IP
+                is not loopback and no listener opt-in was given.
         """
         self.address = address
         transport, _, location = address.partition(":")

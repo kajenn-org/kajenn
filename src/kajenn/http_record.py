@@ -191,6 +191,8 @@ class HttpRecord:
             ValueError: the dict carries other keys than those three, the
                 status is not an integer from 100 to 599, or a header is not a
                 pair.
+            TypeError, HttpBodyTooLarge: what ``encode`` raises for the
+                assembled record.
         """
         if not isinstance(response, dict):
             raise TypeError("response must be a dictionary")

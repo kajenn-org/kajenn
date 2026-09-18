@@ -138,7 +138,9 @@ class BaseServer:
     ``WorkPool`` (``None`` keeps the stdlib default) — ``websocket`` — the
     websocket options, ``{"origins": [...], "max_concurrent": 16}`` — and
     ``shutdown_timeout_seconds`` — how long uvicorn waits for open connections
-    to finish before it cancels them at shutdown (5.0). Without a bound, one
+    to finish before it cancels them at shutdown (5.0) — and ``debug`` — a
+    flag or a string the applications read as ``server.debug`` (``False``).
+    Without a bound, one
     endless response — an SSE stream a client never closes — holds the server
     for ever and the lifespan shutdown never runs.
     """

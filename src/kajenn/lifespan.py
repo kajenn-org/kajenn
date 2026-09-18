@@ -64,7 +64,7 @@ STOPPING = "stopping"
 
 #: How long the shutdown waits for the in-flight requests before proceeding
 #: without them, in seconds. What is still in flight past it is counted in the
-#: log and waited for no longer: the shutdown sequence goes on without it.
+#: log and left behind: the shutdown sequence goes on without it.
 SHUTDOWN_DRAIN_TIMEOUT_SECONDS = 10.0
 
 __all__ = [

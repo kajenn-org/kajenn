@@ -61,10 +61,9 @@ build a value the provider then rejects. Missing it with a provider
 configured is a boot error (``_check_oidc_external_url``), not an opaque
 provider error at the first login.
 
-No application is registered behind the caller's back (D-SA-10): the server
-application is declared like any other, with its ``app_class`` from
-``kajenn_server_app`` and the code ``_server``. A server that declares none
-exposes no ``/_server/...`` and the core imports nothing of that package. The
+No application is registered behind the caller's back: a server application
+is declared like any other, by ``app_class`` and code, and the core imports
+none of it. A server that declares none exposes nothing under its path. The
 configured databases are registered at the end of ``__init__``, over the live
 server.
 """

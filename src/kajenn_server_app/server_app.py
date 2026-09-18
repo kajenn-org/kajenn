@@ -16,8 +16,7 @@
 
 ``ServerApplication`` carries the system surface a server exposes under
 ``/_server``. It is declared in the configuration like any other application,
-with ``app_class`` from this package and the code ``_server`` (D-SA-10,
-superseding the "automatic, not configured" half of SPEC D4): a server that
+with ``app_class`` from this package and the code ``_server``: a server that
 declares none exposes no ``/_server/...`` and the core imports nothing of this
 package. The demux finds it through the ordinary mount table — there is no
 dedicated demux logic.
@@ -33,8 +32,9 @@ carries the usual schema/docs/index endpoints, and adds:
   surfaces (``index`` and ``MonitorSection``) can enumerate them;
 - the PASSWORD login surface: ``login`` (JSON POST → ``UserStore.verify`` →
   ``Avatar`` → ``request.session.attach_avatar``), ``logout`` and the public
-  ``login_methods``. There is no login PAGE here: the management pages are
-  gramlot's (D-SA-3), and what this app serves is the JSON a page drives. The
+  ``login_methods``. There is no login PAGE here: the management pages belong
+  to a front-end of the operator's choice, and what this app serves is the JSON
+  such a page drives. The
   methods live in an ``AuthSection`` attached under ``auth``
   (``ensure_auth_section`` / ``register_auth_method``); ``PasswordMethod`` is
   registered at construction. ``login`` enforces the store-backed lockout: the
@@ -105,8 +105,8 @@ class ServerApplicationGrammar(ApplicationGrammar):
     """The words this application adds to a recipe: its own login surface.
 
     They live HERE and not in the site dialect because what asks a human for a
-    user and a password belongs to the application that owns the login surface
-    (D-SA-10). The recipe writes them under the application element::
+    user and a password belongs to the application that owns the login surface.
+    The recipe writes them under the application element::
 
         server_app = applications.application(app_class=ServerApplication,
                                               code="_server")
@@ -121,7 +121,7 @@ class ServerApplicationGrammar(ApplicationGrammar):
     They are elements and not attributes of the application envelope because a
     provider is a keyed collection with a secret in it: an element's attributes
     go through the read stack, so ``client_secret`` is a resolver read at read
-    time and the secret never sits in the recipe (D-SA-11).
+    time and the secret never sits in the recipe.
     """
 
     @element(sub_tags="", node_label="login")

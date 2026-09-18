@@ -24,8 +24,8 @@ under ``monitor``, so the whole monitor lives at one address:
 Every route is gated ``auth_rule="SERVER_ADMIN"``: the monitor exposes the
 whole server, so it is closed to anyone the operator has not admitted.
 
-The page that composes ONE panel per mounted application is gramlot's, not
-this section's (D-SA-3): what is served here is the data it reads. What an app
+The page that composes ONE panel per mounted application is a front-end's,
+not this section's: what is served here is the data it reads. What an app
 IS at this instant comes from its ``app_snapshot`` (polled, aggregated here under
 ``apps``); WHO draws it comes from its ``app_panel`` (a class constant, so it
 is fetched once at load). Both are inherited from ``BaseApplication``, so an
