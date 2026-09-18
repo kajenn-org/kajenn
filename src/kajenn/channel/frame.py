@@ -33,7 +33,7 @@ from ..transport_limits import (
     frame_max_size, integer_setting,
 )
 
-CHANNEL_MAGIC = b"GNRF"
+CHANNEL_MAGIC = b"KJNF"
 CHANNEL_VERSION = 1
 HEADER = struct.Struct("!4sBII")
 HEADER_SIZE = HEADER.size
@@ -129,9 +129,9 @@ class FrameCodec:
         warning_interval: int | None = None,
     ) -> None:
         self.max_size = frame_max_size() if max_size is None else max_size
-        self.warn_size = (integer_setting("GNR_ASGI_FRAME_WARN_BYTES", DEFAULT_WARN_FRAME_SIZE)
+        self.warn_size = (integer_setting("KAJENN_FRAME_WARN_BYTES", DEFAULT_WARN_FRAME_SIZE)
                           if warn_size is None else warn_size)
-        self.warning_interval = (integer_setting("GNR_ASGI_FRAME_WARN_INTERVAL_SECONDS", 60)
+        self.warning_interval = (integer_setting("KAJENN_FRAME_WARN_INTERVAL_SECONDS", 60)
                                  if warning_interval is None else warning_interval)
         for name, value, minimum in (("max_size", self.max_size, 1),
                                      ("warn_size", self.warn_size, 0),

@@ -38,7 +38,7 @@ class TestDispatch:
     async def test_sync_handler_runs_on_a_pool_thread(self) -> None:
         server = make_server()
         name = await server.run_sync(lambda: threading.current_thread().name)
-        assert name.startswith("genro-pool")
+        assert name.startswith("kajenn-pool")
 
     async def test_async_stays_on_loop_sync_goes_off_loop(self) -> None:
         server = make_server()
@@ -75,7 +75,7 @@ class TestProvisioning:
 
         # a later dispatch lazily re-provisions: server reuse via repeated serve()
         name = await server.run_sync(lambda: threading.current_thread().name)
-        assert name.startswith("genro-pool")
+        assert name.startswith("kajenn-pool")
         assert server.pool.provisioned is True
 
 

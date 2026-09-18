@@ -39,15 +39,15 @@ def frame_max_size() -> int:
         ValueError: the configured value is below 1 or does not fit an
             unsigned 32-bit integer — each section length is one on the wire.
     """
-    value = integer_setting("GNR_ASGI_FRAME_MAX_BYTES", DEFAULT_MAX_FRAME_SIZE, minimum=1)
+    value = integer_setting("KAJENN_FRAME_MAX_BYTES", DEFAULT_MAX_FRAME_SIZE, minimum=1)
     if value > 2**32 - 1:
-        raise ValueError("GNR_ASGI_FRAME_MAX_BYTES must fit an unsigned 32-bit integer")
+        raise ValueError("KAJENN_FRAME_MAX_BYTES must fit an unsigned 32-bit integer")
     return value
 
 
 def http_max_body_size() -> int:
     """The ceiling in bytes on one buffered HTTP body, the frame ceiling by default."""
-    return integer_setting("GNR_ASGI_HTTP_MAX_BODY_BYTES", frame_max_size())
+    return integer_setting("KAJENN_HTTP_MAX_BODY_BYTES", frame_max_size())
 
 
 class FrameTooLarge(ValueError):

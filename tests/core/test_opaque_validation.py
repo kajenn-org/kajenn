@@ -17,7 +17,7 @@ def test_deep_bounded_json_is_a_protocol_error(record):
     nested = b'{"v":' + b"[" * 3000 + b"0" + b"]" * 3000 + b"}"
     with pytest.raises(ValueError):
         if record == "frame":
-            FrameCodec().get_frame(struct.pack("!4sBII", b"GNRF", 1, len(nested), 0) + nested)
+            FrameCodec().get_frame(struct.pack("!4sBII", b"KJNF", 1, len(nested), 0) + nested)
         elif record == "http":
             HttpRecord().decode(b"HTTP\x01" + struct.pack("!I", len(nested)) + nested)
 

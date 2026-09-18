@@ -123,7 +123,7 @@ class McpEngine:
         self,
         router: Router | None = None,
         *,
-        name: str = "genro-mcp",
+        name: str = "kajenn-mcp",
         version: str = "1.0.0",
         tool_separator: str = ".",
         channel: str = "mcp",

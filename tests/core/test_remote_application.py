@@ -318,7 +318,7 @@ async def test_peer_down_returns_503_while_unrelated_local_mount_answers():
 
 
 async def test_frontend_generated_wsk_errors_are_adapted_at_the_local_endpoint(monkeypatch):
-    monkeypatch.setenv("GNR_ASGI_HTTP_MAX_BODY_BYTES", str(8 * 1024 * 1024))
+    monkeypatch.setenv("KAJENN_HTTP_MAX_BODY_BYTES", str(8 * 1024 * 1024))
     unavailable = RemoteApplication(
         address=unix_address(), code="down", mount="down", request_timeout=0.05
     )
@@ -406,7 +406,7 @@ async def test_sigterm_shutdown_bounds_an_active_delayed_request():
 
 async def test_tcp_body_above_old_frame_limit_and_configured_refusal(monkeypatch):
     # Both processes inherit policy, including a lower-than-default test ceiling.
-    monkeypatch.setenv("GNR_ASGI_FRAME_MAX_BYTES", str(20 * 1024 * 1024))
+    monkeypatch.setenv("KAJENN_FRAME_MAX_BYTES", str(20 * 1024 * 1024))
     async with owned_remote(tcp_address()) as app:
         pid = app._process.pid
         body = b"\x00\xff" * (9 * 1024 * 1024)

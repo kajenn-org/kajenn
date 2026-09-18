@@ -103,7 +103,7 @@ class RemoteApplication(BaseApplication):
                 "--shutdown-timeout", str(self.shutdown_timeout),
                 "--request-timeout", str(self.request_timeout),
                 "--max-calls", str(self.max_calls),
-                env={**os.environ, "GNR_ASGI_REMOTE_INSTANCE_ID": self._instance_id},
+                env={**os.environ, "KAJENN_REMOTE_INSTANCE_ID": self._instance_id},
             )
         try:
             async with asyncio.timeout(self.startup_timeout):

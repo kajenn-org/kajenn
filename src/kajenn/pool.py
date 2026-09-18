@@ -45,7 +45,7 @@ class WorkPool:
     (``None`` uses the stdlib default: ``min(32, cpus + 4)``, where ``cpus``
     are the CPUs granted to the process on interpreters that have
     ``os.process_cpu_count``, the machine's on older ones). Threads are
-    named ``genro-pool*`` so a handler can assert it ran off the loop.
+    named ``kajenn-pool*`` so a handler can assert it ran off the loop.
     """
 
     def __init__(self, server: BaseServer, max_threads: int | None = None) -> None:
@@ -95,7 +95,7 @@ class WorkPool:
             self._total = self._max_threads if self._max_threads is not None else min(32, cpus + 4)
             self._executor = ThreadPoolExecutor(
                 max_workers=self._max_threads,
-                thread_name_prefix="genro-pool",
+                thread_name_prefix="kajenn-pool",
             )
         return self._executor
 

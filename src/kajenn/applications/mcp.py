@@ -285,7 +285,7 @@ class McpApplication(RoutedApplication):
     defaults so a subclass can set them declaratively.
     """
 
-    mcp_name: ClassVar[str] = "genro-mcp"
+    mcp_name: ClassVar[str] = "kajenn-mcp"
     mcp_version: ClassVar[str] = "1.0.0"
     tool_separator: ClassVar[str] = "."
     mcp_channel: ClassVar[str] = "mcp"
@@ -338,7 +338,7 @@ class McpOpenApiApplication(OpenApiApplication):
     REST-only (``channels=rest_channel``).
     """
 
-    mcp_name: ClassVar[str] = "genro-mcp"
+    mcp_name: ClassVar[str] = "kajenn-mcp"
     mcp_version: ClassVar[str] = "1.0.0"
     tool_separator: ClassVar[str] = "."
     mcp_channel: ClassVar[str] = "mcp"

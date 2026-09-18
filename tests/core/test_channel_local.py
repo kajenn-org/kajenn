@@ -254,7 +254,7 @@ async def test_oversized_frame_is_refused_both_ways():
         await stream.write(
             control_frame(method=EVENT_METHOD, path="/big", data={"blob": "x" * 200})
         )
-    await inbound.put(struct.pack("!4sBII", b"GNRF", 1, 10, 190) + b"x" * 200)
+    await inbound.put(struct.pack("!4sBII", b"KJNF", 1, 10, 190) + b"x" * 200)
     with pytest.raises(ValueError, match="exceeds max_size"):
         await stream.read()
 

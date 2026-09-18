@@ -279,7 +279,7 @@ class RemoteRunnerCommand:
                     mount=options.mount, shutdown_timeout=options.shutdown_timeout,
                     request_timeout=options.request_timeout, max_calls=options.max_calls,
                     allow_network_listener=options.allow_network_listener,
-                    instance_id=os.environ.pop("GNR_ASGI_REMOTE_INSTANCE_ID", None)).run())
+                    instance_id=os.environ.pop("KAJENN_REMOTE_INSTANCE_ID", None)).run())
 
 
 if __name__ == "__main__":

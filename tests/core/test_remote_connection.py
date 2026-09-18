@@ -208,7 +208,7 @@ async def test_wrong_route_reply_closes_generation_and_fails_parked_call(peer) -
 async def test_oversized_send_preserves_other_calls_and_connection(peer, monkeypatch):
     from kajenn.transport_limits import FrameTooLarge
 
-    monkeypatch.setenv("GNR_ASGI_FRAME_MAX_BYTES", "1024")
+    monkeypatch.setenv("KAJENN_FRAME_MAX_BYTES", "1024")
     connection = RemoteConnection(peer.address, timeout=3)
     try:
         first = asyncio.create_task(connection.call(call_frame("first")))

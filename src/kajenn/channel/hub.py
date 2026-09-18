@@ -170,7 +170,7 @@ class ChannelHub:
         self.logger = logging.getLogger(__name__)
         self._owned_dir: str | None = None
         if path is None and host is None:
-            self._owned_dir = tempfile.mkdtemp(prefix="gnrhub_")
+            self._owned_dir = tempfile.mkdtemp(prefix="kajenn_hub_")
             os.chmod(self._owned_dir, 0o700)
             path = os.path.join(self._owned_dir, "hub.sock")
         self.path = path

@@ -183,7 +183,7 @@ class TestFrameProtocol:
     async def test_envelope_missing_method_raises(self) -> None:
         one, two = await stream_pair()
         info = json.dumps({"id": "x", "path": "/foo"}).encode("utf-8")
-        one.writer.write(struct.pack("!4sBII", b"GNRF", 1, len(info), 0) + info)
+        one.writer.write(struct.pack("!4sBII", b"KJNF", 1, len(info), 0) + info)
         await one.writer.drain()
         with pytest.raises(ValueError, match="missing 'method'"):
             await two.read()
@@ -193,7 +193,7 @@ class TestFrameProtocol:
     async def test_envelope_non_dict_payload_raises(self) -> None:
         one, two = await stream_pair()
         info = json.dumps(["a", "b"]).encode("utf-8")
-        one.writer.write(struct.pack("!4sBII", b"GNRF", 1, len(info), 0) + info)
+        one.writer.write(struct.pack("!4sBII", b"KJNF", 1, len(info), 0) + info)
         await one.writer.drain()
         with pytest.raises(ValueError, match="must be a JSON object"):
             await two.read()
@@ -226,13 +226,13 @@ class TestFrameProtocol:
 
     def test_duplicate_info_keys_are_rejected(self) -> None:
         info = b'{"id":"x","method":"POST","path":"/","path":"/again"}'
-        wire = struct.pack("!4sBII", b"GNRF", 1, len(info), 0) + info
+        wire = struct.pack("!4sBII", b"KJNF", 1, len(info), 0) + info
         with pytest.raises(ValueError, match="duplicate JSON key"):
             FrameCodec().get_frame(wire)
 
     def test_unknown_version_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="unsupported frame version"):
-            FrameCodec().get_header_lengths(struct.pack("!4sBII", b"GNRF", 2, 0, 0))
+            FrameCodec().get_header_lengths(struct.pack("!4sBII", b"KJNF", 2, 0, 0))
 
     def test_control_payload_is_explicit_and_strict(self) -> None:
         codec = ControlPayload()

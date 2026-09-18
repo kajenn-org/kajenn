@@ -78,7 +78,7 @@ readiness, and shutdown drains within a configured bound before terminating
 only an owned child. Connection-only shutdown never signals its peer.
 
 An owned launch generates a fresh random instance identifier. The child receives
-it through the private launch environment (`GNR_ASGI_REMOTE_INSTANCE_ID`, consumed
+it through the private launch environment (`KAJENN_REMOTE_INSTANCE_ID`, consumed
 by the runner command before constructing the application), not a command-line
 argument. On EVERY new connection, the frontend probes readiness and checks the
 runner's reported identifier before sending application traffic. The expected
@@ -105,10 +105,10 @@ communicating process**, including external runners and containers:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `GNR_ASGI_FRAME_MAX_BYTES` | `268435456` (256 MiB) | Maximum JSON info + opaque payload bytes |
-| `GNR_ASGI_FRAME_WARN_BYTES` | `1048576` (1 MiB) | Log an accepted frame strictly above this size; `0` disables warnings |
-| `GNR_ASGI_FRAME_WARN_INTERVAL_SECONDS` | `60` | Minimum seconds between warnings per codec/connection; `0` logs every large frame |
-| `GNR_ASGI_HTTP_MAX_BODY_BYTES` | Frame maximum | Optional independent buffered HTTP body ceiling, e.g. a lower upload/download policy |
+| `KAJENN_FRAME_MAX_BYTES` | `268435456` (256 MiB) | Maximum JSON info + opaque payload bytes |
+| `KAJENN_FRAME_WARN_BYTES` | `1048576` (1 MiB) | Log an accepted frame strictly above this size; `0` disables warnings |
+| `KAJENN_FRAME_WARN_INTERVAL_SECONDS` | `60` | Minimum seconds between warnings per codec/connection; `0` logs every large frame |
+| `KAJENN_HTTP_MAX_BODY_BYTES` | Frame maximum | Optional independent buffered HTTP body ceiling, e.g. a lower upload/download policy |
 
 Values must be nonnegative integers; the frame maximum must be positive and fit
 an unsigned 32-bit length. Explicit `FrameCodec`/`FrameStream`/channel `max_size`
@@ -146,7 +146,7 @@ or `unknown`. Cancellation remains an asyncio cancellation, with the same
 outcome distinction on `RemoteCallCancelled`; cancelling the wait does not
 undo application work. A subsequent new call may establish a new connection.
 
-The `GNRF` internal protocol is incompatible with the old `WSX://` socket
+The `KJNF` internal protocol is incompatible with the old `WSX://` socket
 frames. Its header is `!4sBII`: magic, version byte (1), info length, payload
 length. Restart all communicating core/bridge peers together. Browser WSX
 remains `WSX://` plus JSON; public value-based `send_message` remains available.
@@ -227,7 +227,7 @@ explicit bounded-capacity failure closes the wire.
 
 `examples/remote_openapi/DOCKER.md` demonstrates the same app code inside a
 non-root Linux container and the ordinary frontend outside it. Compose builds
-from an explicit source allowlist and health-checks the GNRF readiness route.
+from an explicit source allowlist and health-checks the KJNF readiness route.
 The opt-in network listener is a bind option only; it grants no remote process
 ownership or peer authentication. The proof script checks real HTTP and WSX,
 1MiB raw bytes, failure isolation and reconnect after Docker stops/starts the
