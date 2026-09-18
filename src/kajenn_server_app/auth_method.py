@@ -14,16 +14,16 @@
 
 """Auth methods — self-describing login mechanisms mounted under ``_server/auth``.
 
-An auth method is one way a user proves who they are: a password form today,
-an OIDC redirect to an external provider in the next wave. Each method is a
-``RoutingClass``; the ``AuthSection`` attaches it under
-``_server/auth/<method_id>`` ONLY when it owns routes (OIDC will own
-``start`` + ``callback``). The password method owns none — it adapts the
-existing ``/_server/login`` — so it is never attached: it lives only in the
-section's registry (Invariant 10: zero-route nodes never enter the routing
-tree). The method is also self-describing: ``descriptor()`` is the small dict
-the login page renders it from (an id, a ``kind``, a label, the entry URL for
-redirect methods).
+An auth method is one way a user proves who they are: a password form
+(``PasswordMethod``) or an OIDC redirect to an external provider
+(``OidcMethod``). Each method is a ``RoutingClass``; the ``AuthSection``
+attaches it under ``_server/auth/<method_id>`` ONLY when it owns routes (the
+OIDC method owns ``start`` and ``callback``). The password method owns none —
+it adapts the existing ``/_server/login`` — so it is never attached: it lives
+only in the section's registry (Invariant 10: zero-route nodes never enter the
+routing tree). The method is also self-describing: ``descriptor()`` is the
+small dict the login page renders it from (an id, a ``kind``, a label, the
+entry URL for redirect methods).
 
 The contract::
 
@@ -34,16 +34,14 @@ The contract::
 
 ``kind`` tells the page how to draw the method: ``form`` renders the
 identity/password form (the password method), ``redirect`` renders one button
-navigating to the method's entry URL (OIDC), ``ceremony`` is a client-driven
-exchange (passkey, a later wave). Every method converges on the SAME success
-outcome: the avatar attached to the request's session through
+navigating to the method's entry URL (OIDC), ``ceremony`` names a client-driven
+exchange — no method in this package declares it. Every method converges on the
+SAME success outcome: the avatar attached to the request's session through
 ``request.session.attach_avatar`` — the session id never changes at login, so
 no cookie is involved and no method or handler ever sets one.
 
 ``safe_next_path`` is the shared open-redirect guard for the login ``next``
-parameter: the login page mirrors it client-side today; the challenge
-redirect (ErrorMiddleware, next phase) will apply it server-side, so one
-rule governs every path.
+parameter: one rule, applied by every consumer of a ``next`` value.
 """
 
 from __future__ import annotations

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""System sections of the automatic ``_server`` application.
+"""System sections of the ``_server`` application.
 
 Each section is a ``RoutingClass`` the ``ServerApplication`` attaches through
 ``attach_section(section, name)``, so its endpoints live at

@@ -45,9 +45,9 @@ checked), and converges on the same success outcome every method shares — the
 ``Avatar`` attached to the session — then redirects to the stored safe ``next``.
 
 ``descriptor()`` marks the method a ``redirect`` for the login page: a labelled
-button navigating to the ``start`` url (``login.html`` renders ``kind=redirect``
-buttons). The descriptor is the PUBLIC ``login_methods`` payload — it carries the
-id, kind, label and start url ONLY, never the client id, issuer, or secret.
+button navigating to the ``start`` url. The descriptor is the PUBLIC
+``login_methods`` payload — it carries the id, kind, label and start url ONLY,
+never the client id, issuer, or secret.
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ DEFAULT_SCOPES = "openid email profile"
 class OidcMethod(AuthMethod):
     """An OIDC provider as a ``redirect`` login method (authorization-code + PKCE).
 
-    Owns the ``start`` route (and the ``callback`` route, next phase), so it is
+    Owns the ``start`` and ``callback`` routes, so it is
     attached under ``/_server/auth/<method_id>/`` (Invariant 10: a method with
     routes enters the routing tree). Discovery is lazy and cached; PKCE is always
     S256; the ``client_secret`` (when configured) stays in ``provider`` and is
@@ -117,7 +117,7 @@ class OidcMethod(AuthMethod):
         Fetches ``<issuer>/.well-known/openid-configuration`` on first use — never
         at construction, so a server whose provider is unreachable still boots.
         The cached document carries the authorization/token endpoints and the
-        JWKS uri (the last two consumed by the callback in the next phase).
+        JWKS uri (the last two consumed by the callback).
         """
         discovery = self._discovery
         if discovery is None:

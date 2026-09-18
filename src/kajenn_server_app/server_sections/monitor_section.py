@@ -72,7 +72,7 @@ MONITOR_RULE = "SERVER_ADMIN"
 
 
 class MonitorSection(RoutingClass):
-    """The ``_server/monitor`` mount: the shell, the snapshot, the panels.
+    """The ``_server/monitor`` mount: the snapshot, the panels, the panel modules.
 
     Note:
         Parent (dual relationship): the ServerApplication, stored as

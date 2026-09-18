@@ -12,42 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""ServerApplication: the automatic ``_server`` system app (D4).
+"""ServerApplication: the ``_server`` system application.
 
-``ServerApplication`` is the server's own application — the system surface
-every server exposes under ``/_server`` without configuring it (D4:
-"automatic, not configured"). ``AsgiServer`` mounts one at the end of its
-``__init__`` (``_register_server_app``), so a hand-built
-``AsgiServer(applications=[...])`` gets it exactly like a configured one; no
-configuration path special-cases it. The demux finds it through the ordinary
-mount table — there is no dedicated demux logic.
+``ServerApplication`` carries the system surface a server exposes under
+``/_server``. It is declared in the configuration like any other application,
+with ``app_class`` from this package and the code ``_server`` (D-SA-10,
+superseding the "automatic, not configured" half of SPEC D4): a server that
+declares none exposes no ``/_server/...`` and the core imports nothing of this
+package. The demux finds it through the ordinary mount table — there is no
+dedicated demux logic.
 
-It extends ``OpenApiApplication`` (REST + OpenAPI; the MCP face on
-``_server`` is out of this wave), so ``/_server/_meta/`` carries the usual
-schema/docs/index endpoints, and adds:
+It extends ``OpenApiApplication`` (REST + OpenAPI), so ``/_server/_meta/``
+carries the usual schema/docs/index endpoints, and adds:
 
 - ``index`` — the ``/_server/`` descriptor: title and the attached section
   names (JSON — no HTML in code);
 - ``sections`` / ``attach_section(section, name)`` — the registry of system
   sections: ``attach_section`` links a ``RoutingClass`` under ``name``
-  (endpoints at ``/_server/<name>/...``) and records it so introspection
-  surfaces (the index today, monitors later) can enumerate them;
-- the PASSWORD login surface (core 1d wave 1): ``login`` (JSON POST →
-  ``UserStore.verify`` → ``Avatar`` → ``request.session.attach_avatar``),
-  ``logout`` and the public ``login_methods``. There is no login PAGE here:
-  the management pages are gramlot's (D-SA-3), and what this app serves is the
-  JSON a page drives. The methods live in an
-  ``AuthSection`` attached under ``auth`` (``ensure_auth_section`` /
-  ``register_auth_method``); ``PasswordMethod`` is registered at construction.
-  ``login`` enforces the store-backed lockout (REVIEW #9): the per-identity
-  failure counter (``failed_attempts``/``last_failed_at``) rides the UserStore
-  record with exponential backoff; the policy comes from the config's
-  ``authentication.login`` element (``login_policy``, defaults 5 attempts /
+  (endpoints at ``/_server/<name>/...``) and records it so the introspection
+  surfaces (``index`` and ``MonitorSection``) can enumerate them;
+- the PASSWORD login surface: ``login`` (JSON POST → ``UserStore.verify`` →
+  ``Avatar`` → ``request.session.attach_avatar``), ``logout`` and the public
+  ``login_methods``. There is no login PAGE here: the management pages are
+  gramlot's (D-SA-3), and what this app serves is the JSON a page drives. The
+  methods live in an ``AuthSection`` attached under ``auth``
+  (``ensure_auth_section`` / ``register_auth_method``); ``PasswordMethod`` is
+  registered at construction. ``login`` enforces the store-backed lockout: the
+  per-identity failure counter (``failed_attempts``/``last_failed_at``) rides
+  the UserStore record with exponential backoff; the policy comes from this
+  application's own ``login`` element (``login_policy``, defaults 5 attempts /
   30s base).
 
 Handlers stay PURE: they return values and never touch cookies or an ambient
-request/response (the old ``self.server.request`` idiom must never be
-reintroduced). Login attaches the avatar to the existing session in place —
+request/response. Login attaches the avatar to the existing session in place —
 the id never changes, so no login-time cookie exists. A handler that needs the
 live request DECLARES an UNANNOTATED ``_request`` parameter: ``bind_kwargs``
 injects the per-dispatch ``Request`` for that name — the same declarative
@@ -60,22 +57,19 @@ prefix is the injected-name convention ``bind_kwargs`` matches in the neutral
 on every router by ``PluginMixin``), so the handler signatures are always
 captured and per-entry OpenAPI controls (``openapi_method``) always take effect.
 
-The future internal server (a D8 orchestration concern) is a SUBCLASS that
-overrides what it needs — not a profile flag on this class: no code exists for
-a consumer that does not exist yet.
-
 Identity: ``code`` and ``mount`` are both declared ``"_server"`` as class
-attributes — the system mount is a D4 invariant, and ``PasswordMethod``'s
+attributes — the system mount is an invariant, and ``PasswordMethod``'s
 ``action`` hardcodes ``/_server/login``, so moving this app elsewhere 404s it.
 
-Kwargs peeled by the cooperative ``__init__`` (D16): ``login`` and ``oidc`` are
-the login-surface values of the configuration's ``authentication`` section (the
-``server_app=`` server kwarg, forwarded by ``_register_server_app``): the lockout
-policy dict and the per-``code`` OIDC provider dicts, stored as
-``login_policy``/``oidc_providers`` (consumed by the lockout check and the
-``OidcMethod`` registration). The rest flows down the chain. A hand-built
-``AsgiServer(applications=[...])`` passes nothing, so the defaults (empty dicts)
-keep today's bare app.
+Kwargs peeled by the cooperative ``__init__`` (D16): ``login`` and ``oidc``
+are the login-surface values a hand-built ``AsgiServer(applications=[...])``
+names directly — the lockout policy dict and the per-``code`` OIDC provider
+dicts, stored as ``login_policy``/``oidc_providers`` (consumed by the lockout
+check and the ``OidcMethod`` registration). The rest flows down the chain. A
+configured server passes neither and declares the same values with the
+``login()`` and ``oidc()`` elements of ``ServerApplicationGrammar``, folded in
+at attachment by ``read_declared_login_surface``. Both absent, the defaults
+(empty dicts) are a bare app.
 """
 
 from __future__ import annotations
@@ -157,12 +151,11 @@ class ServerApplicationGrammar(ApplicationGrammar):
 
 
 class ServerApplication(OpenApiApplication):
-    """System endpoints of a server, auto-mounted under ``/_server`` (D4).
+    """System endpoints of a server, mounted under ``/_server``.
 
     Carries the public server's system surface: the password login surface and
     the sections attached through ``attach_section``, listed by the ``index``
-    descriptor. The future internal server (a D8 orchestration concern) will be
-    a SUBCLASS overriding what it needs — not a profile flag on this class.
+    descriptor.
     """
 
     openapi_info: ClassVar[dict[str, Any]] = {
@@ -240,15 +233,14 @@ class ServerApplication(OpenApiApplication):
     def _oidc_method_id(code: str) -> str:
         """The mount name of the OIDC method for ``code`` under ``_server/auth``.
 
-        The colon form is legal on the router and through the server demux (a
-        boot-time verification): if a future router rejected it, the fallback is
-        the single-line change ``f"oidc_{code}"``.
+        The colon form (``oidc:<code>``) is legal on the router and through the
+        server demux.
         """
         return f"oidc:{code}"
 
     @property
     def login_policy(self) -> dict[str, Any]:
-        """The lockout policy from ``authentication.login`` (may be empty)."""
+        """The lockout policy declared by the ``login`` element (may be empty)."""
         return self._login_policy
 
     @property
@@ -271,7 +263,7 @@ class ServerApplication(OpenApiApplication):
 
         Links the section's router into this app (endpoints at
         ``/_server/<name>/...``) and keeps it enumerable for the
-        introspection surfaces (the ``index`` descriptor today).
+        introspection surfaces (the ``index`` descriptor, ``MonitorSection``).
         """
         self.route.add_branches({"name": name, "instance": section})
         self.sections[name] = section
@@ -322,31 +314,30 @@ class ServerApplication(OpenApiApplication):
         builds the ``Avatar`` and attaches it to the request's session in place
         (``_request.session.attach_avatar``) — the session id never changes at
         login, so the client's cookie stays valid and no ``Set-Cookie`` is
-        involved. The server's ``user_store`` is wired in the next wave (Macro
-        5b): until then a server without one answers the error shape.
+        involved. A server with no ``user_store`` answers the error shape.
 
         The ``next`` return path is NOT a login parameter: whoever drives the
         login owns the post-success redirect — ``login`` itself never sees it
         and posts carry only the credentials.
 
-        Enforces the server-side lockout (REVIEW #9): the failure counter
-        lives ON the user's store record (``failed_attempts`` /
-        ``last_failed_at``), so it survives restarts and is shared across
-        processes on a shared store. After ``max_attempts`` consecutive
-        failures the identity is refused until the exponential-backoff window
-        (``_lock_seconds_remaining``) has passed; refused attempts never touch
-        the counter — an attacker hammering a locked identity cannot extend a
-        legitimate user's lock — and a success resets it. Known-identity
-        failures surface the server-computed ``remaining_attempts``; unknown
-        identities have no record, hence no counter and no such field. Per-IP
-        rate limiting is a future middleware concern, not this handler's.
+        Enforces the server-side lockout: the failure counter lives ON the
+        user's store record (``failed_attempts`` / ``last_failed_at``), so it
+        survives restarts and is shared across processes on a shared store.
+        After ``max_attempts`` consecutive failures the identity is refused
+        until the exponential-backoff window (``_lock_seconds_remaining``) has
+        passed; refused attempts never touch the counter — an attacker
+        hammering a locked identity cannot extend a legitimate user's lock —
+        and a success resets it. Known-identity failures surface the
+        server-computed ``remaining_attempts``; unknown identities have no
+        record, hence no counter and no such field. Per-IP rate limiting is a
+        middleware concern, not this handler's.
 
         The method is POST by declaration (``openapi_method="post"``): with
         ``_request`` hidden from the schema (see below) the remaining fields
         are all scalar, so the guesser would otherwise pick GET.
 
         Args:
-            identity: The record key to verify (NOT the old ``username``).
+            identity: The record key to verify.
             password: The password to verify.
             _request: The live ``Request``, injected by ``bind_kwargs``. Left
                 unannotated so it stays out of the pydantic model — and thus out
