@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Issue 72 protocol contract
 
 Version: 1. Internal transport contract; coordinated peer restart required.

@@ -1,7 +1,17 @@
 kajenn documentation
 ====================
 
-**kajenn** is an ASGI server with the features FastAPI leaves to the user:
+.. raw:: html
+
+   <div class="brand-lockup">
+     <img class="brand-light" src="_static/branding/kajenn-logo.png" alt="kajenn" width="190">
+     <img class="brand-dark" src="_static/branding/kajenn-logo-dark.png" alt="kajenn" width="190">
+   </div>
+
+
+*A spicy ASGI application server.*
+
+**kajenn** is an ASGI application server with the features FastAPI leaves to the user:
 sessions, authentication, websocket channels, background tasks, MCP and
 storage, plus a base server application included. One instance-isolated server
 mounts your applications and routes requests through `genro-routes

@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Opaque transport benchmark
 
 Measured on 2026-09-08 on macOS Darwin 25.6.0, arm64, Python 3.14.6. The repository base was `2465fcc47dadb1761ec1c09466c847715725daa9` on `feat/opaque-transport-issue72`, with the uncommitted issue 72 implementation in the working tree.
