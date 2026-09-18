@@ -224,6 +224,9 @@ for what lives under it.
 
 ## Next steps
 
+- **[Configuration is part of the application](configuration.md)** — why recipes
+  instead of YAML, and how component grammars make configuration extensible.
+
 - **[Core concepts](concepts.md)** — the server/application model, the demux
   rule, routing, and the design principles behind them.
 - **[Architecture overview](architecture/overview.md)** — the whole machine in

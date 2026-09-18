@@ -19,9 +19,9 @@ One instance-isolated server mounts your applications and routes requests
 through `genro-routes <https://pypi.org/project/genro-routes/>`_. No globals, no
 module state: the server is an object you build, run, and throw away.
 
-New here? Start with :doc:`getting-started`. Coming from another ASGI framework?
-Read :doc:`coming-from-fastapi`. For the whole machine in one page, read
-:doc:`architecture/overview`.
+New here? Start with :doc:`getting-started`, then :doc:`configuration`.
+Coming from another ASGI framework? Read :doc:`coming-from-fastapi`.
+For the whole machine in one page, read :doc:`architecture/overview`.
 
 These pages describe the development checkout. Source and release packages may
 differ; see :doc:`building` for local builds and publication status.
@@ -35,6 +35,7 @@ https://github.com/kajenn-org/kajenn-orchestra.
    :caption: Getting started
 
    getting-started
+   configuration
    coming-from-fastapi
    building
 

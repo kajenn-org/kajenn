@@ -1,5 +1,8 @@
 # Configuration
 
+New to recipes? Start with [Configuration is part of the application](../configuration.md)
+for the rationale, the comparison with YAML and an example spanning several components.
+
 ## What it does
 
 A configuration is a **recipe**: a Python class that writes down what the site is
@@ -214,7 +217,8 @@ missing config value 'server.nonexistent' (source: 'configuration.server?nonexis
 not written by the recipe, no signature default, no call-site default
 ```
 
-A server built bare — no `config=` — has `server.config is None`.
+A server built without `config=` still has a configuration handler: constructor
+arguments are folded into a shortcut recipe, together with the applicable defaults.
 
 ## What an application reads
 
