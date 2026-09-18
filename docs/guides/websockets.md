@@ -8,17 +8,17 @@ an application's `serve_websocket(scope, receive, send)` raw seam. The
 
 ```mermaid
 flowchart TD
-    hs([websocket handshake]) --> gate{"server state RUNNING?"}
-    gate -- no --> refuse["refused before accept"]
-    gate -- yes --> owner{"application defines<br/>serve_websocket?"}
-    owner -- yes --> raw["the raw seam<br/>owns accept, close, Origin,<br/>identity and its protocol"]
-    owner -- no --> wsx["WsxConnection<br/>checks Origin, home app,<br/>handshake_cookie, identity"]
-    wsx --> msg["WSX message → WSK route"]
-    msg --> idq{"envelope carries an id?"}
-    idq -- yes --> reply["one reply, same id, with a status"]
-    idq -- no --> none["an event — nobody answers"]
+    handshake["Handshake on a running server"] --> owner{"Raw handler?"}
+    owner -->|Yes| raw["Custom<br/>protocol"]
+    owner -->|No| wsx["WSX<br/>routing"]
 ```
 
+A server that is not running refuses the handshake. With a custom handler,
+the application owns acceptance, closing, Origin checks, identity and the protocol.
+Otherwise WSX checks the Origin, home application, handshake cookie and identity.
+
+WSX routes messages to application handlers. A message with an ID gets a reply
+with the same ID and a status; a message without an ID is an event and gets no reply.
 The HTTP middleware chain runs on neither the handshake nor the messages.
 
 ## Sending a WSX request

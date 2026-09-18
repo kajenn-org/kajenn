@@ -53,7 +53,7 @@ myst_fence_as_directive = ["mermaid"]
 
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
-html_css_files = ["branding.css"]
+html_css_files = ["branding.css", "readability.css"]
 html_logo = "_static/branding/kajenn-mark.png"
 
 intersphinx_mapping = {
@@ -74,3 +74,25 @@ autodoc_default_options = {
     "members": "",
     "show-inheritance": True,
 }
+
+# Compact diagrams share the documentation palette and use readable labels.
+mermaid_light_theme = "base"
+mermaid_dark_theme = "base"
+mermaid_init_config = {
+    "startOnLoad": False,
+    "theme": "base",
+    "themeVariables": {
+        "fontFamily": "Arial, sans-serif",
+        "fontSize": "16px",
+        "primaryColor": "#FFF8E8",
+        "primaryTextColor": "#24262B",
+        "primaryBorderColor": "#AD7410",
+        "lineColor": "#526174",
+        "secondaryColor": "#EDF1F5",
+        "tertiaryColor": "#FFFFFF",
+    },
+    "flowchart": {"nodeSpacing": 24, "rankSpacing": 28, "useMaxWidth": False},
+}
+
+mermaid_width = "auto"
+mermaid_height = "auto"
