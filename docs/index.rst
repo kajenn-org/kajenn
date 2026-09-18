@@ -19,7 +19,7 @@ mounts your applications and routes requests through `genro-routes
 server is an object you build, run, and throw away. Based on genropy history
 and genro-modules.
 
-New here? Start with :doc:`getting-started`. Coming from another ASGI framework?
+New here? Start with :doc:`getting-started`, then :doc:`configuration`. Coming from another ASGI framework?
 Read :doc:`coming-from-fastapi`. For common questions, see :doc:`faq`.
 
 These pages describe the development checkout. Source and release packages may
@@ -33,6 +33,7 @@ and the Django adapter in ``kajenn-django``; each has documentation of its own.
    :caption: Getting started
 
    getting-started
+   configuration
    concepts
    coming-from-fastapi
    faq
