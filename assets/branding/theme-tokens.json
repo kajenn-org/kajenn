@@ -1,0 +1,92 @@
+{
+  "status": "proposed",
+  "version": "0.2",
+  "date": "2026-09-18",
+  "description": "Shared kajenn application theme proposal for the server app and extensions. Logo assets approved; UI tokens proposed.",
+  "color": {
+    "brand.cayenne": "#C82625",
+    "brand.gold": "#F2AD19",
+    "brand.ink": "#24262B",
+    "background": "#F5F7FA",
+    "surface": "#FFFFFF",
+    "surface.subtle": "#EDF1F5",
+    "border": "#D5DCE5",
+    "border.control": "#7A8798",
+    "text": "#202B3A",
+    "text.secondary": "#526174",
+    "navigation": "#172C43",
+    "navigation.text": "#F4F7FB",
+    "action": "#245A86",
+    "action.hover": "#1B4669",
+    "action.text": "#FFFFFF",
+    "selected": "#E6EFF7",
+    "focus": "#245A86",
+    "success": "#176344",
+    "success.surface": "#E8F5EE",
+    "warning": "#785000",
+    "warning.surface": "#FFF3D6",
+    "error": "#A5232D",
+    "error.surface": "#FCECEF",
+    "info": "#245A86",
+    "info.surface": "#E6EFF7",
+    "unknown": "#526174",
+    "unknown.surface": "#EDF1F5",
+    "console.background": "#142234",
+    "console.text": "#E6EDF5",
+    "console.muted": "#ACBDCE",
+    "console.success": "#86D9AD",
+    "console.warning": "#FFD27B",
+    "console.error": "#FFADB4",
+    "chart.series1": "#245A86",
+    "chart.series2": "#7A4EA0",
+    "chart.series3": "#14766B",
+    "chart.series4": "#9B5A15"
+  },
+  "font": {
+    "ui": "system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
+    "mono": "ui-monospace, \"SFMono-Regular\", Consolas, \"Liberation Mono\", monospace",
+    "size": {
+      "caption": 12,
+      "body": 14,
+      "lead": 16,
+      "section": 20,
+      "page": 28
+    },
+    "weight": {
+      "regular": 400,
+      "medium": 500,
+      "semibold": 600
+    }
+  },
+  "space": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48
+  ],
+  "radius": {
+    "control": 6,
+    "panel": 8,
+    "dialog": 12
+  },
+  "height": {
+    "control": 36,
+    "row": 40,
+    "rowCompact": 32,
+    "touchTarget": 44,
+    "header": 64
+  },
+  "layout": {
+    "navigation": 232,
+    "inspector": 360,
+    "breakpointCompact": 1100,
+    "breakpointNarrow": 760
+  },
+  "motion": {
+    "shortMs": 120,
+    "normalMs": 180
+  }
+}

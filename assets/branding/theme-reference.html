@@ -1,0 +1,400 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>kajenn — visual identity and theme</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fa;color:#202b3a;font:14px/1.55 system-ui,sans-serif}header{background:#172c43;color:#f4f7fb;padding:24px}main{max-width:1120px;margin:auto;padding:24px}h1{font-size:28px;line-height:1.3}h2{font-size:22px;margin-top:40px}a{color:#245a86}a:focus-visible{outline:2px solid #245a86;outline-offset:3px}code{font-family:ui-monospace,monospace;overflow-wrap:anywhere}p,li{max-width:95ch}img{width:200px;height:240px;object-fit:contain;background:white;border-radius:8px;padding:12px}table{border-collapse:collapse;display:block;overflow-x:auto;max-width:100%;background:white;margin:16px 0}th,td{padding:10px 12px;border-bottom:1px solid #d5dce5;text-align:left;min-width:110px}th{background:#edf1f5}pre{overflow-x:auto}.swatches{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}.swatch{border:1px solid #d5dce5;background:white;border-radius:6px;overflow:hidden}.swatch strong,.swatch code{display:block;padding:4px 10px;overflow-wrap:anywhere}.samples{display:flex;gap:12px;flex-wrap:wrap;padding:20px;background:white;border:1px solid #d5dce5;border-radius:8px;margin:16px 0}.sample{padding:7px 12px;border:1px solid #7a8798;border-radius:6px}.primary{background:#245a86;color:white;border-color:#245a86}.success{color:#176344;background:#e8f5ee}.warning{color:#785000;background:#fff3d6}.error{color:#a5232d;background:#fcecef}.unknown{color:#526174;background:#edf1f5}.terminal{background:#142234;color:#e6edf5;padding:20px;border-radius:8px}.note{color:#526174;font-size:12px}@media(max-width:600px){main{padding:16px}h1{font-size:24px}}@media print{body{background:white}header{background:white;color:#202b3a}.swatch,.sample,.terminal{print-color-adjust:exact}h2{break-after:avoid}}
+</style></head><body><header><strong>kajenn · shared graphic coordination · 0.2</strong><div>Approved logos · proposed interface theme</div></header><main><h1>Visual reference sheet</h1><p>This is a static design document, not a Gramlot application. Component samples do not execute actions.</p><h2>Palette</h2><div class="swatches"><div class="swatch"><div style="background:#C82625;height:48px"></div><strong>brand.cayenne</strong><code>#C82625</code></div><div class="swatch"><div style="background:#F2AD19;height:48px"></div><strong>brand.gold</strong><code>#F2AD19</code></div><div class="swatch"><div style="background:#24262B;height:48px"></div><strong>brand.ink</strong><code>#24262B</code></div><div class="swatch"><div style="background:#F5F7FA;height:48px"></div><strong>background</strong><code>#F5F7FA</code></div><div class="swatch"><div style="background:#FFFFFF;height:48px"></div><strong>surface</strong><code>#FFFFFF</code></div><div class="swatch"><div style="background:#EDF1F5;height:48px"></div><strong>surface.subtle</strong><code>#EDF1F5</code></div><div class="swatch"><div style="background:#D5DCE5;height:48px"></div><strong>border</strong><code>#D5DCE5</code></div><div class="swatch"><div style="background:#7A8798;height:48px"></div><strong>border.control</strong><code>#7A8798</code></div><div class="swatch"><div style="background:#202B3A;height:48px"></div><strong>text</strong><code>#202B3A</code></div><div class="swatch"><div style="background:#526174;height:48px"></div><strong>text.secondary</strong><code>#526174</code></div><div class="swatch"><div style="background:#172C43;height:48px"></div><strong>navigation</strong><code>#172C43</code></div><div class="swatch"><div style="background:#F4F7FB;height:48px"></div><strong>navigation.text</strong><code>#F4F7FB</code></div><div class="swatch"><div style="background:#245A86;height:48px"></div><strong>action</strong><code>#245A86</code></div><div class="swatch"><div style="background:#1B4669;height:48px"></div><strong>action.hover</strong><code>#1B4669</code></div><div class="swatch"><div style="background:#FFFFFF;height:48px"></div><strong>action.text</strong><code>#FFFFFF</code></div><div class="swatch"><div style="background:#E6EFF7;height:48px"></div><strong>selected</strong><code>#E6EFF7</code></div><div class="swatch"><div style="background:#245A86;height:48px"></div><strong>focus</strong><code>#245A86</code></div><div class="swatch"><div style="background:#176344;height:48px"></div><strong>success</strong><code>#176344</code></div><div class="swatch"><div style="background:#E8F5EE;height:48px"></div><strong>success.surface</strong><code>#E8F5EE</code></div><div class="swatch"><div style="background:#785000;height:48px"></div><strong>warning</strong><code>#785000</code></div><div class="swatch"><div style="background:#FFF3D6;height:48px"></div><strong>warning.surface</strong><code>#FFF3D6</code></div><div class="swatch"><div style="background:#A5232D;height:48px"></div><strong>error</strong><code>#A5232D</code></div><div class="swatch"><div style="background:#FCECEF;height:48px"></div><strong>error.surface</strong><code>#FCECEF</code></div><div class="swatch"><div style="background:#245A86;height:48px"></div><strong>info</strong><code>#245A86</code></div><div class="swatch"><div style="background:#E6EFF7;height:48px"></div><strong>info.surface</strong><code>#E6EFF7</code></div><div class="swatch"><div style="background:#526174;height:48px"></div><strong>unknown</strong><code>#526174</code></div><div class="swatch"><div style="background:#EDF1F5;height:48px"></div><strong>unknown.surface</strong><code>#EDF1F5</code></div><div class="swatch"><div style="background:#142234;height:48px"></div><strong>console.background</strong><code>#142234</code></div><div class="swatch"><div style="background:#E6EDF5;height:48px"></div><strong>console.text</strong><code>#E6EDF5</code></div><div class="swatch"><div style="background:#ACBDCE;height:48px"></div><strong>console.muted</strong><code>#ACBDCE</code></div><div class="swatch"><div style="background:#86D9AD;height:48px"></div><strong>console.success</strong><code>#86D9AD</code></div><div class="swatch"><div style="background:#FFD27B;height:48px"></div><strong>console.warning</strong><code>#FFD27B</code></div><div class="swatch"><div style="background:#FFADB4;height:48px"></div><strong>console.error</strong><code>#FFADB4</code></div><div class="swatch"><div style="background:#245A86;height:48px"></div><strong>chart.series1</strong><code>#245A86</code></div><div class="swatch"><div style="background:#7A4EA0;height:48px"></div><strong>chart.series2</strong><code>#7A4EA0</code></div><div class="swatch"><div style="background:#14766B;height:48px"></div><strong>chart.series3</strong><code>#14766B</code></div><div class="swatch"><div style="background:#9B5A15;height:48px"></div><strong>chart.series4</strong><code>#9B5A15</code></div></div><h2>Component samples</h2><div class="samples"><span class="sample primary">Apply changes</span><span class="sample">Cancel</span><span class="sample success">✓ Healthy</span><span class="sample warning">! Warning</span><span class="sample error">× Error</span><span class="sample unknown">? Unreachable</span></div><div class="terminal"><pre>INSPECTION · illustrative context
+Target: application-01
+No commands are executed by this document.</pre></div><p class="note">Use the original token file for implementation. The complete shared guide follows.</p><hr><h1>kajenn — visual identity and application theme</h1>
+<p>Version 0.2 · Last updated: 2026-09-18 · Status: approved logo assets; proposed interface theme.</p>
+<p>This guide is the shared visual reference for the kajenn server application and extensions. It defines brand usage, colors, typography, spacing and component behavior. It is a design specification, not an installed Gramlot theme.</p>
+<p>The logo direction and lighter lettering have been selected by the project owner. Interface tokens remain proposals to validate on the first working Gramlot screen.</p>
+<ul>
+<li><a href="theme-reference.html">Visual reference</a></li>
+<li><a href="theme-tokens.json">Reusable theme tokens</a></li>
+<li><a href="contrast-check.json">Calculated contrast checks</a></li>
+</ul>
+<h2>1. Brand assets</h2>
+<table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>File</th>
+<th>Dimensions</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Standalone symbol</td>
+<td><a href="kajenn-mark.png">kajenn-mark.png</a></td>
+<td>1254 × 1254</td>
+<td>Navigation, compact branding, locations already showing the product name</td>
+</tr>
+<tr>
+<td>Symbol with wordmark</td>
+<td><a href="kajenn-logo.png">kajenn-logo.png</a></td>
+<td>1145 × 1374</td>
+<td>Sign-in, product information, introductory pages on light backgrounds</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="kajenn symbol" src="kajenn-mark.png" /></p>
+<p><img alt="kajenn logo with wordmark" src="kajenn-logo.png" /></p>
+<p>Both PNG files contain transparency. The symbol combines a red coordinating curve and a single gold curve, suggesting heat and movement. Preserve the orientation, proportions, colors and transparent margins. Do not stretch, rotate, decorate or recolor it to indicate operational state.</p>
+<p>The selected wordmark is lowercase, with lighter weight and more open spacing than the original version. It is raster lettering rather than an identified font. It is not a substitute for choosing the application's UI font. A future common vector or lettering master is needed for exact reproduction across related marks.</p>
+<p>Use a 40–48 px image box in the header and assess the visible symbol, since the PNG includes transparent margins. Start the full logo at 160 px wide and check the lettering at the actual display size. Leave at least 8 px clear space around a header-sized image box. Do not place notification badges over the symbol.</p>
+<p>On dark backgrounds, use the standalone symbol with a separate light UI product label. The dark wordmark asset is intended for light backgrounds. Dedicated favicon, monochrome and vector masters are not included; embedding a PNG in SVG does not create a vector master.</p>
+<h2>2. Graphic references</h2>
+<table>
+<thead>
+<tr>
+<th>Reference</th>
+<th>Relevant qualities</th>
+<th>Boundary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kajenn mark</td>
+<td>Flowing curves, cayenne red, warm gold</td>
+<td>Primary product identity</td>
+</tr>
+<tr>
+<td>Gramlot mark</td>
+<td>Organic movement, open space, gold linking to blue</td>
+<td>Framework reference; not a replacement for kajenn branding</td>
+</tr>
+<tr>
+<td>Gramlot showcase</td>
+<td>Clear structure, blue navigation, neutral surfaces</td>
+<td>Experimental reference, not an approved theme contract</td>
+</tr>
+<tr>
+<td>Gramlot inspector</td>
+<td>Trees, compact panels and contextual tools</td>
+<td>Do not automatically inherit very small type or tight controls</td>
+</tr>
+</tbody>
+</table>
+<p><img alt="Gramlot reference mark" src="references/gramlot-logo.png" /></p>
+<p>The Gramlot image is an unchanged reference copy from the local Gramlot site. The interface blue proposed below is not a sampled or certified brand color from that logo.</p>
+<h2>3. Visual principles</h2>
+<p>Use a calm, light working surface suitable for long administrative sessions. Reserve the red and gold primarily for brand identity. Use blue for navigation, selection and primary actions. Roles change permissions and available navigation, not the visual language.</p>
+<p>Separate descriptive content, observed state and available actions. Prefer headings, whitespace and restrained dividers over repeated decorative cards. Use bounded surfaces only when they group related data or operations.</p>
+<p>Avoid large gradients, glass effects, diffuse decorative shadows, arbitrary colored borders and dashboards consisting entirely of tiles. The logo's curves do not require curved data grids or ornamental controls.</p>
+<h2>4. Color tokens</h2>
+<p>The complete palette is in <a href="theme-tokens.json">theme-tokens.json</a>. Brand values are design targets; raster pixels may vary slightly.</p>
+<table>
+<thead>
+<tr>
+<th>Token</th>
+<th>Value</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>brand.cayenne</code></td>
+<td><code>#C82625</code></td>
+<td>Brand red</td>
+</tr>
+<tr>
+<td><code>brand.gold</code></td>
+<td><code>#F2AD19</code></td>
+<td>Brand gold and limited decorative accents</td>
+</tr>
+<tr>
+<td><code>brand.ink</code></td>
+<td><code>#24262B</code></td>
+<td>Wordmark charcoal</td>
+</tr>
+<tr>
+<td><code>background</code></td>
+<td><code>#F5F7FA</code></td>
+<td>Page background</td>
+</tr>
+<tr>
+<td><code>surface</code></td>
+<td><code>#FFFFFF</code></td>
+<td>Work areas and forms</td>
+</tr>
+<tr>
+<td><code>surface.subtle</code></td>
+<td><code>#EDF1F5</code></td>
+<td>Grouping surfaces and table headers</td>
+</tr>
+<tr>
+<td><code>border</code></td>
+<td><code>#D5DCE5</code></td>
+<td>Decorative separators</td>
+</tr>
+<tr>
+<td><code>border.control</code></td>
+<td><code>#7A8798</code></td>
+<td>Essential control boundaries</td>
+</tr>
+<tr>
+<td><code>text</code></td>
+<td><code>#202B3A</code></td>
+<td>Primary text</td>
+</tr>
+<tr>
+<td><code>text.secondary</code></td>
+<td><code>#526174</code></td>
+<td>Supporting text and metadata</td>
+</tr>
+<tr>
+<td><code>navigation</code></td>
+<td><code>#172C43</code></td>
+<td>Header and navigation background</td>
+</tr>
+<tr>
+<td><code>navigation.text</code></td>
+<td><code>#F4F7FB</code></td>
+<td>Text on navigation</td>
+</tr>
+<tr>
+<td><code>action</code></td>
+<td><code>#245A86</code></td>
+<td>Primary actions, links and light-surface focus</td>
+</tr>
+<tr>
+<td><code>action.hover</code></td>
+<td><code>#1B4669</code></td>
+<td>Primary action hover</td>
+</tr>
+<tr>
+<td><code>action.text</code></td>
+<td><code>#FFFFFF</code></td>
+<td>Text on primary actions</td>
+</tr>
+<tr>
+<td><code>selected</code></td>
+<td><code>#E6EFF7</code></td>
+<td>Selected item background</td>
+</tr>
+</tbody>
+</table>
+<p>Do not use gold text on white. Selection combines a pale blue background, blue text and an additional position indicator. Inline links are underlined. Do not derive error or warning colors automatically from the brand palette.</p>
+<h2>5. Semantic states and charts</h2>
+<table>
+<thead>
+<tr>
+<th>State</th>
+<th>Foreground</th>
+<th>Background</th>
+<th>Additional indication</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Healthy / success</td>
+<td><code>#176344</code></td>
+<td><code>#E8F5EE</code></td>
+<td>Check symbol and explanatory label</td>
+</tr>
+<tr>
+<td>Warning</td>
+<td><code>#785000</code></td>
+<td><code>#FFF3D6</code></td>
+<td>Warning symbol and cause</td>
+</tr>
+<tr>
+<td>Error</td>
+<td><code>#A5232D</code></td>
+<td><code>#FCECEF</code></td>
+<td>Error symbol and cause</td>
+</tr>
+<tr>
+<td>Information / running</td>
+<td><code>#245A86</code></td>
+<td><code>#E6EFF7</code></td>
+<td>Information or activity indicator and text</td>
+</tr>
+<tr>
+<td>Unknown / unreachable</td>
+<td><code>#526174</code></td>
+<td><code>#EDF1F5</code></td>
+<td>Unknown indicator and last contact</td>
+</tr>
+</tbody>
+</table>
+<p>Brand red does not mean failure. Destructive actions use an explicit label and error styling. Unknown is not zero. Disabled, empty, loading, unauthorized and failed states have distinct messages.</p>
+<p>For charts, use one blue series when sufficient. Comparison series use the four <code>chart.series*</code> tokens with labels and distinguishable markers or line patterns. Preserve category mappings across pages. Keep state colors consistent between charts, lists and details. Label axes, units and time windows. Avoid rainbow palettes, 3D effects and decorative animation.</p>
+<h2>6. Typography</h2>
+<p>Use the system font stack in the token file; no remote font is required. The logo's raster lettering does not define the UI typeface.</p>
+<table>
+<thead>
+<tr>
+<th>Element</th>
+<th>Size / line height</th>
+<th>Weight</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Page title</td>
+<td>28 / 36 px</td>
+<td>600</td>
+</tr>
+<tr>
+<td>Section title</td>
+<td>20 / 28 px</td>
+<td>600</td>
+</tr>
+<tr>
+<td>Introductory copy</td>
+<td>16 / 24 px</td>
+<td>400</td>
+</tr>
+<tr>
+<td>Body and controls</td>
+<td>14 / 21 px</td>
+<td>400; important labels 500</td>
+</tr>
+<tr>
+<td>Metadata</td>
+<td>12 / 18 px</td>
+<td>400</td>
+</tr>
+<tr>
+<td>Logs, terminal, identifiers and paths</td>
+<td>13 / 19 px, monospace</td>
+<td>400</td>
+</tr>
+</tbody>
+</table>
+<p>Do not reduce useful information below 12 px. Right-align table numbers and use tabular figures. Use monospace for technical identifiers and paths. Titles use sentence case. Display units for load and duration and the relevant time zone for timestamps. An unavailable value is not rendered as zero.</p>
+<h2>7. Geometry, density and responsive layout</h2>
+<p>Spacing scale: 4, 8, 12, 16, 24, 32 and 48 px. Corner radii: 6 px for controls, 8 px for panels, 12 px for dialogs. Borders are 1 px. Shadows are reserved for overlays such as menus and dialogs.</p>
+<p>Proposed desktop shell: 64 px header, 232 px navigation, 24 px content padding, 32 px between sections. A contextual detail panel starts at 360 px and may be resizable when supported. Tables can use the full available width.</p>
+<p>Standard controls are 36 px high; table rows 40 px. Compact mode uses 32 px rows without shrinking the text. Touch targets are at least 44 px. Choose density consistently for a view, not independently for each component.</p>
+<p>Below 1100 px, move details below the list or into a dedicated view. Below 760 px, navigation becomes a revealable panel. Wide tables may scroll within their region; titles and primary actions remain reachable. Zoom and long labels must not hide operations.</p>
+<h2>8. Shared components</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Primary button</td>
+<td>One per action group; blue, white text, precise action verb</td>
+</tr>
+<tr>
+<td>Secondary button</td>
+<td>White surface, visible control border, dark text</td>
+</tr>
+<tr>
+<td>Destructive action</td>
+<td>Name the affected object; color alone is insufficient</td>
+</tr>
+<tr>
+<td>Field</td>
+<td>Persistent label, supporting text and adjacent validation message</td>
+</tr>
+<tr>
+<td>Badge</td>
+<td>Short status label; not styled as an interactive control</td>
+</tr>
+<tr>
+<td>Table</td>
+<td>Quiet header, horizontal separators, distinct hover and selection</td>
+</tr>
+<tr>
+<td>Tree</td>
+<td>Expansion and selection are separate; show the current path</td>
+</tr>
+<tr>
+<td>Detail panel</td>
+<td>Title, identity, important values and contextual actions</td>
+</tr>
+<tr>
+<td>Dialog</td>
+<td>Operational title, target context, action and cancellation</td>
+</tr>
+<tr>
+<td>Message</td>
+<td>Outcome, known cause and useful next step; important errors persist</td>
+</tr>
+<tr>
+<td>Tooltip</td>
+<td>Supplementary information only</td>
+</tr>
+</tbody>
+</table>
+<p>Hover, keyboard focus, pressed, selected and disabled are distinct states. Use a 2 px blue focus ring with 2 px offset on light surfaces and a light ring on dark navigation. Disabled controls retain readable content and explain their unavailability where needed; avoid global opacity that makes all content unreadable.</p>
+<p>Use one consistent icon family: a 20/24 px grid and approximately 1.75–2 px strokes. Reuse the family supported by the chosen runtime; the actual library is not yet selected. Do not mix emoji and unrelated filled/outline styles for primary commands. Decorative icons are hidden from assistive technology; icon-only buttons have accessible names.</p>
+<h2>9. Operational views</h2>
+<p><strong>Description and versions:</strong> short introductions, installation facts and application descriptions. Use the complete logo on the information page rather than in every panel.</p>
+<p><strong>Mounted applications:</strong> list name, code and mount, then open contextual details. Plugin configuration retains the selected application and entry point, with a tree and parameter panel.</p>
+<p><strong>Requests:</strong> separate active requests, completed requests and summaries. Keep filters in a consistent order; show units and the observed time window. During disconnection, retain the last snapshot and show its age.</p>
+<p><strong>Registries:</strong> use hierarchical navigation and details, distinguishing value, type and provenance. Do not expose private values merely to make an inspector more complete.</p>
+<p><strong>Runtime configuration:</strong> distinguish effective values from drafts. Show hot-changeable, read-only or restart-required states only when declared by the service. Runtime application and persistent saving have separate outcomes.</p>
+<p><strong>Logs:</strong> monospace timestamp, severity, source and message. Color the severity indicator, not the entire row. Keep search and pause controls visible; do not force scrolling while someone reads earlier entries.</p>
+<p><strong>Inspection terminal:</strong> use the dedicated dark console tokens, a visible target context, selectable output and command status. A terminal panel does not make the whole application dark. The inspection language and commands are defined separately.</p>
+<p><strong>Extension views:</strong> preserve the same information hierarchy, state semantics, density and contextual navigation. Show units and freshness for metrics. Keep partial outcomes visible per target when an operation affects multiple targets. Illustrative values in previews must be labeled as examples.</p>
+<h2>10. Gramlot integration</h2>
+<p>This guide and its static reference sheet are design material, not a Gramlot application or executable PoC. The implementation uses Source, Data Bags, bindings, controllers, resolvers and shared components. A theme is not a reason to introduce manual DOM handling or a parallel state system.</p>
+<p>Centralize the tokens and map them to component contracts. Check Shadow DOM boundaries before claiming a CSS variable is sufficient. The following names were observed in the local PoC and must be verified against the chosen runtime version:</p>
+<table>
+<thead>
+<tr>
+<th>kajenn token</th>
+<th>Observed Gramlot hook</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>UI font and body size</td>
+<td><code>--font-family</code>, <code>--font-size</code></td>
+</tr>
+<tr>
+<td>Surface / primary text</td>
+<td><code>--color-bg</code>, <code>--gray-900</code></td>
+</tr>
+<tr>
+<td>Secondary text</td>
+<td><code>--gray-600</code>, <code>--gnrfieldlabel-color</code></td>
+</tr>
+<tr>
+<td>Action / focus</td>
+<td><code>--accent-color</code>, <code>--field-focus-border</code></td>
+</tr>
+<tr>
+<td>Control border</td>
+<td><code>--field-border</code></td>
+</tr>
+<tr>
+<td>Decorative border</td>
+<td><code>--panel-border</code>, <code>--box-border</code></td>
+</tr>
+<tr>
+<td>Control radius</td>
+<td><code>--form-field-radius</code></td>
+</tr>
+<tr>
+<td>Selection background</td>
+<td><code>--tree-selected-bg</code></td>
+</tr>
+<tr>
+<td>Inspector surfaces</td>
+<td><code>--gramlot-inspector-bg</code>, <code>--gramlot-inspector-surface</code>, <code>--gramlot-inspector-text</code>, <code>--gramlot-inspector-accent</code></td>
+</tr>
+</tbody>
+</table>
+<p>This is a preliminary integration map, not a stable API contract. Missing reusable capabilities belong in the framework. Application styling is separate from the Read the Docs theme specified for Gramlot documentation sites.</p>
+<h2>11. Readability and verification</h2>
+<p>Project targets: at least 4.5:1 contrast for ordinary text and 3:1 for essential control borders and focus indicators against the specified surfaces. The opaque pairs in <code>contrast-check.json</code> were calculated; this does not certify accessibility of the future application.</p>
+<p>Check keyboard navigation, visible focus, accessible labels, 200 percent zoom, narrow viewports, long labels, missing data, offline states and high-volume logs in the first prototype. Never encode meaning only through color. Transitions last 120–180 ms and respect reduced-motion preferences; avoid continuous decorative pulsing.</p>
+<h2>12. Decisions and maintenance</h2>
+<p>Approved: logo direction and selected raster wordmarks. Proposed: UI palette, dimensions, density and typography. Pending: small-size optimization, common lettering/vector master and monochrome output. A full dark application theme is outside this initial proposal; only dark navigation and console surfaces are specified.</p>
+<p>New pages use the same tokens, icon family, states and density without arbitrary local colors. Update this guide, the visual sheet and the token file together when shared decisions change. Extensions reference this guide and document only their identity differences and domain-specific applications.</p>
+<h2>13. Sources</h2>
+<ul>
+<li><a href="README.md">Brand asset index</a>, <a href="kajenn-mark.png">standalone mark</a>, <a href="kajenn-logo.png">logo with wordmark</a>.</li>
+<li><a href="references/gramlot-logo.png">Gramlot reference copy</a>, sourced from <code>/Users/gporcari/Sviluppo/gramlot/gramlot-site/assets/logo.png</code>.</li>
+<li>Observed showcase: <code>/Users/gporcari/Sviluppo/gramlot/gramlot-poc/src/gramlot/showcase/showcase.css</code>.</li>
+<li>Observed theme and inspector: <code>/Users/gporcari/Sviluppo/gramlot/gramlot-poc/js/pages/src/theme.css</code> and <code>inspector-theme.css</code>.</li>
+<li>Architecture boundaries: <code>/Users/gporcari/Sviluppo/gramlot/gramlot/docs/00-constitution.md</code>.</li>
+</ul></main></body></html>

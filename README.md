@@ -1,11 +1,21 @@
 # kajenn
 
+<p align="center">
+  <img src="assets/branding/kajenn-logo.png" alt="kajenn" width="200">
+</p>
+
+*A spicy ASGI application server.*
+
 **Status**: Pre-Alpha · version 0.0.0 reserves the name on PyPI. The server arrives with 0.1.0.
 
-kajenn is an ASGI server with the features FastAPI leaves to the user — sessions, authentication,
+kajenn is an ASGI application server with the features FastAPI leaves to the user — sessions, authentication,
 websocket channels, tasks, MCP, storage — and a base server application included.
 
 Based on genropy history and genro-modules.
+
+## Why kajenn?
+
+Pronounced “KAY-jen”, kajenn plays on cayenne and Cajun: spicy, with rhythm.
 
 ## Packages in this distribution
 
