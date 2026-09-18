@@ -29,14 +29,14 @@ the store DESCRIPTOR the configuration declares — ``store_class`` (``FileUserS
 defaulting to ``site:users`` / ``site:api_keys``. The stores are built AFTER
 ``super().__init__()`` returns — by then the cooperative chain has run and
 ``self.storage`` exists, since AuthMixin precedes StorageMixin in the MRO. The
-``user_store`` / ``api_key_store`` properties return ``None`` when unconfigured
-(the shape ``login`` already reads). A descriptor without storage on the server
-is a boot error (no silent fallback).
+``user_store`` / ``api_key_store`` properties return ``None`` when
+unconfigured. A descriptor without storage on the server is a boot error
+(no silent fallback).
 
-The server creates NO user (owner, 2026-09-12): ``admin_password=`` and the
-boot-time UPSERT of a bootstrap admin are gone, with the grammar word that fed
-them. Authentication belongs to the applications, and a deployment that needs a
-first identity declares the store class that carries it.
+The server creates NO user at boot: there is no ``admin_password=`` kwarg,
+and no bootstrap identity is written. Authentication belongs to the
+applications, and a deployment that needs a first identity declares the
+store class that carries it.
 
 It overrides the §4 contract method ``authenticate(request)`` with the §5.5
 identity precedence: an ``Authorization`` header wins (API-first) — its
@@ -69,9 +69,9 @@ class AuthMixin:
     ``users`` / ``tokens`` — the store descriptor (``store_class`` plus its
     kwargs) for the identity/api-key stores.
 
-    The server creates NO user: authentication belongs to the applications
-    (owner, 2026-09-12). A deployment that needs a first identity declares the
-    store class that carries it.
+    The server creates NO user at boot: authentication belongs to the
+    applications. A deployment that needs a first identity declares the store
+    class that carries it.
     """
 
     def __init__(self, **kwargs: Any) -> None:

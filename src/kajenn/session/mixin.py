@@ -30,12 +30,12 @@ a handler attaches the identity through the request facade
 login, so the cookie already held by the client stays valid.
 
 ``save_session=`` arms the pickle snapshot, the development survival line the
-CLI wires from ``serve --name`` (``~/.kajenn/sessions/<name>.pickle``):
-``__call__`` intercepts the ``lifespan`` scope exactly like ``TaskMixin`` —
-``lifespan.py`` is NEVER touched (ratified) — loading the snapshot before the
-protocol runs (an absent file starts empty) and saving EVERY live session,
-data Bag included, when the protocol completes at shutdown. Unarmed, every
-scope passes straight through.
+CLI wires from ``serve --name``: ``<site home>/data/sessions/<name>.pickle``,
+or ``<KAJENN_HOME>/sessions/<name>.pickle`` with no site home. ``__call__``
+intercepts the ``lifespan`` scope exactly like ``TaskMixin`` — ``lifespan.py``
+is NEVER touched — loading the snapshot before the protocol runs (an absent
+file starts empty) and saving EVERY live session, data Bag included, when the
+protocol completes at shutdown. Unarmed, every scope passes straight through.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ class SessionMixin:
         return self._save_session
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Hook the lifespan to load/save the session snapshot (D16 pattern).
+        """Hook the lifespan to load/save the session snapshot.
 
         Armed (``save_session=`` given), the snapshot is loaded before the
         lifespan protocol runs — an absent file starts empty — and saved when

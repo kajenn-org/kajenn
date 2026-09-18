@@ -24,8 +24,8 @@ primary login — the one the auth chain resolves and the one ``avatar()`` retur
 with no argument. Further keys are *sub-logins*: an identity a page acquired
 inside the same session (a second-system credential, an impersonation, a
 delegated account) that must coexist with the root one instead of replacing it.
-Page trees will reference the slot they are dressed in by ``avatar_key``, so the
-identity of a page is a lookup in this collection, never a copy of it.
+A consumer holding a slot key reads the identity through this collection, never
+through a copy of it.
 
 ``avatar(key)`` returns ``Avatar | None`` — ``None`` is an unclaimed slot, and an
 absent root slot is an anonymous session; capturing an identity is an explicit
@@ -35,7 +35,7 @@ is no detach: a slot claimed in a session stays claimed for its lifetime.
 ``data`` is a ``Bag`` for arbitrary application data. ``touch()`` refreshes
 ``last_access``; ``is_expired()`` measures the TTL from it.
 
-Write-back is explicit (D24): a session persists at request end ONLY when
+Write-back is explicit: a session persists at request end ONLY when
 ``dirty`` is set. ``attach_avatar`` marks it dirty (a login must survive), and a
 handler mutating ``data`` marks it dirty with ``mark_dirty()`` — there is no
 write-through. ``touch()`` is NOT a mutation for this purpose: the ``last_access``

@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Auth capability package: the credential core and the mixin.
+"""Auth capability package: the credential core, the identity stores, the mixin.
 
-``AuthCore`` (basic/bearer/jwt verification) and ``AuthMixin`` (the §5.5
-identity precedence over sessions). ``AuthMiddleware`` — the chain entry point
-armed by the mixin — lives in ``middleware/authentication.py``. The core
-authenticates by header credentials and by the session avatar, and never asks
-for a user and a password: the login surface — the self-describing
-``AuthMethod``/``PasswordMethod``, ``OidcMethod`` and the ``safe_next_path``
-open-redirect guard — belongs to the ``kajenn_server_app`` package.
+``AuthCore`` verifies basic/bearer/jwt credentials; ``AuthMixin`` composes the
+capability onto a server and applies the §5.5 identity precedence over sessions;
+``UserStore`` and ``ApiKeyStore`` are the local identity and api-key registries
+with their filesystem backends. ``AuthMiddleware`` — the chain entry point armed
+by the mixin — lives in ``middleware/authentication.py``.
+
+The package authenticates by header credentials and by the session avatar, and
+never asks a human for a user and a password: an interactive login surface is
+built by the applications mounted on the server, not here.
 """
 
 from __future__ import annotations

@@ -25,13 +25,13 @@ dispatch — and routes ONLY ``http`` scopes through it: ``lifespan`` and
 ``websocket`` go straight to ``super().__call__``. A composition WITHOUT the
 mixin simply lacks the attributes — a different type, not a ghost.
 
-``default_registry()`` returns a FRESH dict per call ({"errors":
-ErrorMiddleware, "logging": LoggingMiddleware, "cors": CORSMiddleware,
-"auth": AuthMiddleware, "session": SessionMiddleware}) — deliberately a function so no module-level
-mutable registry exists.
-It lives in this module, not in ``base.py``, because ``base.py`` cannot import
-the concrete middleware modules (which subclass ``BaseMiddleware``) without a
-cycle.
+``default_registry()`` returns a FRESH ``{name: class}`` dict per call —
+deliberately a function, so no module-level mutable registry exists and one
+server's registry can never be mutated by another. It lives in this module,
+not in ``base.py``, because ``base.py`` cannot import the concrete
+middleware modules (which subclass ``BaseMiddleware``) without a cycle.
+Every entry it carries is a middleware shipped with the core; the
+``middleware_registry=`` kwarg merges extra entries over it.
 """
 
 from __future__ import annotations
