@@ -48,6 +48,8 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # MyST: the guides and narrative pages are Markdown; the toctree skeleton is rst.
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 myst_heading_anchors = 3
+# ":::{admonition}" blocks (the "Under review" markers) are colon fences.
+myst_enable_extensions = ["colon_fence"]
 # A ```mermaid fence in Markdown is handed to the ``mermaid`` directive.
 myst_fence_as_directive = ["mermaid"]
 
