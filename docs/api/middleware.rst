@@ -1,8 +1,10 @@
 Middleware
 ==========
 
-The middleware base and mixin, and the shipped middleware: errors, well-known,
-logging, CORS, authentication, session.
+The middleware base and mixin, and the shipped middleware: errors, logging,
+CORS, authentication, session. Hidden paths and ``.well-known`` are not a
+middleware — they are the server's own demux rule; see
+:doc:`../guides/hidden-paths`.
 
 .. automodule:: kajenn.middleware.base
    :members:

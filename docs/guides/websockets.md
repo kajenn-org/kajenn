@@ -1,19 +1,25 @@
 # WebSockets: WSX and raw hosting
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 The core supports two ways to serve a WebSocket: its WSX message protocol, and
 an application's `serve_websocket(scope, receive, send)` raw seam. The
 `websockets` backend required by uvicorn is a package dependency.
 
 ## At a glance
 
-```{figure} ../_static/diagrams/websocket-flow.svg
-:figclass: flow-diagram
-:alt: Both WebSocket modes share the server-state gate. Raw applications own their protocol; WSX supplies its own handshake and routes messages.
-
-The raw seam and WSX have different protocol owners. Neither should be confused with the ordinary HTTP middleware path.
+```mermaid
+flowchart TD
+    hs([websocket handshake]) --> gate{"server state RUNNING?"}
+    gate -- no --> refuse["refused before accept"]
+    gate -- yes --> owner{"application defines<br/>serve_websocket?"}
+    owner -- yes --> raw["the raw seam<br/>owns accept, close, Origin,<br/>identity and its protocol"]
+    owner -- no --> wsx["WsxConnection<br/>checks Origin, home app,<br/>handshake_cookie, identity"]
+    wsx --> msg["WSX message → WSK route"]
+    msg --> idq{"envelope carries an id?"}
+    idq -- yes --> reply["one reply, same id, with a status"]
+    idq -- no --> none["an event — nobody answers"]
 ```
+
+The HTTP middleware chain runs on neither the handshake nor the messages.
 
 ## Sending a WSX request
 
@@ -60,8 +66,10 @@ Non-WSX text and binary frames are logged and dropped.
 
 ## Handshake and limits
 
-The handshake path selects a home application. An unknown home or a missing
-cookie demanded by `handshake_cookie` is accepted and then closed with code 1008.
+The handshake path goes through the server's demux to select a home
+application. An unknown home, or a missing cookie the application demands
+through its `handshake_cookie` property, is accepted and then closed with code
+1008, so the client can read why.
 A hostile Origin is refused before accept. With no allow-list, a browser's
 Origin must match the handshake Host; clients without an Origin header pass.
 Configure browser origins explicitly when necessary:
@@ -94,18 +102,26 @@ its protocol, and cleanup; the WSX gate and registry are not used. The server's
 not-running admission gate still applies before delegation. See the adapter in
 [Mounting applications](applications.md).
 
-## SPA page channels and push
+## Page channels and server push
 
-A `SpaApplication` handshake requires its `spa_connection_id` cookie. A page
-first calls `/<mount>/_wsx/openchannel` (omit the mount for a root app), carrying
-`page_id` in the envelope. The application validates ownership and records the
-channel; only a 200 response binds the page to that socket. A page RPC before
-this step is refused with 409. Page requests follow ordinary worker placement;
-a sequential page's requests serialize on that page's queue.
+The core offers one seam for addressing a single page later: a client sends
+`/<mount>/_wsx/openchannel` (omit the mount for a root application) carrying
+`page_id` in the envelope. The **application** decides whether that page may
+speak on that socket, and only a `200` answer makes the connection bind it in
+`WebSocketRegistry`. `_wsx` is the reserved first segment the connection reads
+after the mount is stripped; everything else about the exchange belongs to the
+application.
 
-`await server.send_message(page_id, path, data)` writes an event to a bound page
-and returns a boolean: `True` means written to the socket, not executed by the
-browser. Worker code can call `worker.send_message(...)`, which forwards through
-the commander. Datachanges and database events are not automatically converted
-to push notifications by this API. The worker side is documented in
-`kajenn-orchestra`.
+```python
+delivered = await server.send_message(page_id, path, data)
+```
+
+`send_message` writes one message of the server's own — method `WSK`, no `id`,
+so nobody answers it — onto the socket the page is bound to. It returns `True`
+when the message was written to a socket and `False` when that page speaks on
+none or its socket is already closed. **Delivered means written**: nothing waits
+for the client to act on it. `send_serialized_message` is the same thing for a
+value that is already a `SerializedWsxPayload`.
+
+Nothing here converts application events into push notifications by itself, and
+nothing here validates page ownership — that judgment is the application's.

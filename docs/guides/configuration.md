@@ -1,7 +1,5 @@
 # Configuration
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 New to recipes? Start with [Configuration is part of the application](../configuration.md)
 for the rationale, the comparison with YAML and an example spanning several components.
 
@@ -30,11 +28,14 @@ itself); `AsgiServer.grammar` is the grammar they validate against.
 
 ## At a glance
 
-```{figure} ../_static/diagrams/configuration-flow.svg
-:figclass: flow-diagram
-:alt: Recipes layer into a configuration handler; explicit constructor arguments override effective server settings.
-
-Recipe reads and effective constructor settings are separate: overriding port does not rewrite server.config.
+```mermaid
+flowchart TD
+    l1["1 · layer the recipes<br/>BaseConfiguration → defaults file → site recipe<br/>later layers win attribute by attribute"]
+    l2["2 · read through ConfigurationHandler<br/>written value → grammar default →<br/>call-site default → KeyError"]
+    l3["3 · construct AsgiServer<br/>explicit kwargs win over configured ones,<br/>wholesale per kwarg"]
+    l4["4 · read it back<br/>server.config(path) · app.config(path)"]
+    l1 --> l2 --> l3 --> l4
+    l4 -. "the recipe tree is unchanged<br/>by a constructor override" .-> l2
 ```
 
 ## The recipe
@@ -298,9 +299,6 @@ One line each; the deep dives live in their own guides.
 - **`openapi`** — accepted by the grammar but not consumed by the core. Set
   schema title, version and description with the `OpenApiApplication`
   `openapi_info` class attribute instead (see [OpenAPI & Swagger](openapi.md)).
-The SPA pool belongs to an application's `orchestration` subtree; it is not a
-root section. See [The pool subtree](#the-pool-subtree-orchestration-its-commander-and-its-groups);
-the pool itself is documented in `kajenn-orchestra`.
 
 ## The storage section
 
@@ -342,256 +340,16 @@ the default layout, or genro-storage's own `list[dict]` of mount configurations
 (which override the shipped ones one by one, so a single declared mount leaves
 `home:` standing under it).
 
-## The pool subtree: `orchestration`, its `commander` and its `groups`
+## What an application declares outside this dialect
 
-A site whose pages live in worker processes declares the whole thing under ONE
-node of the front that owns it: `orchestration`. It is not a section of the site
-dialect — it belongs to the SPA application's own grammar — so it is written on
-the `application` element, never on `cfg`:
-
-    applications → application → orchestration → commander → groups → group
-
-Three rungs carry words: `orchestration` (the profiles and the control surface),
-the `commander` (the vertex: one per front) and one `group` per family of
-workers. **Nothing in it says how many processes there are**: the group brings
-its reception into being at boot, then grows on demand and shrinks when capacity
-is spare, so the count is something you read in the log, never something you set.
-
-```python
-from kajenn_orchestra.spa_app import SpaApplication
-
-
-def applications_section(self, cfg):
-    """The front, its orchestration, one vertex, two groups on two interpreters."""
-    front = cfg.applications().application(
-        app_class=SpaApplication, code="shop", mount="",
-    )
-    orchestration = front.orchestration(
-        control_enabled=False,  # runtime profile operations require one group
-    )
-    commander = orchestration.commander(
-        frozen_users_path="/var/lib/shop/frozen_users",
-        instance_dir="/var/run/shop",
-        orchestration_log_path="/var/log/shop/orchestration.log",
-        memory_max_percent=80.0,             # what this server may hold of the machine
-        machine_memory_alarm_percent=90.0,   # past this, nothing grows
-        user_expiry_hours=720.0,             # a frozen person is kept a month
-        guest_expiry_hours=24.0,             # a frozen browser, a day
-    )
-    groups = commander.groups()
-    groups.group(name="stable", worker_memory_admission_percent=80.0,
-                 user_idle_freeze_minutes=60.0,
-                 cpu_admission_reopen_percent=30.0,   # below this a worker admits again
-                 cpu_admission_close_percent=50.0,         # above this it stops taking new users
-                 cpu_offload_percent=75.0,      # above this it cedes one user per beat
-                 cpu_heating_seconds=1.0,       # the temperature filter, going up
-                 cpu_cooling_seconds=5.0,       # and going down: slower on purpose
-                 entry_module="kajenn_orchestra.orchestration.worker_entry",
-                 worker_class="myshop.app:ShopWorker",
-                 worker_kwargs={"site_path": "/srv/shop"})
-    groups.group(name="canary", executable="/srv/shop/.venvs/next/bin/python",
-                 entry_module="kajenn_orchestra.orchestration.worker_entry",
-                 worker_class="myshop.app:ShopWorker")
-```
-
-Named profiles, environment overrides and runtime `apply`/`reload`/`status`
-currently require exactly one group. The two-group template above uses recipe
-settings directly, without a named profile or environment overrides.
-
-**The node is required, and so is the commander under it.** A spa front IS its
-pool: one declared without `orchestration` would answer every request with a
-raise, so the server does not start and the recipe is asked for the node. Wanting
-no pool means declaring no spa front, not declaring one and leaving it hollow.
-The same holds one rung down: the node MUST carry a `commander`, because a
-profile and a control surface with no pool to act on address nothing. Either way
-the boot fails loudly instead of starting half-configured.
-
-**The profiles and the control surface are the node's own.** `profiles_path` is
-the folder the stored profiles are read from — the same one the `_sysop` archive
-writes — and `profile_name` the profile the boot must find and put in force:
-named without a folder, or named and not there, or there and invalid, and the
-server does not start. `control_enabled` opens `apply`, `reload` and `status`
-under the front's `_orchestration` root; off, that root is never claimed and the
-path belongs to the hosted site. The effective configuration of the one group is
-composed as **defaults ⊕ recipe ⊕ profile ⊕ env** — `env_settings` being a plain
-constructor kwarg of the application, a dict the Python recipe builds out of the
-environment, and no word of any grammar.
-
-**The two paths are the installation's**, so they are declared once, on
-`commander`: `frozen_users_path` (the freezer — one root for the whole machine,
-because the vertex reads back what a worker wrote there) and `instance_dir` (the
-sockets). Every group is handed both.
-
-### Group memory percentages
-
-**The memory is a cascade of percentages, and only the machine is measured in
-bytes.** `memory_max_percent` on `commander` is the server's concession on the
-machine; `memory_max_percent` on a `group` is that group's share of the
-concession; `worker_memory_max_percent` is what ONE of its workers may hold of
-the group's share. The same word on each rung is deliberate — it always means
-"my share of the rung above". The machine's total is read off the platform
-itself, so the cascade is always anchored; a machine that does not say how much
-of it is IN USE (a `/proc/meminfo` capability) simply alarms nobody.
-
-**The memory keys are a veto, never a choice.** `worker_memory_admission_percent`
-(default 80) is the share of its ceiling past which a worker takes no new user,
-whatever its CPU says; `restart_occupancy_max_percent` (default 95) is where a
-process is replaced rather than kept. Neither picks a worker: the CPU does.
-
-**The CPU picks the worker.** A newcomer goes to the hottest CPU-open worker
-that admits him — the group consolidates while a worker still has room under the
-close threshold — and a worker that admitted somebody less than
-`worker_admission_interval_seconds` ago (default 1) is skipped, so its load shows
-in the temperature before the next one lands. When every open worker is in its
-window the hottest that admits takes him anyway: the interval orders the walk,
-it refuses nobody and births nobody. Nobody estimates what a user will cost: the
-gate is the CPU admission, the heads and the memory veto.
-
-### CPU admission thresholds
-
-**The CPU keys are the soft admission, and its brake.** `cpu_admission_close_percent`
-(experimental, off when omitted) is the smoothed CPU above which a worker stops
-taking NEW users; it reopens below `cpu_admission_reopen_percent`, and between the two
-it keeps the state it had — the band is hysteresis. A CPU sample never forks a
-process: capacity is created by a concrete arrival that no open worker can
-admit. `cpu_retirement_quiet_seconds` (default 60) is the other half: how long
-the CPU must stay SILENT — nobody blocked, nobody reopened — before the closure
-judge resumes. It is the quiet of the whole GROUP, not the age of one worker
-(that is `worker_min_life_seconds`), and every CPU event restarts it whole.
-Without it, closing the emptiest worker while demand still stands hands its
-users back to the hot one, which regrows seconds later. With the CPU policy off
-the brake does not exist at all.
-
-### `cpu_heating_seconds` and `cpu_cooling_seconds`
-
-**The temperature the CPU keys read is filtered.** The commander samples each
-worker's CPU every 100 ms; a saturated process reads 0% or 100% on such a short
-window, so no judge reads the raw sample. `cpu_heating_seconds` (default 1) and
-`cpu_cooling_seconds` (default 5) are the time constants of a first-order filter
-the sample goes through: the temperature moves towards the sample by
-`1 - exp(-dt/tau)`, with the shorter constant when the sample is hotter and the
-longer one when it is colder. A worker heats up in about a second and needs
-several seconds of real silence to reopen, so a user it just ceded does not come
-back on the next request. The raw sample stays visible in the pool census as
-`cpu_temperature_sample_percent`, beside the filtered `cpu_temperature_percent`.
-
-### `cpu_close_percent` retirement
-
-**`cpu_close_percent` is where the pool shrinks.** Past the CPU quiet, the coldest
-worker is closed when its temperature, shared by the survivors, keeps every one
-of them under this key (unset, the reopen threshold itself; set while the CPU
-admission is on, never above `cpu_admission_reopen_percent`),
-and its memory, shared the same way, keeps every survivor under
-`worker_memory_admission_percent`. A worker with no temperature yet suspends the
-judgment. Its users go to the freezer and wake where their next request lands.
-
-### `cpu_offload_percent` user selection
-
-**`cpu_offload_percent` is what makes a hot worker slim down.** Closing the
-admission protects the workers to come; it does nothing for the users already
-placed on a process that is burning CPU. This key (nullable, `None` by default —
-omitted, no user is ever offloaded) is the smoothed CPU above which the group
-takes at most ONE user per heartbeat off that worker and puts him in the
-freezer. It requires `cpu_admission_close_percent`, and the thresholds are ordered:
-
-    cpu_admission_reopen_percent < cpu_admission_close_percent < cpu_offload_percent <= 100
-
-An offload declared without the admission key, or out of order, is refused at
-boot — the ordering is not decoration: the worker must already be closed to new
-users, or the ordinary placement could put the offloaded user straight back on
-it.
-
-WHO leaves is judged against the interval itself, so there is no absolute
-threshold to tune. Over the users with activity in the last interval, with `S`
-their summed recent service time and `N` their count, a **material contributor**
-is one holding at least half the fair share (`s >= S/(2N)`) or having a request
-in flight. Users that are idle or whose activity is negligible against the
-window are never candidates — the idle ones belong to `user_idle_freeze_minutes`
-instead. Among the material contributors, the one ceded is the least busy of
-those with NO request in flight: a user mid-call is never transferred. His next
-request goes through the ordinary placement, which skips CPU-closed workers and
-creates capacity when no open one can take him. **CPU pressure never restarts a
-process** — that remains memory's business alone
-(`restart_occupancy_max_percent`).
-
-Two standing conditions are recorded instead of acted on: when only one material
-contributor is left the worker is de facto dedicated to him and the group logs
-`single_user_overload` rather than moving him; when every material contributor
-has requests in flight the cession is postponed to the next heartbeat and logged
-as `cpu_offload_deferred_pending_calls`.
-
-**What each user costs is measured, and it is observation only.** Every worker
-keeps three cumulative counters per user — `served_call_count` and
-`service_seconds`, both stamped whatever the request did (a call that failed or
-ran long is exactly the one worth counting), plus `pending_call_count`, the
-requests open right now — and puts them in its photo. The group derives from two
-consecutive photos the recent deltas the offload judgment reads. These numbers
-serve observability and the pool's decisions; they are **not** part of a user's
-frozen application state, so a user parked in the freezer and woken elsewhere
-carries his store and his connections, never his counters.
-
-**The ages are the vertex's.** `user_expiry_hours` / `guest_expiry_hours` on
-`commander` are how long a FROZEN user is kept before the machine forgets him
-whole — the vertex holds them because a frozen user lives in no process, and a
-group could not notice him. `user_idle_freeze_minutes` (group) is the silence
-past which a worker parks a user in the freezer: his state survives on disk, and
-his next request brings him back wherever the pool then puts him.
-
-**The identity of the child** is the group's too: `entry_module` (what `python
--m` runs), `executable` (its interpreter — two groups on two venvs is how two
-versions of a site serve side by side), `worker_class` (the `module:Class` the
-child loads), `main_threadpool_size` / `aux_threadpool_size`, and
-`worker_kwargs`, the grammar that class is built with. The group's name and its
-`user_idle_freeze_minutes` are added to those kwargs on the way down, so you
-write each policy once, on the rung it belongs to.
-
-**What is NOT a key.** No worker count and no maximum. No policy for the
-freezer's disk: under a tenth of it free the orchestration log says so and the
-server asks its environment for more. And no clocks — the beat, the patience of
-a departure and the cadences are module constants, because an installation tunes
-policies, not timings.
-
-### Orchestration decision journal
-
-**The account of what the pool does** is `orchestration_log_path` (with
-`orchestration_log_max_bytes` and `orchestration_log_backup_count`): one row per
-order, saying who decided, what, on whom, with which numbers in front of them and
-how it ended.
-
-```
-decided_by=std order=start_worker subject=std_0002 numbers={'workers': 2} outcome=None
-decided_by=std order=close_worker subject=std_0002 numbers={'occupancy_percent': 7.0, 'workers': 2} outcome=None
-decided_by=std order=drop_worker subject=std_0002 numbers=None outcome=quitted
-decided_by=vertex order=drop_user subject=mario numbers={'had_state': False} outcome=process_aborted
-```
-
-Omit the path and the rows stay on the `kajenn.orchestration.orders` logger,
-which is what a test wants.
-
-Beside that human log the commander writes a machine-readable **decision
-journal**, `<stem>.decisions.jsonl`: one JSON row per judgment, carrying a stable
-reason code and the numbers the judge had in front of it. The offload adds its
-own codes, and reading them in order is enough to reconstruct why a user moved
-or why none did:
-
-| Reason code | What it says |
-|---|---|
-| `cpu_offload_threshold` | this worker is past `cpu_offload_percent` and a cession was decided |
-| `cpu_offload_user_selected` | who is leaving, with his recent deltas |
-| `cpu_offload_completed` | the freeze confirmed; he is in the deposit |
-| `cpu_offload_refused` | the ordered departure did not happen; he stays where he was |
-| `cpu_offload_no_active_candidate` | nobody on that worker contributes materially |
-| `cpu_offload_deferred_pending_calls` | every material contributor has a request in flight; the next heartbeat tries again |
-| `single_user_overload` | one material contributor left; the worker is dedicated to him and nobody is moved |
-
-Each row carries the worker's CPU, the window's summed service time and the
-number of active users, the computed material threshold, and how many
-contributors were material and cedible. The two standing conditions are written
-once when they begin, not at every heartbeat.
-
-The pool snippet above is an installation template: it needs your `ShopWorker`,
-existing storage paths and interpreters. It is not
-a standalone hello-world. The core recipe below has different prerequisites.
+An application that runs its pages in a pool of worker processes declares that
+pool in its **own** grammar, under one node of the application element —
+`applications.<code>.orchestration`, with a `commander` under it and one `group`
+per family of workers. None of those words belongs to this dialect: the core
+only offers the read helpers `ConfigurationHandler.orchestration_kwargs`,
+`commander_kwargs` and `group_kwargs`, which hand the declared attributes back
+to the application that owns them. What the words mean is the owning package's
+documentation, not this one.
 
 ## A complete recipe
 

@@ -1,7 +1,5 @@
 # Authentication
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 ## What it does
 
 Configures how callers prove who they are and controls which routes they may
@@ -103,16 +101,22 @@ the [sessions guide](sessions.md)).
 
 ## Server-side login flow
 
-The `_server` app — declared like any other application — exposes a login flow
-for session-based clients:
+`ServerApplication` (from `kajenn_server_app`, declared like any other
+application with the code `_server`) exposes a login flow for session-based
+clients. Nothing mounts it for you:
 
 - `POST /_server/login` with body `{"identity", "password"}` → `200` with
   `{identity, tags, session_id}` on success.
 - `GET /_server/login_methods` — a public JSON descriptor of available methods.
 - `POST /_server/logout`.
 
+All three answer JSON; there is no HTML login page here. Login attaches the
+avatar to the **existing** session, so the session id does not change and no
+login-time cookie is set.
+
 Login lockout with backoff is the app's own `login=` kwarg:
-`ServerApplication(login={"max_attempts": 5, "backoff": 30})`.
+`ServerApplication(login={"max_attempts": 5, "backoff": 30})`, defaulting to 5
+attempts and a 30-second base with exponential backoff.
 
 ## OIDC
 
@@ -195,8 +199,12 @@ $ curl -H "Authorization: Bearer sk_live_xyz" http://127.0.0.1:8000/public
 ## Gotchas
 
 - `auth_rule` is default-deny: anonymous callers receive `401`, known callers
-  with insufficient tags receive `403`. HTML clients may be redirected to login
-  by the error middleware; use `Accept: application/json` to inspect the API status.
+  with insufficient tags receive `403`. The error middleware never points a
+  caller at a login page — it owns none. It only negotiates the error *body*:
+  `Accept: application/json` (or `*/*`) gets the `{"error": ...}` document, and
+  anything else — including a browser's `text/html` and a missing `Accept` —
+  gets `text/plain`. An application that wants to send a browser to its own
+  login surface does that in its own routes.
 - `jwt` is a **list**, not a dict — a single verifier still goes inside a
   one-element list.
 - An invalid `Authorization` header is `401` and does **not** fall back to the
@@ -204,6 +212,8 @@ $ curl -H "Authorization: Bearer sk_live_xyz" http://127.0.0.1:8000/public
 - An OIDC provider needs `external_url`, and the resulting callback URL must be
   registered verbatim with the provider — a mismatch is refused by the provider,
   not by us. A missing `external_url` stops the server at boot.
-- The auth symbols (`AuthMixin`, `PasswordMethod`, `OidcMethod`, `ApiKeyStore`,
-  `FileApiKeyStore`, `UserStore`, `FileUserStore`, `AuthCore`, `AuthMethod`) are
-  importable from `kajenn`.
+- The core's auth symbols — `AuthMixin`, `AuthCore`, `Avatar`, `ApiKeyStore`,
+  `FileApiKeyStore`, `UserStore`, `FileUserStore` — import from `kajenn`. The
+  login methods are **not** core: `ServerApplication`, `AuthMethod`,
+  `PasswordMethod`, `OidcMethod` and the sections import from
+  `kajenn_server_app`.
