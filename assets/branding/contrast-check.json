@@ -1,0 +1,146 @@
+{
+  "method": "sRGB relative luminance, (Llighter + 0.05) / (Ldarker + 0.05)",
+  "scope": "Listed opaque color pairs only; not a complete accessibility audit.",
+  "pairs": [
+    {
+      "foreground": "text",
+      "background": "surface",
+      "ratio": 14.3,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "text.secondary",
+      "background": "surface",
+      "ratio": 6.32,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "text.secondary",
+      "background": "background",
+      "ratio": 5.89,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "navigation.text",
+      "background": "navigation",
+      "ratio": 13.23,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "action.text",
+      "background": "action",
+      "ratio": 7.29,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "action.text",
+      "background": "action.hover",
+      "ratio": 9.87,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "action",
+      "background": "selected",
+      "ratio": 6.27,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "success",
+      "background": "success.surface",
+      "ratio": 6.45,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "warning",
+      "background": "warning.surface",
+      "ratio": 6.46,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "error",
+      "background": "error.surface",
+      "ratio": 6.39,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "info",
+      "background": "info.surface",
+      "ratio": 6.27,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "unknown",
+      "background": "unknown.surface",
+      "ratio": 5.57,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "console.text",
+      "background": "console.background",
+      "ratio": 13.6,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "console.muted",
+      "background": "console.background",
+      "ratio": 8.35,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "console.success",
+      "background": "console.background",
+      "ratio": 9.59,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "console.warning",
+      "background": "console.background",
+      "ratio": 11.28,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "console.error",
+      "background": "console.background",
+      "ratio": 9.09,
+      "target": 4.5,
+      "pass": true
+    },
+    {
+      "foreground": "border.control",
+      "background": "surface",
+      "ratio": 3.65,
+      "target": 3,
+      "pass": true
+    },
+    {
+      "foreground": "focus",
+      "background": "surface",
+      "ratio": 7.29,
+      "target": 3,
+      "pass": true
+    },
+    {
+      "foreground": "focus",
+      "background": "background",
+      "ratio": 6.79,
+      "target": 3,
+      "pass": true
+    }
+  ]
+}
