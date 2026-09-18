@@ -1,12 +1,10 @@
 # Middleware
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 ## What it does
 
 Wraps request handling in an ordered chain of cross-cutting stages — error
-handling, CORS, logging, sessions, auth, and well-known endpoints. Each stage is
-an object that always exists; you arm it through config.
+handling, logging, CORS, sessions and auth. Each stage is a class in the
+server's registry; you arm it through config.
 
 ## When to use it
 

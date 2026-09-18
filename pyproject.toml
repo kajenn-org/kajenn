@@ -72,6 +72,7 @@ docs = [
     "sphinx-rtd-theme>=2.0",
     "sphinx-autodoc-typehints>=2.0",
     "myst-parser>=2.0",
+    "sphinxcontrib-mermaid>=1.0",
 ]
 
 [project.scripts]

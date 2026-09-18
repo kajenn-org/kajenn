@@ -1,7 +1,5 @@
 # MCP
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 ## What it does
 
 Exposes your `@route` methods as **tools an AI agent can call** over the Model
@@ -78,7 +76,8 @@ this example. Explicit entries are needed only to configure their options.
 
 ## The `/mcp` endpoint
 
-The MCP face speaks JSON-RPC on `/mcp`, protocol version `2025-11-25`:
+The MCP face speaks JSON-RPC on `/mcp`. It negotiates one of the protocol
+versions `2025-11-25`, `2025-06-18` and `2025-03-26`, and answers:
 
 - `initialize`
 - `tools/list`

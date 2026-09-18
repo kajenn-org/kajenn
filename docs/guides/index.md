@@ -1,12 +1,11 @@
 # How-to Guides
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 Task-focused recipes for the capabilities kajenn grows on top of the core.
 For troubleshooting and common choices, see the [FAQ](../faq.md).
 
 Each one assumes you have read [Getting started](../getting-started.md) and
-[Core concepts](../concepts.md).
+[Core concepts](../concepts.md). For how the pieces fit together, read the
+[Architecture overview](../architecture/overview.md).
 
 ```{toctree}
 :hidden:
@@ -52,14 +51,10 @@ websockets
 - **[The `kajenn` command](cli.md)** — boot a server from a `config.py` or a
   single application, manage the configured sites with `configure`/`sites`/`stop`/`remove`, and
   reload on source changes.
-
 - **[Requests and errors](requests.md)** — body decoding, uploads, validation and status codes.
 - **[Mounting applications](applications.md)** — prefixes, root dispatch and hosted ASGI applications.
 - **[Lifecycle](lifecycle.md)** — startup hooks, admission state and bounded shutdown.
 - **[WebSockets](websockets.md)** — WSX messages, handshake rules and the raw socket seam.
-
-The multiworker SPA guide lives in the `kajenn-orchestra` documentation, and the
-Django guide in `kajenn-django`.
 
 ## How each guide is structured
 

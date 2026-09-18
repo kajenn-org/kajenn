@@ -1,7 +1,5 @@
 # The `kajenn` command
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 ## What it does
 
 Installing the package puts a `kajenn` command on your path. It boots a
@@ -139,7 +137,7 @@ named:
     data/
         frozen_users/    the deposit of the frozen users
         sessions/        the session snapshots
-    sockets/             the worker sockets of an orchestrated site
+    sockets/             the sockets of a site that runs workers
     logs/                the orchestration log and its decisions journal
     run/                 the pidfile
 ```
@@ -159,8 +157,9 @@ The shipped storage layout is **two volumes**, not one:
   — anchored on the folder the card names. With no home declared it is the
   folder of `site:`.
 
-The pool's own path words (`instance_dir`, the frozen-users deposit, the
-orchestration log) are **not** derived from the home: they stay the
+`sockets/`, `logs/` and `data/frozen_users/` are named here for the packages
+that run worker processes on top of the core; nothing in the core writes them.
+A pool's own path words are not derived from the home either — they stay the
 configuration words they are.
 
 `KAJENN_HOME` is a different thing: the **installation** root, where
@@ -292,9 +291,9 @@ quick: stopped (pid 75171)
 - **`configure` mounts importable targets only** (`package.module:ClassName`):
   the recipe it writes is a Python file that imports what it mounts, and a
   single-file target has no import line to write.
-- **No `--workers`.** The CLI starts one server process (plus a reload supervisor when requested).
-  A multiworker SPA, documented in `kajenn-orchestra`, starts its own configured pool. `--debug` declares a usage mode (optionally a comma-separated parameter list);
-  the core does not branch on it.
+- **No `--workers`.** The CLI starts one server process, plus a reload
+  supervisor when you ask for one. `--debug` declares a usage mode (optionally a
+  comma-separated parameter list); the core branches on it nowhere.
 - **Exit codes:** `0` success, `2` argparse usage errors, `1` runtime errors —
   reported as one line on stderr.
 - **`--reload` is a development tool.** It costs a supervisor process and a file

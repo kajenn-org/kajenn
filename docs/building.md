@@ -1,7 +1,5 @@
 # Building the documentation
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 From the repository root, use an isolated environment and build with warnings
 as errors:
 
@@ -31,6 +29,16 @@ directory documents the same checkout. The package must be installed with its
 real dependencies for autodoc; there are no mocked imports. The Python
 intersphinx inventory is fetched over HTTPS: report a failed network fetch
 separately from local import, markup or link failures.
+
+## The diagrams
+
+The architecture and concept diagrams are Mermaid, written as ```` ```mermaid ````
+fences in the Markdown sources. `sphinxcontrib.mermaid` (in the `docs` extra)
+turns each fence into a `<div class="mermaid">`, and `myst_fence_as_directive`
+is what lets a Markdown fence reach that directive. The drawing itself happens
+**in the browser**, from `cdn.jsdelivr.net`: `sphinx-build` never reports a
+diagram that fails to parse, so open the built page and check that every fence
+became an `<svg>` before publishing.
 
 ## Read the Docs
 

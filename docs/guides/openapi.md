@@ -1,7 +1,5 @@
 # OpenAPI & Swagger
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 ## What it does
 
 Turns your ordinary `@route` methods into an OpenAPI 3.1 schema and a Swagger UI,

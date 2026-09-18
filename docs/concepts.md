@@ -1,7 +1,5 @@
 # Core Concepts
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 This page explains the model behind kajenn: how a server relates to the
 applications it serves, how a request finds its handler, and the design
 principles that make the whole thing predictable. Read it once and the how-to
@@ -154,7 +152,8 @@ Both `Request` and `Response` are importable from `kajenn`.
 ## Design principles
 
 kajenn is a spec-first redesign; its principles are ratified in
-`SPECIFICATION.md`. Three of them govern almost every API decision:
+[`SPECIFICATION.md`](https://github.com/kajenn-org/kajenn/blob/main/SPECIFICATION.md).
+Three of them govern almost every API decision:
 
 - **No globals — state lives in instances.** There is no module-level server and
   no ambient request. A server is an object you build; its components reach each
@@ -181,37 +180,15 @@ Two more shape how you extend the framework:
 
 Putting it together, here is the path an HTTP request travels:
 
-```text
-        HTTP request
-             │
-             ▼
-        ┌─────────┐
-        │ uvicorn │            one loop, owned by the server
-        └────┬────┘
-             ▼
-      ┌────────────┐
-      │ AsgiServer │           the ASGI app is the server object itself
-      └─────┬──────┘
-            ▼
-  ┌───────────────────────┐
-  │   middleware chain      │  errors → (logging) →
-  │  (outer → inner)        │  (cors) → (session) → (auth)
-  └───────────┬────────────┘
-              ▼
-     ┌──────────────────┐
-     │  demux on first   │    segment matches a mount?  → that app
-     │  path segment     │    else root app / 307 / 404
-     └────────┬──────────┘
-              ▼
-   ┌────────────────────────┐
-   │  @route handler(**params)│  query/body bound to the signature, typed
-   └───────────┬────────────┘
-               ▼
-          ┌──────────┐
-          │ Response │           dict → JSON, str+html → HTML, stream → chunks
-          └────┬─────┘
-               ▼
-          ASGI send  ───────────►  HTTP response
+```mermaid
+flowchart TD
+    req([HTTP request]) --> uv["uvicorn — one loop, owned by the server"]
+    uv --> srv["AsgiServer — the ASGI app is the server object itself"]
+    srv --> chain["middleware chain, outer to inner:<br/>errors → logging → cors → session → auth"]
+    chain --> demux["demux on the first path segment:<br/>a mount, else the root app, else 307, else 404"]
+    demux --> handler["@route handler(**params)<br/>query and body bound to the signature, typed"]
+    handler --> resp["dict → JSON · str + media_type → HTML · StreamingResponse → chunks"]
+    resp --> out([ASGI send])
 ```
 
 The middleware are ordered by priority (lower number = more outer). The
@@ -225,4 +202,7 @@ each stage.
 - **[How-to guides](guides/index.md)** — apply these concepts to concrete tasks.
 - **[Getting started](getting-started.md)** — if you skipped the runnable
   hello-world, start there.
-- `SPECIFICATION.md` — the founding decision log, for the full rationale.
+- **[Architecture overview](architecture/overview.md)** — the same model with a
+  diagram per subsystem and the modules each one lives in.
+- [`SPECIFICATION.md`](https://github.com/kajenn-org/kajenn/blob/main/SPECIFICATION.md)
+  — the founding decision log, for the full rationale.

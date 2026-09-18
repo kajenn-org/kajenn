@@ -1,7 +1,5 @@
 # Requests and errors
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-12.
-
 `RoutedApplication` creates a `Request` and awaits `init()` before resolving and
 calling a handler. It drains the entire ASGI body and decodes it by content type.
 It uses genro-tytx for serialization, not for reading the ASGI protocol.
@@ -98,10 +96,15 @@ change this request buffering; see [Streaming](streaming.md).
 applications. Neither can be disabled; explicit entries configure their
 options. A composition without `PluginMixin` does not supply this pair.
 
+:::{admonition} Under review
+:class: warning
+This section is being verified against the implementation.
+:::
+
 Pydantic coerces and validates annotated parameters. A JSON dictionary is
-spread over declared scalar parameters
-unless the handler declares `body_data` or accepts `**kwargs`. Extra JSON keys
-are dropped in that spreading case. Forms and query kwargs still bind normally.
+spread over declared scalar parameters unless the handler declares `body_data`
+or accepts `**kwargs`. Extra JSON keys are dropped in that spreading case.
+Forms and query kwargs still bind normally.
 
 | Condition | Status |
 |---|---|
