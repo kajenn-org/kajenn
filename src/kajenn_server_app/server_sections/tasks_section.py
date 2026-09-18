@@ -15,9 +15,8 @@
 """The ``_server/tasks`` section: SUPERADMIN-gated task backbone endpoints.
 
 A ``RoutingClass`` the ``ServerApplication`` attaches (``attach_section``), so
-its routes live at ``/_server/tasks/...``. JSON endpoints ONLY — no HTML/JS
-panel ships with the core (ratified). Two surfaces over the server's
-``TaskManager``:
+its routes live at ``/_server/tasks/...``. JSON endpoints ONLY: no HTML or JS
+panel ships with this section. Two surfaces over the server's ``TaskManager``:
 
 - **schedules** (the recurring scheduler's store): ``list``/``create``/
   ``update``/``enable``/``disable``/``run_now``/``delete``/``logs``;

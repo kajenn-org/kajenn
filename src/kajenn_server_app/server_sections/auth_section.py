@@ -18,8 +18,8 @@ When the login surface is active the ``ServerApplication`` attaches ONE
 ``AuthSection`` under the ``auth`` name, so it lives at ``/_server/auth/``.
 A registered auth method (``AuthMethod``) is attached to this section under
 its ``method_id`` ONLY when it owns routes, so those routes live at
-``/_server/auth/<method_id>/`` (e.g. a future OIDC ``start`` and ``callback``
-at ``/_server/auth/oidc:google/start``). A route-less method — the password
+``/_server/auth/<method_id>/`` (the OIDC method's ``start`` and ``callback``,
+e.g. ``/_server/auth/oidc:google/start``). A route-less method — the password
 one — is recorded in the registry but never attached: zero-route nodes never
 enter the routing tree (Invariant 10).
 
