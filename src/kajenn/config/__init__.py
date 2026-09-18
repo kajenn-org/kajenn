@@ -23,7 +23,7 @@ The recipe is never alone: the handler layers ``BaseConfiguration`` (the
 package's shipped defaults) and the defaults source the recipe itself declares
 through its ``default_config`` attribute underneath it — see ``DefaultConfig``.
 
-The configuration ALWAYS exists (#91): a server composed in code takes the
+The configuration ALWAYS exists: a server composed in code takes the
 ready-made ``DefaultConfiguration`` (named in ``CONFIGURATION_TEMPLATES``) and
 writes its constructor kwargs into a ``ShortcutConfiguration`` on top of it — see
 ``templates``.

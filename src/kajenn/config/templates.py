@@ -28,10 +28,12 @@ taken: there is one tree, read through one door.
 
 The shortcut writes every option it receives — the ``site`` identity (``site_name``
 and ``site_home``, the folder the site owns), the ``server`` scalars (``debug``
-among them), the session ttl, the ``middleware`` and ``plugins`` switches (both
-elements have an OPEN signature, so a name registered from outside is an
-attribute like any other) and one ``application`` node per declared class — and
-POPS each one, so the value is read back from the tree and from nowhere else.
+among them), the session and websocket options, the ``middleware`` and
+``plugins`` switches (both elements have an OPEN signature, so a name registered
+from outside is an attribute like any other), the storage mounts and key, the
+identity stores and header credentials, and one ``application`` node per
+declared class — and POPS each one, so the value is read back from the tree and
+from nowhere else.
 """
 
 from __future__ import annotations
@@ -54,8 +56,9 @@ class DefaultConfiguration(BaseConfiguration):
     """The usual assembly, complete and valid: listener, storage, applications.
 
     ``BaseConfiguration`` brings the shipped defaults (the bare ``server``
-    section and the single ``site:`` mount); this adds the empty ``applications``
-    collection, so the section a shortcut or a site recipe fills always exists.
+    section and the ``site:``/``home:`` mounts); this adds the empty
+    ``applications`` collection, so the section a shortcut or a site recipe
+    fills always exists.
     """
 
     def main(self, root: Any) -> None:
@@ -196,7 +199,7 @@ class ShortcutConfiguration(AsgiConfigBuilder):
         An empty list is written as the bare section, which the composition reads
         as "the default layout"; nothing declared leaves the template's section
         alone — unless a home was declared, whose whole point is to be what
-        ``site:`` is anchored on.
+        ``home:`` is anchored on.
         """
         declared = (self.storage_mounts_declared, self.storage_key, self.site_home)
         if all(item is None for item in declared):

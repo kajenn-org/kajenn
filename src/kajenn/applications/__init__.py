@@ -18,9 +18,7 @@ Each application in this package is a ready-to-mount ASGI app for one
 transport dialect. ``OpenApiApplication`` wraps an API surface as REST +
 OpenAPI 3.1 with a Swagger docs page; ``McpApplication`` and
 ``McpOpenApiApplication`` expose a router as MCP tools over stateless
-Streamable HTTP. Two worlds are not here, each a package of its own beside the
-core: the SPA front and its worker pool (``kajenn_orchestra``) and the
-server application with its sections (``kajenn_server_app``).
+Streamable HTTP.
 """
 
 from __future__ import annotations

@@ -19,10 +19,9 @@ Two ready-to-mount apps expose a genro-routes router as MCP tools over JSON-RPC
 owns everything the transport-agnostic :class:`McpEngine` does not:
 method/header/Origin gating, the JSON-RPC envelope, the 202-for-notifications
 rule, and the sync/async invoke callback (async handlers stay on the loop, sync
-handlers go through the server pool via ``run_sync`` — the Macro 1 protocol,
-replacing the old ``smartasync``). The transport holds its owning application as
-``self.application`` (dual-parent) and reaches its ``spread_over_params`` and
-``server`` through it.
+handlers go through the server pool via ``run_sync``). The transport holds its
+owning application as ``self.application`` (dual-parent) and reaches its
+``spread_over_params`` and ``server`` through it.
 
 - :class:`McpApplication` — the whole app is one MCP endpoint. It holds an
   engine over an EXTERNAL router (``routing_class=`` or ``module=``); every
@@ -39,21 +38,19 @@ Transport conformance (MCP Streamable HTTP): a JSON-RPC POST answers with a
 JSON response; a notification (no ``id``) answers HTTP 202 with an empty body; a
 GET opens the SSE push stream (below); any other method answers 405; an
 ``MCP-Protocol-Version`` header that is present but unsupported answers 400 (an
-absent header is assumed ``2025-03-26`` per the spec's backwards-compat rule);
-an ``Origin`` header present and not in ``allowed_origins`` answers 403 (the
+absent header is not gated, per the spec's backwards-compat rule); an
+``Origin`` header present and not in ``allowed_origins`` answers 403 (the
 ``allowed_origins`` option defaults to ``None`` — no restriction, a dev-mode
 default: production fronting owns the Origin gate). The transport gates raise
 core HTTP exceptions answered by the server's ``ErrorMiddleware``.
 
-The push half (core 1e, the option-B commitment honored): a GET opens a
-``text/event-stream`` keyed by ``Mcp-Session-Id`` — echoed when the client
-supplies one, minted otherwise (``secrets.token_urlsafe``, decoupled from the
-cookie session: MCP clients carry no cookie) — and follows the server's task
-hub live (``server.tasks.hub``, the A<->C bridge). A ``Last-Event-ID`` header
-replays the session's current ``progress.json`` snapshots first
-(snapshot-baseline resumability — no durable event log, ratified). A server
-composed without tasks answers GET with 405, the 1c stateless behavior. The
-engine stays untouched apart from advertising the capability.
+The push half: a GET opens a ``text/event-stream`` keyed by ``Mcp-Session-Id``
+— echoed when the client supplies one, minted otherwise
+(``secrets.token_urlsafe``, decoupled from the cookie session: MCP clients
+carry no cookie) — and follows the server's task hub live
+(``server.tasks.hub``). A ``Last-Event-ID`` header replays the session's
+current ``progress.json`` snapshots first: the baseline is the snapshot, there
+is no durable event log. A server composed without tasks answers GET with 405.
 """
 
 from __future__ import annotations
@@ -200,11 +197,10 @@ class McpTransport:
         """Open the SSE push stream for one MCP session (the GET branch).
 
         ``Mcp-Session-Id`` is echoed when the client supplies one, minted
-        otherwise (``secrets.token_urlsafe`` — the ``MemorySessionStore.create``
-        pattern) and always returned in the response headers. A ``Last-Event-ID``
-        header asks for the snapshot baseline before the live feed. A server
-        composed without tasks has no hub: GET answers 405 (the 1c stateless
-        behavior).
+        otherwise (``secrets.token_urlsafe``) and always returned in the
+        response headers. A ``Last-Event-ID`` header asks for the snapshot
+        baseline before the live feed. A server composed without tasks has no
+        hub: GET answers 405.
         """
         server = self.application.server
         if not getattr(server, "tasks_enabled", False):
@@ -257,8 +253,8 @@ class McpTransport:
     def _baseline(self, manager: Any, session_id: str) -> list[dict[str, Any]]:
         """The current progress snapshots of the session's live tasks (sync, pool).
 
-        Settled tasks are not replayed (their result is fetched, not streamed —
-        no durable event log, ratified); tasks without a snapshot yield nothing.
+        Settled tasks are not replayed (their result is fetched, not streamed:
+        there is no durable event log); tasks without a snapshot yield nothing.
         """
         events: list[dict[str, Any]] = []
         spool = manager.spool

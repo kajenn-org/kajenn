@@ -49,11 +49,12 @@ Sections:
   the grammar its ``app_class`` carries.
 - ``databases`` — one descriptor per database handler.
 - ``plugins`` — the router plugins armed on every routed app.
-- ``openapi`` — the OpenAPI metadata (grammar only in core 1a).
+- ``openapi`` — the OpenAPI metadata, declared by the grammar and read by no
+  core consumer.
 
-The SPA pool is NOT a section of this dialect: a pool belongs to the application
-that owns it, so its words live in that application's own grammar and its recipe
-is written under ``applications.<code>.orchestration.commander``.
+An application's own vocabulary is NOT a section of this dialect: it belongs to
+the application that owns it, so its words live in the grammar that application
+carries and its recipe is written under ``applications.<code>``.
 
 A recipe subclasses ``AsgiConfigBuilder`` and overrides ``main(self, root)``;
 application classes are imported and passed as objects::
@@ -211,7 +212,8 @@ class AsgiServerGrammar(TaskGrammar):
         ``save_path`` is the pickle file the sessions are written to at shutdown
         and read back from at startup — the development survival line. Unset,
         the snapshot is disarmed. ``kajenn serve --name <n>`` writes
-        ``<home>/sessions/<n>.pickle`` here.
+        ``<home>/data/sessions/<n>.pickle`` here, or
+        ``<KAJENN_HOME>/sessions/<n>.pickle`` when the site has no home.
 
         Server-domain, so it lives under ``server``, not under an application."""
 
@@ -227,7 +229,7 @@ class AsgiServerGrammar(TaskGrammar):
     ) -> None:
         """Global middleware switches: one ``{name: bool | dict}`` kwarg per
         middleware. A dict value enables the middleware and becomes its
-        constructor options. The six declared names are the core's own registry
+        constructor options. The five declared names are the core's own registry
         (``middleware.default_registry()``); a middleware registered from
         outside (``middleware_registry=``) is written by its own name and rides
         through ``**extra`` — the signature is OPEN so that the switches have
@@ -243,11 +245,10 @@ class AsgiServerGrammar(TaskGrammar):
 
         ``users`` and ``tokens`` are the store descriptors ``AuthMixin`` peels
         and ``credentials`` the entries ``AuthCore`` verifies. What asks a
-        human for a user and a password is NOT here (D-SA-10): the login policy
-        and the OIDC providers are words of the grammar the application owning
-        the login surface declares, written under its own ``application``
-        element. The server creates no user either (owner, 2026-09-12): there is
-        no bootstrap password word.
+        human for a user and a password is NOT here: the login policy and the
+        OIDC providers are words of the grammar the application owning the
+        login surface declares, written under its own ``application`` element.
+        The server creates no user either: there is no bootstrap password word.
         """
 
     @element(parent_tags="authentication", sub_tags="")
@@ -349,8 +350,8 @@ class AsgiServerGrammar(TaskGrammar):
                 s.s3(name="uploads", bucket="shop-media",
                      default_encrypted="shopspa")
 
-        Omitted entirely, the server builds its default manager: the single
-        ``site:`` mount on the deployment directory.
+        Omitted entirely, the server builds its default manager: the ``site:``
+        and ``home:`` mounts, both on the deployment directory.
         """
 
     @element(parent_tags="configuration", sub_tags="application", collection_key="code")
@@ -424,6 +425,9 @@ class AsgiServerGrammar(TaskGrammar):
         version: str = None,
         description: str = None,
     ) -> None:
-        """OpenAPI metadata: ``title``, ``version``, ``description``. Grammar
-        only in core 1a — the OpenAPI application arrives in core 1c; read and
-        skipped here."""
+        """OpenAPI metadata: ``title``, ``version``, ``description``.
+
+        Grammar only: no core consumer reads this section.
+        ``OpenApiApplication`` takes its document metadata from the
+        ``openapi_info`` attribute of the application or of the mounted routing
+        class, not from here."""
