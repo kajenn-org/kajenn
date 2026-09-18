@@ -186,6 +186,6 @@ New pages use the same tokens, icon family, states and density without arbitrary
 
 - [Brand asset index](README.md), [standalone mark](kajenn-mark.png), [logo with wordmark](kajenn-logo.png).
 - The Gramlot logo used as a visual reference is not part of this repository.
-- Observed showcase: `/Users/gporcari/Sviluppo/gramlot/gramlot-poc/src/gramlot/showcase/showcase.css`.
-- Observed theme and inspector: `/Users/gporcari/Sviluppo/gramlot/gramlot-poc/js/pages/src/theme.css` and `inspector-theme.css`.
-- Architecture boundaries: `/Users/gporcari/Sviluppo/gramlot/gramlot/docs/00-constitution.md`.
+- Observed showcase: `gramlot-poc: src/gramlot/showcase/showcase.css`.
+- Observed theme and inspector: `gramlot-poc: js/pages/src/theme.css` and `inspector-theme.css`.
+- Architecture boundaries: `gramlot: docs/00-constitution.md`.
