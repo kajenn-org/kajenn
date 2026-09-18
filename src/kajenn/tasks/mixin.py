@@ -42,8 +42,8 @@ so the manager, which opens its spool over ``server.storage``, cannot be built u
 the whole chain has completed. Lazy construction defers it to the first use (the
 lifespan hook, or a caller reaching ``server.tasks``), when the server is fully live.
 
-The loop is server-owned, hooked in ``__call__`` — ``lifespan.py`` is NEVER touched
-(ratified). ``__call__`` intercepts the ``lifespan`` scope exactly like
+The loop is server-owned, hooked in ``__call__`` — ``lifespan.py`` is never
+touched. ``__call__`` intercepts the ``lifespan`` scope exactly like
 ``CommunicationMixin.__call__``: pre-receive ``lifespan.startup``, ``manager.start()``,
 replay the startup down ``super().__call__`` (so the base ``Lifespan`` still runs the
 app hooks and acks the protocol), and ``await manager.stop()`` in ``finally`` when the
@@ -113,8 +113,8 @@ class TaskMixin:
     def tasks(self) -> TaskManager:
         """The task manager this server owns (built on first access); disabled is an error.
 
-        Lazy: the manager opens its spool over ``server.storage``, which is not yet
-        set while the cooperative ``__init__`` chain is still running — so the first
+        Lazy: the manager opens its spool over ``server.storage``, which is unset
+        while the cooperative ``__init__`` chain is still running — so the first
         access after the server is live builds it.
         """
         if not self._tasks_enabled:

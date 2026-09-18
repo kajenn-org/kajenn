@@ -19,15 +19,15 @@ directory, or ``tcp:`` as the multi-host door), keeps the rubric of the
 registered members and routes envelopes. It is **transport-only**: it never
 interprets an op name and never looks inside ``data`` beyond the three keys
 the REPLY contract owns (``result``, ``error``, ``events``). The rubric key
-is the full channel name the member declares in its REGISTER frame
-(``W:<name>`` for workers) — the typing happens at the member, not here.
+is the full channel name the member declares in its REGISTER frame — the
+typing happens at the member, not here.
 
 Three envelope kinds ride the frame protocol of ``frame.py`` (which is not
 modified: ``method`` carries the kind, ``path`` the routing key):
 
 - ``CALL`` — a request. ``call()`` parks an ``asyncio.Future`` on the frame
-  id and awaits the matching ``REPLY``. A CALL arriving FROM a member has no
-  ratified consumer: it is logged as an unexpected envelope.
+  id and awaits the matching ``REPLY``. A CALL arriving FROM a member is
+  served by nobody: it is logged as an unknown envelope.
 - ``REPLY`` — the answer to a CALL, reusing its id. ``data`` is
   ``{result | error, events: [...]}`` and ``call()`` returns it **verbatim**:
   the barrier lives outside the transport, so the hub neither folds the
@@ -51,7 +51,7 @@ the rubric holds one kind of member however it got here (``local.py``).
 
 Liveness is the frame protocol's: EOF reports connection loss, so a member
 whose stream ends is dropped from the rubric and ``on_channel_lost(member)``
-fires — sweep and relaunch belong to the commander, not here. A deliberate
+fires — sweep and relaunch belong to whoever owns the member, not here. A deliberate
 ``stop()`` is not a death and fires nothing. A ``ValueError`` from the codec
 is a protocol violation of ONE member: that connection is closed, the hub
 and its other members are untouched. Callbacks may be sync or async and
@@ -94,8 +94,8 @@ class ChannelCallError(Exception):
     """A CALL answered with an error REPLY; ``error`` is the member's payload.
 
     ``payload`` is the whole REPLY the error arrived in: an errored REPLY can
-    carry more than its error (the spa delivery keys ride it), and whoever
-    turns this exception into a response needs those keys untouched.
+    carry more than its error (a consumer's own delivery keys ride it), and
+    whoever turns this exception into a response needs those keys untouched.
     """
 
     def __init__(
@@ -362,8 +362,8 @@ class ChannelHub:
             await stream.close()
             return None
         if name in self._members:
-            # Names are minted by the commander and never reused, so a name
-            # already in the rubric is a protocol violation of the newcomer:
+            # Names are minted by whoever spawns the members and never reused,
+            # so a name already in the rubric is a newcomer's protocol violation:
             # the registered member is the real one and stays.
             self.logger.warning("Connection rejected: name %s is already registered", name)
             await stream.close()
@@ -468,7 +468,7 @@ class ChannelHub:
         """Fail one member's pending CALLs (``None`` = all) with ``ConnectionError``.
 
         The entries stay in ``_pending``: each caller pops its own in the
-        ``finally`` of ``call()``.
+        ``finally`` of ``call_frame()``.
         """
         for expected_member, _path, future in self._pending.values():
             if (member is None or expected_member is member) and not future.done():

@@ -28,8 +28,8 @@ method, so ``self.server`` / ``self.db`` are already reachable from the app
 instance. The executor resolves the callable with ``app.route.node(node_path)``
 (a ``RouterNode``, callable, no HTTP) and invokes it with the task's params —
 the same async/sync split the dispatcher uses: an async handler stays on the
-loop, a sync handler goes through ``server.run_sync`` (the Macro 1 pool
-protocol; ``routed_application.py``/``applications/mcp.py`` are the mirrors).
+loop, a sync handler goes through ``server.run_sync`` (the pool protocol
+``routed_application.py`` and ``applications/mcp.py`` follow too).
 
 The manager has already MOVED the task into ``active/<worker>/``; the executor
 reads it there, runs it, and settles it once: any outcome (ok / error) moves the
@@ -38,7 +38,7 @@ folder to ``terminated`` / ``aborted`` and a ``batch_id`` never moves again
 ``WORKER_ID`` == ``"local"``; the per-worker ``active/<worker>/`` structure stays
 for D22 forward-compat.
 
-The A<->C bridge (core 1e Phase 6): a descriptor carrying the launching MCP
+The push seam: a descriptor carrying the launching MCP
 ``session_id`` gets its lifecycle published on ``server.tasks.hub`` — ``started``
 before the run, ``settled`` (with outcome/error) after — so a subscribed SSE
 stream follows the task live. ``session_id`` ``None`` = no push channel, no-op.
@@ -129,7 +129,7 @@ class LocalTaskExecutor:
     def _publish(self, descriptor: dict[str, Any], event: dict[str, Any]) -> None:
         """Publish a lifecycle event on the hub, keyed by the launching session.
 
-        The A<->C bridge: ``session_id`` is the launching MCP session stamped on
+        ``session_id`` is the launching MCP session stamped on
         the descriptor at ``create`` time; ``None`` means the sender has no push
         channel and publishing is a no-op (the hub itself no-ops without
         subscribers). The event always carries the ``task_id``.

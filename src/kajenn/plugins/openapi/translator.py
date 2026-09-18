@@ -37,9 +37,8 @@ per entry); this translator lifts them into a document-level pool, as OpenAPI
 expects — copying each block before popping ``$defs`` so the plugin's cache is
 never mutated.
 
-The translator methods are staticmethods by design (the granted builder-style
-exception, coding rule 4): pure data-logic functions over the neutral node
-description, holding no instance state.
+Every translator method is a ``@staticmethod``: pure data logic over the
+neutral node description, holding no instance state.
 """
 
 from __future__ import annotations

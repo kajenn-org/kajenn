@@ -32,9 +32,9 @@ Cross-plugin integration (read by ``OpenAPITranslator``):
     - When the auth plugin is active, ``security`` is auto-derived from ``auth_rule``.
     - When the env plugin is active, ``x-requires`` is auto-derived from ``env_requires``.
 
-Unlike the old kajenn module, this file does NOT register itself against
-genro-routes at import time (the no-global-state / no-import-side-effect rule):
-registration is an explicit arming act performed by ``PluginMixin.arm_router``.
+This file does NOT register itself against genro-routes at import time (the
+no-global-state / no-import-side-effect rule): registration is an explicit
+arming act performed by ``PluginMixin.arm_router``.
 """
 
 from __future__ import annotations

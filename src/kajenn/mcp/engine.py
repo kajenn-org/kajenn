@@ -21,7 +21,7 @@ channel to filter on and never touches HTTP concerns (headers, Origin,
 202-for-notifications belong to the host application). ``dispatch`` receives
 the parsed JSON-RPC message, validates the envelope, and resolves ``method``
 on a genro-routes tree of its own — :class:`McpDispatcher`, held as
-``mcp_dispatcher`` — the same machinery the lane and the HTTP side use: no
+``mcp_dispatcher`` — the same machinery the HTTP side uses: no
 chain of ``if`` on the method name. A method nobody serves reads
 ``node.error`` (the stable genro-routes contract — resolution never raises)
 and becomes -32601 THERE, in one place. What ``dispatch`` returns is the
@@ -31,17 +31,17 @@ code for the transport to render. A list payload is rejected with -32600:
 JSON-RPC batching entered the MCP spec in 2025-03-26 and was removed in
 2025-06-18.
 
-The tree (protocol 2025-11-25, the current revision), every route taking the
-protocol signature ``(params, auth_tags)``:
+The tree — the protocol revisions it speaks are ``SUPPORTED_VERSIONS``, newest
+first — every route taking the protocol signature ``(params, auth_tags)``:
 
 - ``ping`` answers an empty result (spec MUST).
 - ``initialize`` negotiates the version: the client's requested version is
   echoed when it appears in ``SUPPORTED_VERSIONS``, anything else is answered
   with the latest supported revision.
 - ``tools`` is a branch, :class:`~kajenn.mcp.tools.McpTools`: ``list``
-  and ``call`` with everything that builds their answers. Each further family
-  of the protocol (``prompts``, ``resources``, ``server``) is a branch of its
-  own, a class of its own, attached the same way.
+  and ``call`` with everything that builds their answers. A further family of
+  the protocol attaches the same way: a class of its own, added with
+  ``add_branches``.
 """
 
 from __future__ import annotations

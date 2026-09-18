@@ -39,7 +39,7 @@ guard and the same outcome path.
 
 The store lives on the ``TaskManager`` (``manager.task_store``), not the server;
 the scheduler reaches the live server through ``manager.server``. Store I/O and
-sync task bodies are synchronous by construction (core 1b) and dispatched via
+sync task bodies are synchronous by construction and dispatched via
 ``server.run_sync`` (a zero-arg closure — ``run_sync`` takes no kwargs).
 """
 
@@ -92,7 +92,7 @@ class TaskScheduler:
 
     @property
     def running(self) -> set[str]:
-        """The codes with a run currently in flight (a copy)."""
+        """The codes with a run in flight (a copy)."""
         return set(self._running)
 
     # -- lifecycle --
@@ -214,7 +214,7 @@ class TaskScheduler:
         due = await self.server.run_sync(lambda: self.store.due_rows(now))
         for row in due:
             if row.get("target_kind", "task") != "task":
-                continue  # reserved for the future privileged mode
+                continue  # "task" is the only target kind the scheduler runs
             code = row["code"]
             if code in self._running:
                 continue  # no overlap
