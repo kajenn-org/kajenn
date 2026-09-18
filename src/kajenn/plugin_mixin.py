@@ -33,9 +33,9 @@ are plugged by name alone. A composition WITHOUT this mixin exposes no
 ``arm_router`` and arms nothing — ``RoutedApplication`` degrades silently.
 
 ``default_plugin_registry()`` returns a FRESH dict per call (``{"openapi":
-OpenAPIPlugin}`` as of Phase 5) — a function, so no module-level mutable
-registry exists; and importing this module never registers a plugin against
-genro-routes (no import side effect).
+OpenAPIPlugin}``) — a function, so no module-level mutable registry exists;
+and importing this module never registers a plugin against genro-routes (no
+import side effect).
 """
 
 from __future__ import annotations

@@ -19,9 +19,8 @@ MRO (``CommunicationMixin, AuthMixin, SessionMixin, MiddlewareMixin,
 PluginMixin, StorageMixin, TaskMixin, BaseServer``): the complete mono-process
 async server of D22. ``TaskMixin`` sits after ``StorageMixin`` (it needs
 ``server.storage``) and before ``BaseServer`` (its lifespan hook must wrap the
-base ``Lifespan``). The future internal (worker) server simply composes the SAME
-base WITHOUT the auth mixin (D6 by construction — the base never learned about
-the chain).
+base ``Lifespan``). An internal (worker) server composes the SAME base WITHOUT
+the auth mixin (D6 by construction — the base never learned about the chain).
 
 The server is SELF-CONFIGURING: ``AsgiServer(config=source)`` builds its own
 read door — a ``ConfigurationHandler`` over a template NAME, a ``config.py``
@@ -33,16 +32,17 @@ kwarg (``AsgiServer(config=Recipe, port=0)`` serves the recipe's site on an
 OS-assigned port), and the handler stays reachable as ``server.config`` — the
 read door applications delegate to.
 
-THE CONFIGURATION ALWAYS EXISTS (#91). ``AsgiServer(applications=[...], ...)``
+THE CONFIGURATION ALWAYS EXISTS. ``AsgiServer(applications=[...], ...)``
 without a source is a SHORTCUT, not a second way to be born: it takes the
 ready-made ``default`` template and writes the kwargs it received into a
 ``ShortcutConfiguration`` layered on top of it, so ``server.config`` is a
-handler here as everywhere and every option is read from the tree. Every option it received is written there and popped, applications
-included: the shortcut declares CLASSES with their parameters, and the server
-instantiates them off the tree exactly as it does for a written recipe.
+handler here as everywhere and every option is read from the tree. Every
+option it received is written there and popped, applications included: the
+shortcut declares CLASSES with their parameters, and the server instantiates
+them off the tree exactly as it does for a written recipe.
 
-Its cooperative ``__init__`` peels the kwargs the frozen Macro 1 ``BaseServer``
-does not accept — ``host``/``port``/``external_url`` — and forwards
+Its cooperative ``__init__`` peels the kwargs ``BaseServer`` does not accept —
+``site_name``/``site_home``/``host``/``port``/``external_url`` — and forwards
 everything else (``applications``, ``auth``, ``session_store``/``session_ttl``,
 ``middleware``/``middleware_registry``, ``plugins``/``plugin_registry``,
 ``storage``/``storage_key``, ``parent``) down the D16 chain. The peeled
@@ -52,8 +52,8 @@ serves on its configured address unless the caller overrides it.
 ``host``/``port`` are the LISTENER; ``external_url`` is the server's PUBLIC
 base address — the two differ behind a proxy and answer different questions.
 The listener says where to bind; the public address is what the server calls
-itself when it hands its own URL to a third party. Only one consumer needs it
-today (an OIDC provider is given an absolute ``redirect_uri``, RFC 6749
+itself when it hands its own URL to a third party. Its one consumer is the
+OIDC flow (a provider is given an absolute ``redirect_uri``, RFC 6749
 §3.1.2), and it is DECLARED rather than derived from a request: the URI must
 match the one registered with the provider — a deployment fact known to
 whoever installs — and deriving it from the client-supplied ``Host`` would
@@ -61,12 +61,12 @@ build a value the provider then rejects. Missing it with a provider
 configured is a boot error (``_check_oidc_external_url``), not an opaque
 provider error at the first login.
 
-No application is registered behind the caller's back (D-SA-10, superseding the
-"automatic, not configured" half of SPEC D4): the server application is declared
-like any other, with its ``app_class`` from ``kajenn_server_app`` and the
-code ``_server``. A server that declares none exposes no ``/_server/...`` and
-the core imports nothing of that package. The configured databases are
-registered at the end of ``__init__``, over the live server.
+No application is registered behind the caller's back (D-SA-10): the server
+application is declared like any other, with its ``app_class`` from
+``kajenn_server_app`` and the code ``_server``. A server that declares none
+exposes no ``/_server/...`` and the core imports nothing of that package. The
+configured databases are registered at the end of ``__init__``, over the live
+server.
 """
 
 from __future__ import annotations
@@ -145,7 +145,7 @@ class AsgiServer(
         A ready handler passes through — its owner already decided its layering.
         A template NAME, a ``config.py`` path, a recipe class or a recipe
         instance becomes the TOP layer of a handler whose parents
-        ``DefaultConfig.parents_for()` computes: the package defaults, plus the
+        ``DefaultConfig.parents_for()`` computes: the package defaults, plus the
         defaults source the recipe declares (``default_config``).
 
         ``None`` is the SHORTCUT: the constructor kwargs are written into a
@@ -157,7 +157,8 @@ class AsgiServer(
         A ``config.py`` path is imported ONCE, here: the loaded class both
         answers ``default_config`` and becomes the handler's source, so a
         module-body side effect fires a single time per boot and the class the
-        parents were computed from is the class the handler builds."""
+        parents were computed from is the class the handler builds.
+        """
         if isinstance(config, ConfigurationHandler):
             return config
         if config is None:
@@ -280,8 +281,8 @@ class AsgiServer(
 
         What the server calls ITSELF when it hands its own address to a third
         party — distinct from the ``host``/``port`` it binds to, which differ
-        behind a proxy. Declared in the config's ``server`` section; the only
-        consumer today is the OIDC ``redirect_uri``, which must be absolute.
+        behind a proxy. Declared in the config's ``server`` section; its one
+        consumer is the OIDC ``redirect_uri``, which must be absolute.
         """
         return self._external_url
 

@@ -33,13 +33,13 @@ of running without what the hook was there to build.
 Under a signal the state has already turned when the shutdown arrives here
 (``UvicornServer.handle_exit``, ``server.py``); the shutdown is where it turns
 for everybody else, and BEFORE any application's hook runs the server stops
-accepting — ``QUITTING`` when whoever triggered the shutdown chose
-to save (``shutdown_mode``, set by the ``--reload`` launcher and one day by
-the deliberate command), ``STOPPING`` otherwise — and the in-flight requests are
-drained, bounded by ``SHUTDOWN_DRAIN_TIMEOUT_SECONDS``. Only then do the hooks
-run, in reverse order: each application saves AFTER nothing new can arrive and
-nothing old is still being served. A state somebody already set is respected:
-the deliberate command decides before the shutdown reaches here.
+accepting — ``QUITTING`` when whoever triggered the shutdown chose to save
+(``shutdown_mode``, which the ``--reload`` launcher sets), ``STOPPING``
+otherwise — and the in-flight requests are drained, bounded by
+``SHUTDOWN_DRAIN_TIMEOUT_SECONDS``. Only then do the hooks run, in reverse
+order: each application saves AFTER nothing new can arrive and nothing old is
+still being served. A state somebody already set is respected: whoever writes
+``state`` before the shutdown reaches here decides.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ STOPPING = "stopping"
 
 #: How long the shutdown waits for the in-flight requests before proceeding
 #: without them, in seconds. What is still in flight past it is counted in the
-#: log and served by nobody: the worker-level cut answers those calls.
+#: log and waited for no longer: the shutdown sequence goes on without it.
 SHUTDOWN_DRAIN_TIMEOUT_SECONDS = 10.0
 
 __all__ = [
@@ -128,8 +128,8 @@ class Lifespan:
         a signal is the normal case since ``UvicornServer`` turned it there — so
         no application saves while new work can still arrive. The drain is bounded:
         past ``SHUTDOWN_DRAIN_TIMEOUT_SECONDS`` the count still in flight goes in
-        the log and the sequence proceeds — those calls are answered by the
-        worker-level cut, never waited for twice.
+        the log and the sequence proceeds — the hooks are never held behind a
+        request that does not end.
         """
         self.server.start_leaving()
         still_in_flight = await self.server.requests.await_drain(SHUTDOWN_DRAIN_TIMEOUT_SECONDS)

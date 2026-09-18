@@ -205,10 +205,9 @@ class BaseApplication:
 
         The path of a handshake names its home application, and the server asks
         THAT application whether a connection is admissible before accepting
-        one. An application whose messages only make sense for a known
-        connection — the SPA, whose every message is a request of a user — names
-        its cookie here, and a handshake without it is accepted and closed with
-        1008, so the browser reads why.
+        one. An application whose every message is a request of a known user
+        names its cookie here, and a handshake without it is accepted and
+        closed with 1008, so the browser reads why.
         """
         return None
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The three names the hidden-path rule is written in (issue #88).
+"""The three names the hidden-path rule is written in.
 
 A path whose first segment starts with ``HIDDEN_SEGMENT_PREFIX`` is hidden or
 of service: nothing of the site lives there. The one exception is the segment

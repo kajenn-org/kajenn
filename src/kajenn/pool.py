@@ -19,9 +19,9 @@ the server as a dual parent-child (``self.server``). Async handlers stay on the
 event loop; only sync handlers reach the pool, dispatched through
 ``BaseServer.run_sync`` via ``loop.run_in_executor``.
 
-Lazily provisioned (invariant #1 — build lazily on the running loop): the
-executor is created on the first dispatch, never at boot, and torn down at
-lifespan shutdown only if it was ever provisioned.
+Lazily provisioned: the executor is created on the first dispatch, on the
+running loop and never at boot, and torn down at lifespan shutdown only if it
+was ever provisioned.
 """
 
 from __future__ import annotations

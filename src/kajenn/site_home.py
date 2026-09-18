@@ -20,7 +20,7 @@ virtualenv, in Docker and in Kubernetes: only the folder moves::
 
     <home>/
         config.py            the configuration recipe (the card names the file)
-        static/              the site's static files (the turn before the 404 is later work)
+        static/              the site's static files
         data/
             frozen_users/    the deposit of the frozen users
             sessions/        the session snapshots
@@ -80,7 +80,7 @@ class SiteHome:
 
     @property
     def static(self) -> Path:
-        """The files the static turn serves before the 404 (favicon, robots, sitemap)."""
+        """The site's static files (favicon, robots, sitemap)."""
         return self.path / "static"
 
     @property

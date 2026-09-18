@@ -477,8 +477,8 @@ class ServerLauncher:
 
         The derivation is the CLI's convenience and stays here: the watch root
         is the source file's directory. The launch itself is the package's
-        public one (``reloading``, #39) — any other launcher reaches it with
-        roots of its own choosing.
+        public one (``reloading``) — any other launcher reaches it with roots
+        of its own choosing.
         """
         payload = self.launcher_payload
         serve_reloading(
@@ -810,8 +810,7 @@ def factory() -> AsgiServer:
     else:
         raise CliError(f"{LAUNCHER_ENV} carries neither an 'application' nor a 'config' key")
     # Under the reload supervisor every exit is a deliberate save: the child is
-    # killed at each source change, and the next one adopts what this one froze
-    # (dev-reload auto-soft, the orientations' §4).
+    # killed at each source change, and the next one adopts what this one froze.
     server.shutdown_mode = QUITTING
     return server
 

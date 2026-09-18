@@ -23,7 +23,7 @@ database registry) and plugs the ``auth`` plugin on the app router, so
 entries declaring ``auth_rule`` are filtered by the request's authorization
 tags — attached children inherit the plug.
 
-The config-driven plugins (the ``openapi`` dialect today) are armed LAZILY:
+The config-driven plugins (the ``openapi`` dialect) are armed LAZILY:
 on the first ``route`` access made after the app is attached to a server, the
 app calls ``server.arm_router(self.route)`` (once, guarded), so a server built
 with a ``plugins`` section plugs them onto every routed app it hosts. A
@@ -35,7 +35,7 @@ The ASGI dispatch (``__call__``) is the per-app routing engine: build a
 from the request path — already mount-relative, the server demux strips the
 prefix (D3) — with the identity tags of ``scope["auth"]`` as auth filters,
 bind kwargs, execute (async handlers stay on the loop, sync handlers go
-through ``server.run_sync`` — the Macro 1 pool protocol), then answer via
+through ``server.run_sync`` — the pool protocol), then answer via
 ``request.response.set_result(value, metadata)``. Resolution failures raise
 core exceptions (``ROUTER_ERRORS``: unknown or unavailable path →
 ``HTTPNotFound``; a ruled entry denied with no identity → ``HTTPUnauthorized``,
@@ -48,8 +48,8 @@ argument, too many positionals) → ``HTTPBadRequest`` (400);
 ``validation_error`` (the signature is satisfied and pydantic rejects the
 values) → the status the application declared in its own grammar
 (``application.validation_error_status``: 400 under the strict reading, the
-default, and 422 for an application asking for the FastAPI convention — issue
-#87). The handler BODY is mapped to neither: whatever it raises — a
+default, and 422 for an application asking for the FastAPI convention). The
+handler BODY is mapped to neither: whatever it raises — a
 ``TypeError`` included, sync body or async — propagates and reaches
 ``ErrorMiddleware`` as a 500. There is no local cleanup drain: the server
 ``finally`` owns end-of-request cleanups.
@@ -289,7 +289,7 @@ class RoutedApplication(BaseApplication, RoutingClass):
 
         The sync dispatch runs this on the SAME pool thread the handler just
         ran on, after it returned or raised: the place to release whatever
-        thread-local resources the handler's code opened (a legacy db
+        thread-local resources the handler's code opened (a synchronous db
         connection lives and must die on its own thread). No-op by default,
         same consumer-seam discipline as ``wsgi_app`` and ``build_registry``.
         The async path never calls it — an async handler owns its awaits.
@@ -305,12 +305,10 @@ class RoutedApplication(BaseApplication, RoutingClass):
         ``body_data`` is kept when the handler itself declares it, accepts
         ``**kwargs``, or exposes no signature (no pydantic plugin).
 
-        A handler that declares ``_request`` is given the live ``Request``: the
-        login surface of the ``_server`` app asked for it first, and the
-        websocket channel command asks for it now — both need what only the
-        request knows, the cookie it came with. It was the server app's own
-        override until #68 moved it here, because the seam is nobody's private
-        business (owner, 2026-09-07).
+        A handler that declares ``_request`` is given the live ``Request``: a
+        login surface and a websocket channel command both need what only the
+        request knows, the cookie it came with. The seam belongs to every
+        routed application, not to one of them.
         """
         kwargs = request.handler_kwargs()
         fields = node.params.get("fields") or []
@@ -341,7 +339,7 @@ class RoutedApplication(BaseApplication, RoutingClass):
     def spread_over_params(self, node: RouterNode, data: dict[str, Any]) -> dict[str, Any]:
         """Fit a dict of values to the handler's declared parameters.
 
-        Shared by every wire dialect (REST body today, MCP arguments later):
+        Shared by every wire dialect (a REST body, MCP arguments):
         keeps ``data`` whole when the handler declares no signature
         (``fields`` is ``None`` — no pydantic plugin) or accepts ``**kwargs``;
         otherwise keeps only the declared names, dropping extras. An empty

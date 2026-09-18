@@ -12,7 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Minimal ASGI server core: the base server and the app-side contract."""
+"""The public surface of the kajenn server core.
+
+Every name a site composes a server from is imported here and listed in
+``__all__``: the base server and the shipped composition, the app-side
+contract and its routed base, the configuration grammar and its handler, the
+capability mixins (auth, sessions, middleware, plugins, storage,
+communication), the request/response pair, the HTTP exceptions, the channel
+and MCP surfaces, the tasks grammar and the ASGI type aliases.
+
+``__version__`` is read from the installed distribution.
+"""
 
 from importlib.metadata import version as _distribution_version
 
@@ -136,6 +146,6 @@ __all__ = [
     "router_openapi",
 ]
 
-# Derived from the installed distribution (issue #16): pyproject.toml is the
-# single place a release bump touches, and this can never drift again.
+# Derived from the installed distribution: pyproject.toml is the single place a
+# release bump touches, so the two cannot drift apart.
 __version__ = _distribution_version("kajenn")

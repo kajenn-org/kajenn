@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The reload launch, reachable by any launcher (#39).
+"""The reload launch, reachable by any launcher.
 
 ``serve_reloading`` boots a server under uvicorn's reload supervisor: the
 caller names WHAT to rebuild (a ``config`` path or an ``application`` target —

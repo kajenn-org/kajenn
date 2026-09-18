@@ -37,8 +37,9 @@ __all__ = ["AsgiDbHandlerBase"]
 class AsgiDbHandlerBase:
     """Wraps a database object: owns ``closeConnection``, proxies the rest.
 
-    Subclass to customise lifecycle (e.g. a legacy backend); the default
-    proxies every non-underscore attribute to the wrapped db.
+    Subclass to customise the lifecycle (a backend whose connection needs more
+    than ``closeConnection``); the default proxies every non-underscore
+    attribute to the wrapped db.
     """
 
     __slots__ = ("_db",)

@@ -55,8 +55,7 @@ server that already refuses new work. Whatever the state turn makes true,
 its source against it through ``get_until_leaving`` and ends by itself instead
 of being cancelled when the grace runs out. Under uvicorn's own ``--reload``
 the child process builds no ``UvicornServer``, so there the ordered shutdown is
-not guaranteed (owner, 2026-09-12: accepted for the stateless single-process
-mode).
+not guaranteed.
 """
 
 from __future__ import annotations
@@ -85,12 +84,16 @@ REFUSED_RETRY_AFTER_SECONDS = 5
 """The seconds a refused request is told to come back in."""
 
 WEBSOCKET_MAX_CONCURRENT = 16
-#: How long uvicorn waits for open connections at shutdown before cancelling them.
-SHUTDOWN_TIMEOUT_SECONDS = 5.0
 """How many messages of ONE websocket connection may be served at once.
 
-A setpoint (owner, 2026-09-06: «configurabile default 16»): the ceiling is what
-keeps a client that floods from sinking the server.
+The ceiling is what keeps a client that floods from sinking the server. The
+``websocket(max_concurrent=...)`` option overrides it per server.
+"""
+
+SHUTDOWN_TIMEOUT_SECONDS = 5.0
+"""How long uvicorn waits for open connections at shutdown before cancelling them.
+
+The ``shutdown_timeout_seconds`` kwarg overrides it per server.
 """
 
 __all__ = [
@@ -137,7 +140,7 @@ class BaseServer:
     ``shutdown_timeout_seconds`` — how long uvicorn waits for open connections
     to finish before it cancels them at shutdown (5.0). Without a bound, one
     endless response — an SSE stream a client never closes — holds the server
-    for ever and the lifespan shutdown never runs (measured 2026-09-08).
+    for ever and the lifespan shutdown never runs.
     """
 
     def __init__(self, **kwargs: Any) -> None:
@@ -175,15 +178,15 @@ class BaseServer:
         """What ``state`` becomes at the lifespan shutdown when nobody chose first.
 
         ``STOPPING`` — down dry — unless the trigger declares its exit saves:
-        the ``--reload`` launcher sets ``QUITTING`` here, the deliberate command
-        will set ``state`` itself before the shutdown arrives.
+        the ``--reload`` launcher sets ``QUITTING`` here. Whoever writes
+        ``state`` before the shutdown arrives is left alone.
         """
         self.debug = debug
         """The declared usage mode: False, True, or the parameters it was given.
 
-        A flag and nothing else (owner, 2026-08-25): the core branches on it
-        nowhere. It exists so future readers — extra middleware, extra checks —
-        can behave differently knowing the server runs in debug.
+        A flag and nothing else: the core branches on it nowhere. It is there
+        for whoever reads it — extra middleware, extra checks — to behave
+        differently knowing the server runs in debug.
         """
         for app in applications:
             self.register_application(app)
@@ -397,7 +400,7 @@ class BaseServer:
         else **404**. ``/`` on a server WITH a root application matches its
         empty mount in the first branch, which forwards the same ``/``.
 
-        The hidden paths come first (#88): a first segment starting with a dot
+        The hidden paths come first: a first segment starting with a dot
         never takes those branches, and the rule is the server's own — always
         on, no middleware, no switch. A path without a dot is ordinary, the
         conventional probes included (``/favicon.ico``, ``/robots.txt``): the
@@ -456,7 +459,7 @@ class BaseServer:
     async def on_websocket(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Live one websocket connection: the motor, or the application's own hands.
 
-        One ``WsxConnection`` per socket does the whole thing (#68): it judges
+        One ``WsxConnection`` per socket does the whole thing: it judges
         the handshake, accepts it, turns every message into a request the demux
         routes like any other, and answers the ones that carry an ``id``. The
         connection is registered in ``websockets`` for its whole life.
