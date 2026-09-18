@@ -39,10 +39,11 @@ installation of the `docs` extra, `docs/conf.py` and failure on warnings. This
 is build configuration, not evidence that the remote project is connected or
 that a build was published.
 
-No Read the Docs project is connected to this repository yet. A maintainer must
-confirm the project URL, repository integration and version/branch settings
-before publication is claimed. Successful local builds do not establish remote
-publication.
+The [kajenn Read the Docs project](https://app.readthedocs.org/projects/kajenn/)
+is connected to this repository and builds `main` as `latest`. Check the remote
+build result before claiming an update is live. The configured documentation URL
+is https://kajenn.readthedocs.io/en/latest/. Custom-domain availability is separate
+from a successful documentation build.
 
 ## Internals reader
 
@@ -51,3 +52,11 @@ checkout install `python -m pip install -e '.[internals]'`, then run
 `mkdocs serve`. Its default address is `http://127.0.0.1:8771/`; its source views
 show the local checkout, including uncommitted changes. See `.mkdocs/README.md`
 in the repository for reader verification and alternate-port commands.
+
+## Branding assets
+
+The documentation sidebar uses the symbol; the home page shows the full wordmark.
+The home-page brand panel follows the browser color preference, with a charcoal
+panel for the opaque dark-background variant. The rest of the classic Read the
+Docs theme is unchanged. Asset copies in `docs/_static/branding/` must match the
+canonical PNGs in `assets/branding/`; update both when the approved logo changes.
