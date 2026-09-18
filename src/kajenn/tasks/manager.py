@@ -23,7 +23,7 @@ fire-and-forget worker loop for the whole process. It owns:
   stateless seam: the same storage yields an equivalent spool, so the manager reuses
   the executor's rather than opening a second);
 - ``executor`` — the ``LocalTaskExecutor`` bound to the live server;
-- ``hub`` — the in-memory ``EventHub`` (the live progress courier for Phase 6);
+- ``hub`` — the in-memory ``EventHub`` (the live progress courier);
 - ``scheduler`` — the ``TaskScheduler`` (the recurring loop, over ``task_store``);
 - ``task_store`` — the ``FileTaskStore`` (persistent schedules, over ``site:tasks``);
 - ``worker_id`` — the single logical worker of the mono-process core (``"local"``).
@@ -33,15 +33,14 @@ fire-and-forget worker loop for the whole process. It owns:
 fire-and-forget ``_worker_loop`` and the ``scheduler`` tick loop — and ``stop``
 cancels/awaits them both (in-flight executions are their own tasks and are left
 to finish). Each loop mirrors the same shape: a failing pass is logged and never
-kills the loop. Session GC is NOT a manager job: the store reaps expired
-sessions itself, delta-checked at ``create`` time (a ratified revision of core
-1e/◆D22 — the former ``_purge_loop`` is gone).
+kills the loop. Session GC is NOT a manager job: the session store reaps expired
+sessions itself, delta-checked at ``create`` time (``session/store.py``).
 
 The worker loop is FIRE-AND-FORGET on the event loop: it polls ``list_pending``,
 ``assign``s each task to ``worker_id``, and launches ``executor.execute`` as its own
 task. The D2 thread pool stays reserved for the blocking handler BODY inside
 ``execute`` (via ``server.run_sync``) — the loop itself never blocks the pool.
-Distributed dispatch (worker processes, a batch commander) is out of scope (D22).
+Distributed dispatch — tasks handed to worker processes — is out of scope (D22).
 """
 
 from __future__ import annotations
@@ -105,7 +104,7 @@ class TaskManager:
 
     @property
     def running(self) -> bool:
-        """Whether the worker loop task is currently live."""
+        """Whether the worker loop task is live."""
         return self._loop_task is not None and not self._loop_task.done()
 
     # -- lifecycle (called by the server's lifespan hook) --

@@ -14,17 +14,15 @@
 
 """Local channel — the in-process wire, byte-identical to the socket one.
 
-The single role (design §3.5a) runs commander and worker in ONE process, and
-it must speak the very same protocol as a spawned child: not "the same API",
-the same *bytes*. ``LocalChannel`` is therefore two ``asyncio.Queue``s of
-encoded frames — every envelope crosses through ``Frame.encode()`` and is
-re-parsed on the other side with the same versioned info/bytes
-rules ``FrameStream.read`` applies. A payload dict mutated after ``send()``
-cannot reach the peer, exactly as over a socket.
+Both ends live in ONE process and speak the very same protocol as a child in
+another process: not "the same API", the same *bytes*. ``LocalChannel`` is
+therefore two ``asyncio.Queue``s of encoded frames — every envelope crosses
+through ``Frame.encode()`` and is re-parsed on the other side with the same
+versioned info/bytes rules ``FrameStream.read`` applies. A payload dict
+mutated after ``send()`` cannot reach the peer, exactly as over a socket.
 
-``LocalFrameStream`` is the codec twin of ``FrameStream`` (the only module
-above the frame protocol allowed to touch bytes): ``read()`` returns ``None``
-at EOF, an oversized or malformed frame raises ``ValueError``. A queue sentinel
+``LocalFrameStream`` is the codec twin of ``FrameStream``: ``read()`` returns
+``None`` at EOF, an oversized or malformed frame raises ``ValueError``. A queue sentinel
 models EOF in both directions, so closing either end has the socket meaning —
 the peer's read ends and the link-loss callback runs.
 

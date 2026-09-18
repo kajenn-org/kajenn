@@ -37,15 +37,14 @@ Inside a task folder::
     cancel            marker file: present == the user requested a stop
     result            the batch result (written by the worker on completion)
 
-A ``batch_id`` is terminal (§5.7): it never resumes or relaunches itself. An
-orphan (a task left under ``active/`` whose worker died) is settled ``aborted``
-at boot; relaunch = a NEW id. There are no locks: safety is structural — one
-single writer per state directory (sender on pending, one worker per active
+A ``batch_id`` is terminal (§5.7): it never resumes or relaunches itself, and a
+relaunch is a NEW id. There are no locks: safety is structural — one single
+writer per state directory (sender on pending, one worker per active
 subfolder), and a claim is an atomic rename.
 
 The spool is the shared object the sender, the manager and the worker all use,
-each with the methods that concern it. Storage is synchronous by construction
-(core 1b): async callers dispatch blocking spool calls via ``server.run_sync``.
+each with the methods that concern it. Storage is synchronous by construction:
+async callers dispatch blocking spool calls via ``server.run_sync``.
 """
 
 from __future__ import annotations
@@ -150,7 +149,7 @@ class TaskSpool:
         node.write_text(json.dumps(data, indent=2))
 
     def _find_folder(self, task_id: str) -> StorageNode | None:
-        """Locate a task's folder in whatever state it currently sits (or None)."""
+        """Locate a task's folder in whatever state it sits (or None)."""
         for status in (PENDING, TERMINATED, ABORTED):
             node = self._task_node(status, task_id)
             if node.exists():
@@ -271,7 +270,7 @@ class TaskSpool:
         folder.child(CANCEL_FILE).write_text("")
 
     def is_cancelled(self, task_id: str) -> bool:
-        """True if a ``cancel`` marker is present (the worker checks at each tick)."""
+        """True if a ``cancel`` marker is present in the task's folder."""
         folder = self._find_folder(task_id)
         return folder is not None and folder.child(CANCEL_FILE).exists()
 

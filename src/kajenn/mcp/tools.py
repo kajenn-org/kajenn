@@ -41,11 +41,11 @@ protocol signature ``(params, auth_tags)``.
   ``{"isError": true, "content": [...]}`` results, not JSON-RPC protocol
   errors (SEP-1303, enables model self-correction). Validation runs INSIDE
   genro-routes (the pydantic plugin validates at call time; nothing is
-  re-validated here). Since genro-routes 0.28.0 every bad-argument error — a
+  re-validated here). Every bad-argument error — a
   ``pydantic.ValidationError`` or an unbindable-argument ``TypeError`` alike —
   is channelled through the node's ``errors={"validation_error": ...}`` seam
   to a local marker, so this module needs no pydantic import; the bare
-  ``TypeError`` catch remains for an async handler body raising at await time
+  ``TypeError`` catch covers an async handler body raising at await time
   (a sync body's TypeError is already folded into the marker upstream). Both
   become ``isError`` results. A dict result is returned BOTH as
   ``structuredContent`` and as its JSON text rendering (the unstructured
@@ -168,7 +168,7 @@ class McpTools(RoutingClass):
         """Resolve a tool name to its router node, invoke it, wrap the result.
 
         Bad tool arguments come back as ``isError`` results — genro-routes
-        0.28.0 folds validation failures AND unbindable arguments into the
+        folds validation failures AND unbindable arguments into the
         ``validation_error`` mapping, while the ``TypeError`` catch covers an
         async handler body raising at await time; resolution failures read
         ``node.error`` and raise :class:`McpError`.

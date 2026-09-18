@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Channel subpackage: the frame protocol and the child side (◆D10).
+"""Channel subpackage: the frame protocol and both ends that speak it (◆D10).
 
-The minimal package knows how to BE a child; the orchestration package knows
-how to HAVE children — the hub imports this protocol from below, never the
-reverse.
+``Frame``/``FrameStream`` are the wire. ``ChannelClient`` is the child end
+over a socket, ``LocalChannel`` the in-process one, ``ChannelHub`` the parent
+end that binds the socket and keeps the rubric of registered members. The far
+end of a channel may live in another process; nothing here reaches up to
+whoever spawns it.
 """
 
 from .client import ChannelClient

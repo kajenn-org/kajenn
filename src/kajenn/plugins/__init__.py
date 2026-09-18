@@ -16,9 +16,9 @@
 
 genro-routes ships the routing-concern plugins (auth, channel, env, logging,
 pydantic); this package holds the transport-dialect plugins that read the
-neutral ``router.nodes()`` description — today the OpenAPI dialect, the MCP
-face later. None of them register against genro-routes at import time: a
-server arms them explicitly through ``PluginMixin.arm_router``.
+neutral ``router.nodes()`` description. It holds the OpenAPI dialect. None of
+them register against genro-routes at import time: a server arms them
+explicitly through ``PluginMixin.arm_router``.
 """
 
 from __future__ import annotations

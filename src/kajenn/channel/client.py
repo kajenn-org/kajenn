@@ -15,9 +15,8 @@
 """Channel client — the child side of the parent↔child channel.
 
 Knowing how to BE a child is part of what a server IS (SPECIFICATION.md
-◆D10): the minimal package ships the frame protocol and this client; the hub
-(parent side) lives in the orchestration package and imports the protocol
-from below, never the reverse.
+◆D10). The client speaks the frame protocol of ``frame.py`` and nothing above
+it; the parent end it registers with may live in another process.
 
 ``connect()`` retries with short backoff until ``connect_timeout`` (boot
 race: the hub socket may not be bound yet) and presents the child with a
@@ -181,8 +180,9 @@ class ChannelClient:
     async def _receive_loop(self, stream: FrameStream) -> None:
         """Read frames until the channel ends; hub gone → orphan.
 
-        A protocol violation from the hub (oversized or non-wsx frame) is a
-        clean death: logged, the loop breaks and the orphan path follows —
+        A protocol violation from the hub (a frame the codec rejects: bad
+        magic, wrong version, oversized, malformed info JSON) is a clean
+        death: logged, the loop breaks and the orphan path follows —
         the exception never leaves the task. The ``finally`` closes the
         stream so the writer never outlives the loop.
         """

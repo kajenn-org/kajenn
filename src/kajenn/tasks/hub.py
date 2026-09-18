@@ -17,10 +17,10 @@
 The spool on storage is the SOURCE OF TRUTH for task progress (the worker writes
 ``progress.json`` at each tick); the hub is the LIVE COURIER that carries the same
 event to whoever is watching NOW. A subscriber is a bounded ``asyncio.Queue`` keyed
-by ``session_id`` (the launching MCP session). The executor pairs each
-``spool.write_progress(...)`` with a ``hub.publish(session_id, event)`` (wired in
-Phase 6); the MCP push channel (Phase 6) subscribes on a GET and drains the queue
-into an SSE stream.
+by ``session_id`` (the launching MCP session). ``LocalTaskExecutor`` publishes the
+``started`` and ``settled`` lifecycle events; ``TaskManager.publish_progress`` pairs
+each ``spool.write_progress(...)`` with a ``publish``. The MCP push channel
+subscribes on a GET and drains the queue into an SSE stream.
 
 Fire-and-forget, shaped like ``ChannelClient.send`` (channel/client.py) but pure
 in-memory — no transport, no frames, nothing to import. A ``publish`` to a session
@@ -30,8 +30,8 @@ full: progress is idempotent (each event is a snapshot superseding the previous)
 a slow reader loses intermediate frames, never the meaning.
 
 No durable replay log lives here (that reads as orchestration, D22): resumability is
-snapshot-baseline — a late subscriber replays the current ``progress.json`` snapshot
-(Phase 5/6), then follows the live queue.
+snapshot-baseline — a late subscriber replays the ``progress.json`` snapshot, then
+follows the live queue.
 """
 
 from __future__ import annotations

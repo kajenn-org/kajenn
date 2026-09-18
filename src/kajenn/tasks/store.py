@@ -22,14 +22,14 @@ record at ``tasks/<code>.json``, one capped JSONL log per task at
 (overridable with the ``tasks(mount=...)`` config element): a schedule is
 operational data, not a credential — it shares the deployment tree with the
 task SPOOL, and only the credential stores declare ``encrypted=True`` at their
-write sites. A future Db-backed store swaps behind the same contract.
+write sites. ``TaskStore`` is the contract; another backend swaps behind it.
 
 The record::
 
     {
       "code": "shop_cleanup",          # PK; the default row's code IS the task name
       "task_name": "shop_cleanup",     # joins the live registry (the tree)
-      "target_kind": "task",           # "path" reserved for a future privileged mode
+      "target_kind": "task",           # the only kind the scheduler runs
       "kwargs": {},                    # passed to the callable
       "kind": "every",                 # every | cron | at
       "spec": "15m",                   # interval | cron string | ISO list
@@ -43,7 +43,7 @@ The store never computes schedules (that is ``tasks.schedule``) and never
 resolves callables (that is the scheduler): it persists, lists and filters.
 ``upsert_default`` is the code-default rule: created when absent, an existing
 record ALWAYS wins (the config/preferences pattern). Storage is synchronous by
-construction (core 1b): async callers dispatch store calls via ``server.run_sync``.
+construction: async callers dispatch store calls via ``server.run_sync``.
 """
 
 from __future__ import annotations
