@@ -38,8 +38,6 @@ On dark backgrounds, use the standalone symbol with a separate light UI product 
 | Gramlot showcase | Clear structure, blue navigation, neutral surfaces | Experimental reference, not an approved theme contract |
 | Gramlot inspector | Trees, compact panels and contextual tools | Do not automatically inherit very small type or tight controls |
 
-![Gramlot reference mark](references/gramlot-logo.png)
-
 The Gramlot image is an unchanged reference copy from the local Gramlot site. The interface blue proposed below is not a sampled or certified brand color from that logo.
 
 ## 3. Visual principles
@@ -187,7 +185,19 @@ New pages use the same tokens, icon family, states and density without arbitrary
 ## 13. Sources
 
 - [Brand asset index](README.md), [standalone mark](kajenn-mark.png), [logo with wordmark](kajenn-logo.png).
-- [Gramlot reference copy](references/gramlot-logo.png), sourced from `/Users/gporcari/Sviluppo/gramlot/gramlot-site/assets/logo.png`.
-- Observed showcase: `/Users/gporcari/Sviluppo/gramlot/gramlot-poc/src/gramlot/showcase/showcase.css`.
-- Observed theme and inspector: `/Users/gporcari/Sviluppo/gramlot/gramlot-poc/js/pages/src/theme.css` and `inspector-theme.css`.
-- Architecture boundaries: `/Users/gporcari/Sviluppo/gramlot/gramlot/docs/00-constitution.md`.
+- The Gramlot logo used as a visual reference is not part of this repository.
+- Observed showcase: `gramlot-poc: src/gramlot/showcase/showcase.css`.
+- Observed theme and inspector: `gramlot-poc: js/pages/src/theme.css` and `inspector-theme.css`.
+- Architecture boundaries: `gramlot: docs/00-constitution.md`.
+
+## Light and dark backgrounds
+
+The root README uses `<picture>` with `prefers-color-scheme: dark` to select
+[`kajenn-logo-dark.png`](kajenn-logo-dark.png). The existing
+[`kajenn-logo.png`](kajenn-logo.png) remains the light-mode fallback.
+
+The dark variant uses light lettering on an opaque charcoal background intended
+for GitHub's default dark theme. It is not a transparent export: other dark themes
+may show a visible rectangular background. These raster variants share the same
+1145 × 1374 canvas; they are visually matched, not pixel-identical masters.
+The standalone symbol asset is unchanged.
