@@ -1,7 +1,5 @@
 # Building the documentation
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 From the repository root, use an isolated environment and build with warnings
 as errors:
 
@@ -32,6 +30,16 @@ real dependencies for autodoc; there are no mocked imports. The Python
 intersphinx inventory is fetched over HTTPS: report a failed network fetch
 separately from local import, markup or link failures.
 
+## The diagrams
+
+The architecture and concept diagrams are Mermaid, written as ```` ```mermaid ````
+fences in the Markdown sources. `sphinxcontrib.mermaid` (in the `docs` extra)
+turns each fence into a `<div class="mermaid">`, and `myst_fence_as_directive`
+is what lets a Markdown fence reach that directive. The drawing itself happens
+**in the browser**, from `cdn.jsdelivr.net`: `sphinx-build` never reports a
+diagram that fails to parse, so open the built page and check that every fence
+became an `<svg>` before publishing.
+
 ## Read the Docs
 
 The repository's `.readthedocs.yaml` declares Ubuntu 24.04, Python 3.12,
@@ -39,10 +47,10 @@ installation of the `docs` extra, `docs/conf.py` and failure on warnings. This
 is build configuration, not evidence that the remote project is connected or
 that a build was published.
 
-No Read the Docs project is connected to this repository yet. A maintainer must
-confirm the project URL, repository integration and version/branch settings
-before publication is claimed. Successful local builds do not establish remote
-publication.
+Whether a Read the Docs project is actually connected to this repository is not
+something the checkout can answer. A maintainer confirms the project URL, the
+repository integration and the version/branch settings before publication is
+claimed; a successful local build establishes nothing about the remote site.
 
 ## Internals reader
 

@@ -1,7 +1,5 @@
 # Lifecycle and shutdown
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 Application `on_startup` hooks run in registration order; `on_shutdown` hooks
 run in reverse. Either hook may be synchronous or asynchronous. Synchronous
 hooks run directly on the event-loop thread, so keep them short or explicitly
@@ -52,8 +50,7 @@ a readable post-accept close code. See [WebSockets](websockets.md).
 the state leaves `RUNNING` — and `await server.get_until_leaving(queue)` reads
 the next item of a queue, or answers `None` the moment the server starts
 leaving. An endless response ends itself with it instead of waiting to be
-cancelled; the MCP push stream and the SPA inspector stream are written that
-way.
+cancelled; the MCP push stream is written that way.
 
 `shutdown_timeout_seconds` defaults to **5.0** and controls uvicorn's wait for
 open connections before cancelling them, allowing lifespan shutdown to run even

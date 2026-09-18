@@ -39,6 +39,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx_autodoc_typehints",
     "myst_parser",
+    "sphinxcontrib.mermaid",
 ]
 
 templates_path = ["_templates"]
@@ -47,10 +48,11 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 # MyST: the guides and narrative pages are Markdown; the toctree skeleton is rst.
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 myst_heading_anchors = 3
+# A ```mermaid fence in Markdown is handed to the ``mermaid`` directive.
+myst_fence_as_directive = ["mermaid"]
 
 html_theme = "sphinx_rtd_theme"
 html_static_path = ["_static"]
-html_css_files = ["diagrams.css"]
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),

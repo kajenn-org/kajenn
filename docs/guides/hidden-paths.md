@@ -1,7 +1,5 @@
 # Hidden paths
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-12.
-
 ## What it does
 
 A path whose **first segment starts with a dot** is hidden or of service:

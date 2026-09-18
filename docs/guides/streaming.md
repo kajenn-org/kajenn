@@ -1,7 +1,5 @@
 # Streaming & SSE
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 ## What it does
 
 Sends a response body incrementally instead of all at once. `StreamingResponse`
@@ -102,10 +100,11 @@ The examples above describe a `StreamingResponse` returned directly by a core
 `RoutedApplication`. The request body has already been fully read before that
 handler runs; streaming the response does not stream an upload.
 
-A multiworker SPA, documented in `kajenn-orchestra`, buffers the complete hosted
-request and response through `AsgiSeam`/`WsgiSeam`. It does not deliver incremental chunks or
-endless SSE from the hosted worker. [WSX](websockets.md) also requires a finite
-response and rejects a response with `more_body=True`.
+An application hosted in another process through `RemoteApplication` buffers the
+complete request and the complete response: `BufferedAsgiEndpoint` refuses a
+chunked or event-stream answer rather than buffering it, so that seam delivers
+no incremental chunks and no endless SSE. [WSX](websockets.md) likewise requires
+a finite response and rejects one with `more_body=True`.
 
 The server's default `shutdown_timeout_seconds=5.0` limits uvicorn's wait for
 open streams during shutdown before cancellation. Application shutdown hooks

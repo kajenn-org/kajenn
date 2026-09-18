@@ -1,7 +1,5 @@
 # Mounting applications
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 A `BaseApplication` has a `code` (its registry name) and `mount` (its first URL
 segment). Both may be class attributes or constructor kwargs. By default the
 code is the lowercase class name and the mount is the code. `mount=""` is the
@@ -59,7 +57,9 @@ forward ASGI lifespan events: initialize and close the hosted framework through
 the adapter's `on_startup` and `on_shutdown` hooks as required by that framework.
 
 The raw WebSocket seam owns its handshake and Origin/auth checks. Read
-[WebSockets](websockets.md) before exposing it. For hosted ASGI/WSGI inside a
-worker pool, use the distinct multiworker SPA integration of
-`kajenn-orchestra`;
-its HTTP path buffers request and response bodies.
+[WebSockets](websockets.md) before exposing it.
+
+To host the application in **another process** instead of this one, the core
+offers `RemoteApplication` (`kajenn.remote_application`) and the runner it talks
+to: both ends buffer the complete request and the complete response, so that
+path carries no streaming. See [the channel protocol](../design/channel-protocol.md).

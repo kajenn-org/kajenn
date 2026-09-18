@@ -1,12 +1,11 @@
 # Background Tasks
 
-> **Status:** Draft; implementation checked against the development source on 2026-09-08.
-
 ## What it does
 
 Runs work outside the request/response cycle: a **spool** of queued jobs, an
-**executor** that runs them, and a **scheduler** for interval and cron jobs. Tasks
-are managed over HTTP under `/_server/tasks`.
+**executor** that runs them, and a **scheduler** for interval and cron jobs. A
+server that declares `ServerApplication` also manages them over HTTP under
+`/_server/tasks`.
 
 ## When to use it
 
@@ -78,14 +77,20 @@ def cleanup(self) -> dict:
 - `task_every="1s"` — run on an interval. Use `task_cron=...` instead for a cron
   expression.
 
-The scheduler drives them; from async code you can `await scheduler.tick()` to advance it
-and `scheduler.run_now(code)` to trigger a scheduled task immediately.
+The scheduler drives them from its own tick loop; from async code you can
+`await server.tasks.scheduler.tick()` to advance it by hand and
+`server.tasks.scheduler.run_now(code)` to queue one immediately. Declaring both
+`task_every` and `task_cron` on one route is logged as an error and the route is
+skipped.
 
 ## Managing tasks over HTTP
 
-The `_server` app exposes the task backbone under `/_server/tasks/...`. These
-endpoints require `SUPERADMIN` (and the server management gate); anonymous curl
-requests receive 401. Authenticate with an appropriately authorized credential:
+`ServerApplication` (from `kajenn_server_app`) exposes the task backbone under
+`/_server/tasks/...` — but only on a server that declares it in `applications=`
+or on the `applications` section. Every one of these endpoints carries
+`auth_rule="SUPERADMIN"`, so an anonymous request receives 401 and an identity
+without that tag receives 403. Authenticate with an appropriately authorized
+credential:
 
 
 - schedule side: `list`, `create`, `enable`, `disable`, `run_now`, `logs`.
@@ -93,25 +98,32 @@ requests receive 401. Authenticate with an appropriately authorized credential:
 
 ## How to verify it
 
-```console
-$ curl http://127.0.0.1:8000/_server/tasks/list
+From code, the backbone answers without any HTTP at all:
+
+```python
+assert server.tasks.worker_id == "local"
+assert server.tasks.spool is not None
 ```
 
-Queue a fire-and-forget job from code (as above), then poll its progress and
-result:
+Over HTTP, with `ServerApplication` declared and a credential carrying the
+`SUPERADMIN` tag:
 
 ```console
-$ curl http://127.0.0.1:8000/_server/tasks/spool_list
-$ curl "http://127.0.0.1:8000/_server/tasks/progress?..."
-$ curl "http://127.0.0.1:8000/_server/tasks/result?..."
+$ curl -u admin:… http://127.0.0.1:8000/_server/tasks/list
+$ curl -u admin:… http://127.0.0.1:8000/_server/tasks/spool_list
+$ curl -u admin:… "http://127.0.0.1:8000/_server/tasks/progress?task_id=..."
+$ curl -u admin:… "http://127.0.0.1:8000/_server/tasks/result?task_id=..."
 ```
+
+Without the credential those paths answer 401; without the application, 404.
 
 ## Gotchas
 
 - The task symbols come from `kajenn.tasks` — `from kajenn.tasks import
   new_descriptor`, not from the package top level.
-- `server.tasks` is lazy and enabled by default. Access with `tasks=False` raises
-  `RuntimeError`; it does not silently return an inactive manager.
+- `server.tasks` is built on first access and enabled by default. Reading it
+  with `tasks=False` raises `RuntimeError`; it does not silently return an
+  inactive manager.
 - Interval vs cron is `task_every=...` **or** `task_cron=...` on `@route`, not
   both.
 - The MCP push stream (`GET /mcp`) depends on the task backbone — it is `405`
