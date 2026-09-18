@@ -7,21 +7,22 @@ advanced.
 
 ## What kajenn is
 
-kajenn is a **minimal ASGI server core**. You build one server object, mount
+kajenn is an **ASGI application server**. ASGI is the interface between a Python
+web application and the network server that calls it. kajenn uses uvicorn for
+that network layer. You build one server object, mount
 your applications on it, and it routes incoming requests to `@route`-decorated
 methods on those applications. Everything else — authentication, sessions,
 background tasks, OpenAPI, MCP, streaming — grows on the same core by
-composition, turned on through constructor keyword arguments.
+composition, configured through constructor keyword arguments.
 
 Two ideas shape the whole design:
 
 - **The server is an object.** You construct an `AsgiServer`, call `.serve()`,
   and throw it away. There are no global variables and no module-level state; a
   test can spin up a fresh isolated server on every run.
-- **Configuration is data.** Features do not appear and disappear — the objects
-  always exist. What changes is the config you hand them (a backend, a set of
-  credentials, a middleware option). You never flip a feature on by monkey-
-  patching; you describe it.
+- **Configuration describes the deployment.** The shipped server composes a set
+  of capabilities. Settings select their backends and activation; expensive
+  resources can be created on first use.
 
 If you come from Starlette or FastAPI, the decorate-a-handler workflow will feel
 familiar; the differences are covered in
@@ -34,17 +35,16 @@ Requires Python 3.11 or newer. Use a virtual environment:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install kajenn
-```
-
-These pages describe the development checkout. A released package can lag behind
-`develop`; for the exact APIs documented here, install from your checkout:
-
-```bash
-git clone --branch develop https://github.com/kajenn-org/kajenn.git
+git clone --branch main https://github.com/kajenn-org/kajenn.git
 cd kajenn
 python -m pip install -e .
 ```
+
+These pages track `main`, which Read the Docs publishes as `latest`. The
+commands above install that checkout. A PyPI release may describe a different
+revision; use release-specific documentation when installing a release.
+Run the examples from a writable directory: default storage uses the working
+directory.
 
 The `kajenn` distribution supplies both import packages: the core `kajenn` and
 the base server application `kajenn_server_app`. The hello-world below uses only
@@ -97,7 +97,7 @@ $ curl -i http://127.0.0.1:8000/nowhere
 HTTP/1.1 404 Not Found
 ```
 
-The same two files run without an entry point of your own:
+The same file can also be served without invoking its Python entry point:
 
 ```console
 $ kajenn serve application=./hello.py:Hello --port 8000
@@ -148,12 +148,9 @@ def greet(self, name: str = "world") -> dict[str, str]:
 
 Parameters in the method signature bind to the request's query string, typed and
 with defaults. `GET /greet?name=genro` calls `greet(name="genro")`; `GET /greet`
-with no query string uses the default `"world"`. `AsgiServer` automatically arms
-the `pydantic` plugin to validate and coerce annotated parameters, such as
-`max_price: float`, together with the `openapi` plugin. These two plugins cannot
-be disabled; explicit plugin entries configure their options. A composition
-without `PluginMixin` does not supply this pair. See
-[Requests and errors](guides/requests.md).
+with no query string uses the default `"world"`. Annotated values such as
+`max_price: float` are converted and validated automatically. See
+[Requests and errors](guides/requests.md) for the input rules and error responses.
 
 ### Building and serving
 
@@ -199,9 +196,10 @@ class Pages(RoutedApplication):
 ## The automatic 404
 
 You did not write a handler for `/nowhere`, yet the server answered `404` cleanly
-rather than crashing. That is the **error middleware**, which is on by default. It
-maps an unmatched path to `HTTPNotFound` and turns raised HTTP exceptions into
-proper responses. You will meet the rest of the middleware chain in the
+rather than crashing. Dispatch returns a 404 when no application matches. A
+routed application can also raise an HTTP exception for a missing route; the
+**error middleware** turns raised HTTP exceptions into responses. Middleware is
+a layer that wraps request handling, for example to handle errors or attach a session. You will meet the rest of the middleware chain in the
 [middleware guide](guides/middleware.md).
 
 ## The `_server` app, when you ask for it

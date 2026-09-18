@@ -90,16 +90,63 @@ Use an ingress limit or an application that controls `receive` directly when
 unbounded uploads are unacceptable. Direct HTTP response streaming does not
 change this request buffering; see [Streaming](streaming.md).
 
+## Access the request and session
+
+A handler can receive the current request through an **unannotated** `_request`
+parameter. Save this complete example as `context.py`, run it, and use a cookie
+jar so the second call reconnects the same session:
+
+```python
+from kajenn import AsgiServer, RoutedApplication
+from genro_routes import route
+
+
+class ContextApp(RoutedApplication):
+    mount = ""
+
+    @route()
+    def visit(self, _request=None) -> dict:
+        session = _request.session
+        visits = session.data.getItem("visits", 0) + 1
+        session.data.setItem("visits", visits)
+        _request.response.set_header("X-Visit-Count", str(visits))
+        return {"visits": visits, "session_id": session.id}
+
+
+if __name__ == "__main__":
+    AsgiServer(applications=[ContextApp]).serve(host="127.0.0.1", port=8000)
+```
+
+```bash
+python context.py
+# In a second terminal:
+curl -c cookies.txt http://127.0.0.1:8000/visit
+curl -b cookies.txt http://127.0.0.1:8000/visit
+```
+
+The visits count changes from 1 to 2 and the session ID stays the same. The
+first response sets the session cookie; each response also carries an
+`X-Visit-Count` header set through the request’s response object. Use `curl -i`
+to inspect those headers. Stop with Ctrl-C and delete the demo cookie jar
+when finished. Sessions are active on the shipped server by default.
+
+The request also exposes `avatar()` for identity and `db` for the application's
+database handler. Learn those after [sessions](sessions.md),
+[authentication](authentication.md) and [databases](databases.md).
+
 ## Validation and status codes
 
 `AsgiServer` automatically arms `pydantic` and `openapi` on its routed
 applications. Neither can be disabled; explicit entries configure their
 options. A composition without `PluginMixin` does not supply this pair.
 
-:::{admonition} Under review
+```{admonition} In revisione
 :class: warning
-This section is being verified against the implementation.
-:::
+
+The documented examples cover common argument errors. The complete matrix of
+JSON spreading, malformed forms and validation conventions is still being
+checked; do not infer complete coverage from the example tests.
+```
 
 Pydantic coerces and validates annotated parameters. A JSON dictionary is
 spread over declared scalar parameters unless the handler declares `body_data`
@@ -116,7 +163,7 @@ Forms and query kwargs still bind normally.
 | Exception raised inside the handler body | 500, unless it is an HTTP exception |
 | Handler raises an `HTTPException` subclass | That exception's status |
 
-The last row is the second option of the application. The default, `strict`,
+The validation status is controlled by the application’s `error_codes` option. The default, `strict`,
 answers 400 to every failure the core judges and leaves 422 to the handler, for
 a domain rule of its own. An application declaring the FastAPI convention in its recipe —
 `app.request(error_codes="fastapi")` — answers 422 to a rejected value, and 400

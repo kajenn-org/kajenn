@@ -18,22 +18,52 @@ authorized management requests.
 Tasks are a mixin capability of `AsgiServer`, enabled by default and configured
 with the `tasks` kwarg:
 
+Save this complete local example as `jobs.py`:
+
 ```python
+from uuid import uuid4
 from kajenn import AsgiServer, RoutedApplication
+from kajenn.tasks import new_descriptor
 from genro_routes import route
 
 
-class App(RoutedApplication):
+class Jobs(RoutedApplication):
     mount = ""
 
     @route()
     def sum_sync(self, a: int = 0, b: int = 0) -> dict:
         return {"result": a + b}
 
+    @route()
+    def submit(self, a: int = 2, b: int = 3) -> dict:
+        task_id = uuid4().hex
+        descriptor = new_descriptor(task_id, owner="demo", mount="", node_path="sum_sync")
+        self.server.tasks.spool.create(descriptor, {"a": a, "b": b})
+        return {"task_id": task_id}
 
-server = AsgiServer(applications=[App], tasks=True)
-server.serve(host="127.0.0.1", port=8000)
+    @route()
+    def result(self, task_id: str) -> dict:
+        spool = self.server.tasks.spool
+        return {"task": spool.get(task_id), "result": spool.read_result(task_id)}
+
+
+if __name__ == "__main__":
+    server = AsgiServer(applications=[Jobs], tasks={"tick_seconds": 1})
+    server.serve(host="127.0.0.1", port=8000)
 ```
+
+Run `python jobs.py` from an empty writable demo directory. In another terminal:
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/submit?a=2&b=3'
+curl 'http://127.0.0.1:8000/result?task_id=PASTE_TASK_ID'
+```
+
+Use the returned task_id. Poll result until the descriptor says `terminated`;
+the result is then `{"result":5}`. A pending job can initially have a null result.
+Stop with Ctrl-C. The local demo exposes public submission/result routes; a real
+service must authenticate submission and enforce ownership on result retrieval.
+
 
 `tasks` accepts:
 
@@ -45,7 +75,9 @@ Once armed, `server.tasks` (lazily provisioned) exposes the backbone:
 
 ## Fire-and-forget
 
-Queue a one-off job by creating a descriptor and handing it to the spool:
+The submit handler above creates a descriptor and hands it to the spool while
+the server is running. The following is the equivalent **handler fragment**, not
+code to append after the blocking `serve()` call:
 
 ```python
 from uuid import uuid4
@@ -53,7 +85,7 @@ from kajenn.tasks import new_descriptor
 
 task_id = uuid4().hex
 d = new_descriptor(task_id, owner="alice", mount="", node_path="sum_sync")
-server.tasks.spool.create(d, {"a": 2, "b": 3})
+self.server.tasks.spool.create(d, {"a": 2, "b": 3})
 ```
 
 - `new_descriptor(...)` builds the task descriptor: who owns it (`owner`), which
@@ -65,7 +97,8 @@ The `tasks` symbols (`TaskManager`, `new_descriptor`, and the rest) import from
 
 ## Scheduling
 
-Register a route as a scheduled task directly on the decorator:
+Insert this method inside the Jobs class, before starting the server, to
+register a scheduled task:
 
 ```python
 @route(task="cleanup", task_every="1s")
@@ -77,7 +110,13 @@ def cleanup(self) -> dict:
 - `task_every="1s"` — run on an interval. Use `task_cron=...` instead for a cron
   expression.
 
-The scheduler drives them from its own tick loop; from async code you can
+The example sets `tick_seconds` to 1 so this short interval can be observed.
+The default scheduler tick is 30 seconds: an interval marks when work becomes
+due, not a guarantee of exact execution time. After a few seconds, inspect
+`tasks/logs/cleanup.jsonl` in the demo directory for an `"outcome": "ok"` record.
+Stop the demo with Ctrl-C.
+
+The scheduler drives tasks from its own tick loop; from async code you can
 `await server.tasks.scheduler.tick()` to advance it by hand and
 `server.tasks.scheduler.run_now(code)` to queue one immediately. Declaring both
 `task_every` and `task_cron` on one route is logged as an error and the route is
@@ -97,6 +136,10 @@ credential:
 - spool side: `spool_list`, `progress`, `cancel`, `result`.
 
 ## How to verify it
+
+The submit/result calls above verify execution, rather than only the existence
+of the task manager. The assertions below are for code that already has the
+server object; they are not commands to run in a separate interpreter.
 
 From code, the backbone answers without any HTTP at all:
 
