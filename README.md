@@ -1,7 +1,10 @@
 # kajenn
 
 <p align="center">
-  <img src="assets/branding/kajenn-logo.png" alt="kajenn" width="200">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/kajenn-logo-dark.png">
+    <img src="assets/branding/kajenn-logo.png" alt="kajenn" width="200">
+  </picture>
 </p>
 
 *A spicy ASGI application server.*
