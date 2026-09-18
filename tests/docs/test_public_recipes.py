@@ -1,3 +1,17 @@
+# Copyright 2025 Softwell S.r.l.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Contract: runnable public recipes answer real HTTP and WSX requests.
 
 Examples are extracted from the documentation, with only the listening port
@@ -6,6 +20,7 @@ changed. Each server runs in its own subprocess and private storage/home.
 
 import base64
 from contextlib import contextmanager
+from http.cookiejar import CookieJar
 import json
 import os
 from pathlib import Path
@@ -15,7 +30,7 @@ import subprocess
 import sys
 import time
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPCookieProcessor, Request, build_opener, urlopen
 
 import pytest
 
@@ -245,3 +260,187 @@ assert shop.config("catalog.locale", default="it") == "it"
         capture_output=True, text=True, timeout=20,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+# Contract tests: new learning-path recipes must work as published.
+def test_intro_recipe_reuses_hello(recipes, serve_recipe, tmp_path):
+    (tmp_path / "hello.py").write_text(recipes.get_code("getting-started.md", "# hello.py"))
+    code = recipes.get_code("configuration.md", "from hello import Hello")
+    # -I deliberately removes the script directory; restore only this example's sibling import.
+    code = f"import sys\nsys.path.insert(0, {str(tmp_path)!r})\n" + code
+    with serve_recipe(code) as server:
+        assert json.loads(server.get_response("/greet?name=Ada")[1]) == {"hello": "Ada"}
+
+
+def test_request_context_reconnects_session(recipes, serve_recipe):
+    with serve_recipe(recipes.get_code("guides/requests.md", "class ContextApp")) as server:
+        client = build_opener(HTTPCookieProcessor(CookieJar()))
+        values = []
+        for _ in range(2):
+            with client.open(f"http://127.0.0.1:{server.port}/visit", timeout=4) as response:
+                value = json.load(response)
+                assert response.headers["X-Visit-Count"] == str(value["visits"])
+                values.append(value)
+        assert [item["visits"] for item in values] == [1, 2]
+        assert values[0]["session_id"] == values[1]["session_id"]
+
+
+def test_storage_roundtrip(recipes, serve_recipe, tmp_path):
+    with serve_recipe(recipes.get_code("guides/storage.md", "class Files")) as server:
+        assert json.loads(server.get_response("/save?text=hello", b"")[1]) == {"text": "hello"}
+        assert json.loads(server.get_response("/read")[1]) == {"text": "hello"}
+        assert (tmp_path / "data" / "note.txt").read_text() == "hello"
+
+
+def test_database_selection_and_cleanup(recipes, serve_recipe):
+    with serve_recipe(recipes.get_code("guides/databases.md", "class ExampleDatabase")) as server:
+        for path, expected in (("database", 0), ("database", 1), ("lookup", 2), ("lookup", 2)):
+            assert json.loads(server.get_response("/" + path)[1]) == {
+                "label": "catalog", "previous_cleanups": expected,
+            }
+
+
+def test_task_submission_reaches_result(recipes, serve_recipe):
+    with serve_recipe(recipes.get_code("guides/tasks.md", "class Jobs")) as server:
+        task_id = json.loads(server.get_response("/submit?a=2&b=3", b"")[1])["task_id"]
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            result = json.loads(server.get_response(f"/result?task_id={task_id}")[1])
+            if result["task"]["status"] in ("terminated", "aborted"):
+                break
+            time.sleep(0.05)
+        assert result["task"]["status"] == "terminated", result
+        assert result["result"] == {"result": 5}
+
+
+def test_streaming_and_sse_routes(recipes, serve_recipe):
+    with serve_recipe(recipes.get_code("guides/streaming.md", "class Streams")) as server:
+        assert server.get_response("/download") == (200, b"onetwo")
+        status, body = server.get_response("/updates")
+        assert status == 200
+        assert b"data: a\n\n" in body and b"data: b\n\n" in body
+        assert b"retry: 5000" in body
+
+
+def test_management_login_tokens_and_permissions(recipes, serve_recipe, monkeypatch):
+    # A fixed, disposable Fernet key for this isolated test directory only.
+    monkeypatch.setenv("DEMO_STORAGE_KEY", base64.urlsafe_b64encode(bytes(range(32))).decode())
+    monkeypatch.setenv("DEMO_ADMIN_PASSWORD", "local-test-password")
+    operator = {"Authorization": "Basic " + base64.b64encode(b"operator:local-test-password").decode()}
+    with serve_recipe(recipes.get_code("guides/management.md", "class Members")) as server:
+        assert server.get_response("/_server/monitor/snapshot")[0] == 401
+        assert server.get_response("/_server/monitor/snapshot", headers=operator)[0] == 200
+        payload = json.dumps({"password": "demo-password", "password_confirm": "demo-password", "tags": ["member"]}).encode()
+        status, body = server.get_response("/_server/users/create_user?identity=alice", payload,
+                                          {**operator, "Content-Type": "application/json"})
+        assert status == 200 and json.loads(body)["identity"] == "alice", body
+        assert "password_hash" not in json.loads(body)
+        assert len(json.loads(server.get_response("/_server/users/list", headers=operator)[1])["users"]) == 1
+        client = build_opener(HTTPCookieProcessor(CookieJar()))
+        url = f"http://127.0.0.1:{server.port}"
+        request = Request(url + "/_server/login", json.dumps({"identity": "alice", "password": "demo-password"}).encode(),
+                          {"Content-Type": "application/json"})
+        with client.open(request, timeout=4) as response:
+            login = json.load(response)
+        assert login["identity"] == "alice"
+        with client.open(url + "/private", timeout=4) as response:
+            assert json.load(response) == {"identity": "alice"}
+        with pytest.raises(HTTPError) as denied:
+            client.open(url + "/_server/monitor/snapshot", timeout=4)
+        assert denied.value.code == 403
+        denied.value.close()
+        request = Request(url + "/_server/logout?session_id=" + login["session_id"], b"")
+        with client.open(request, timeout=4) as response:
+            assert json.load(response)["status"] == "ok"
+        with pytest.raises(HTTPError) as denied:
+            client.open(url + "/private", timeout=4)
+        assert denied.value.code == 401
+        denied.value.close()
+        status, body = server.get_response("/_server/tokens/issue", json.dumps({"label": "local-client", "tags": ["member"]}).encode(),
+                                          {**operator, "Content-Type": "application/json"})
+        assert status == 200
+        key = json.loads(body)["key"]
+        bearer = {"Authorization": "Bearer " + key}
+        assert server.get_response("/private", headers=bearer)[0] == 200
+        records = json.loads(server.get_response("/_server/tokens/list", headers=operator)[1])["tokens"]
+        assert len(records) == 1 and "secret_hash" not in records[0]
+        key_id = records[0]["key_id"]
+        status, body = server.get_response("/_server/tokens/revoke?key_id=" + key_id, b"", operator)
+        assert status == 200 and json.loads(body)["revoked"] is True
+        assert server.get_response("/private", headers=bearer)[0] == 401
+
+
+@pytest.mark.parametrize("page,marker", [
+    ("guides/sessions.md", 'middleware={"session"'),
+    ("guides/authentication.md", "PROVIDER ="),
+])
+def test_secondary_application_declarations(recipes, page, marker, tmp_path):
+    code = "from kajenn import AsgiServer, RoutedApplication, MemorySessionStore\nclass App(RoutedApplication):\n    pass\n" + recipes.get_code(page, marker)
+    code += "\nassert isinstance(server, AsgiServer)\n"
+    environment = {key: value for key, value in os.environ.items() if not key.startswith(("KAJENN_", "GENRO_", "GNR_"))}
+    environment["KAJENN_HOME"] = str(tmp_path / "home")
+    result = subprocess.run([sys.executable, "-I", "-c", code], cwd=tmp_path, env=environment,
+                            capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_storage_encryption_recipe(recipes, tmp_path):
+    code = recipes.get_code("guides/storage.md", "import os")
+    environment = {key: value for key, value in os.environ.items()
+                   if not key.startswith(("KAJENN_", "GENRO_", "GNR_"))}
+    environment.update(KAJENN_HOME=str(tmp_path / "home"),
+                       DEMO_STORAGE_KEY=base64.urlsafe_b64encode(bytes(range(32))).decode())
+    result = subprocess.run([sys.executable, "-I", "-c", code], cwd=tmp_path,
+                            env=environment, capture_output=True, text=True, timeout=15)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert b"private demo" not in (tmp_path / "encrypted-demo.txt").read_bytes()
+
+
+def test_custom_middleware_recipe(recipes, serve_recipe):
+    setup = recipes.get_code("guides/middleware.md", "class App")
+    declarations = setup.split("server = AsgiServer")[0]
+    custom = recipes.get_code("guides/middleware.md", "class StampMiddleware")
+    with serve_recipe(declarations + custom + '\nserver.serve(host="127.0.0.1", port=8000)') as server:
+        status, body = server.get_response("/index")
+        assert status == 200 and json.loads(body) == {"ok": True}
+
+
+def test_interval_task_recipe(recipes, serve_recipe, tmp_path):
+    code = recipes.get_code("guides/tasks.md", "class Jobs")
+    method = recipes.get_code("guides/tasks.md", '@route(task="cleanup"')
+    method = "\n".join("    " + line for line in method.splitlines())
+    code = code.replace('if __name__ == "__main__":', method + '\n\nif __name__ == "__main__":')
+    with serve_recipe(code):
+        log = tmp_path / "tasks" / "logs" / "cleanup.jsonl"
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            if log.exists() and log.read_text().strip():
+                break
+            time.sleep(0.05)
+        assert log.exists(), "The documented interval did not execute"
+        assert json.loads(log.read_text().splitlines()[0])["outcome"] == "ok"
+
+
+def test_mounted_openapi_recipe(recipes, serve_recipe):
+    code = recipes.get_code("guides/openapi.md", "class Shop").split("server = AsgiServer")[0]
+    code += "\nSubApi = Shop\n" + recipes.get_code("guides/openapi.md", '"routing_class": SubApi()')
+    code += '\nserver.serve(host="127.0.0.1", port=8000)'
+    with serve_recipe(code) as server:
+        status, body = server.get_response("/mount/api/search?q=coffee")
+        assert status == 200 and json.loads(body)["query"] == "coffee"
+        assert server.get_response("/mount/_meta/schema_json")[0] == 200
+        assert server.get_response("/mount/_meta/docs")[0] == 200
+
+
+def test_hosted_application_recipe(recipes, serve_recipe):
+    code = "from kajenn import AsgiServer\n"
+    code += recipes.get_code("guides/applications.md", "class HostedApplication")
+    code += '''
+async def existing_asgi_app(scope, receive, send):
+    await send({"type": "http.response.start", "status": 200, "headers": []})
+    await send({"type": "http.response.body", "body": scope["path"].encode()})
+'''
+    code += recipes.get_code("guides/applications.md", '"asgi_app": existing_asgi_app')
+    code += '\nserver.serve(host="127.0.0.1", port=8000)'
+    with serve_recipe(code) as server:
+        assert server.get_response("/external/hello") == (200, b"/hello")

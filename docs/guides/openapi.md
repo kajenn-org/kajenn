@@ -63,10 +63,13 @@ Your endpoints themselves are served directly, e.g. `GET /search?q=moka`.
 **Direct mode** — the `OpenApiApplication` declares `mount = ""`; endpoints are
 at the root and meta is at `/_meta/...` (as above).
 
-**Mounted mode** — the app is placed on a URL prefix:
+**Mounted mode** — the app is placed on a URL prefix. This composition fragment
+assumes `SubApi` is your routed application class:
 
 ```python
-api = OpenApiApplication(code="mount", routing_class=SubApi())
+server = AsgiServer(applications=[
+    (OpenApiApplication, {"code": "mount", "routing_class": SubApi()}),
+])
 ```
 
 - the endpoints are served under `/mount/api/...`

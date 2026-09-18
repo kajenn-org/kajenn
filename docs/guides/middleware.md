@@ -23,7 +23,7 @@ out):
 
 | Name        | Priority | Default | Notes                                        |
 |-------------|----------|---------|----------------------------------------------|
-| `errors`    | 100      | **on**  | maps exceptions and unmatched paths to status codes |
+| `errors`    | 100      | **on**  | maps raised exceptions to HTTP responses |
 | `logging`   | 200      | off     | request logging                              |
 | `cors`      | 300      | off     | CORS headers                                 |
 | `session`   | 400      | off     | armed automatically by `SessionMixin`        |
@@ -81,26 +81,28 @@ server = AsgiServer(
 ## Custom middleware
 
 Register your own middleware class in the registry, then arm it like any built-in
-stage:
+stage. This fragment reuses `AsgiServer` and `App` from the setup above:
 
 ```python
 from kajenn import BaseMiddleware
 
 
 class StampMiddleware(BaseMiddleware):
-    ...
+    async def __call__(self, scope, receive, send):
+        self.logger.info("Request path: %s", scope["path"])
+        await self.app(scope, receive, send)
 
 
 server = AsgiServer(
     applications=[App],
     middleware_registry={"stamp": StampMiddleware},
-    middleware={"stamp": {...}},
+    middleware={"stamp": True},
 )
 ```
 
 - `middleware_registry={"stamp": StampMiddleware}` teaches the server the new
   name.
-- `middleware={"stamp": {...}}` arms it (and passes its options).
+- `middleware={"stamp": True}` arms it with no custom options. Call the next app to continue dispatch.
 
 The individual built-in middleware classes are importable from
 `kajenn.middleware` (e.g. `from kajenn.middleware import

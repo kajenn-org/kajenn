@@ -2,6 +2,9 @@
 
 ## What it does
 
+Prerequisite: [access the current request](requests.md#access-the-request-and-session).
+An Avatar is kajenn’s identity object: an identity name plus authorization tags.
+
 Gives a caller continuity across requests: a session cookie identifies a stored
 `Session` that can hold an `Avatar` and arbitrary data, reconnected on every
 request through the cookie.
@@ -60,7 +63,8 @@ The CLI arms this automatically when you name an instance:
 $ kajenn serve ./config.py --name demo
 ```
 
-persists sessions to `~/.kajenn/sessions/demo.pickle` across restarts —
+persists sessions to `<home>/data/sessions/demo.pickle` when a site home is
+configured, or `~/.kajenn/sessions/demo.pickle` otherwise, across restarts —
 `--reload` restarts included. A nameless serve stays volatile.
 
 This is a development convenience: your login and your work survive a code
@@ -82,7 +86,7 @@ Cookie behaviour is controlled through the `session` middleware options:
 
 ```python
 server = AsgiServer(
-    applications=[App()],
+    applications=[App],
     session_store=MemorySessionStore,
     middleware={"session": {
         "cookie_name": "session_id",
@@ -124,7 +128,7 @@ subsequent requests carry the identity:
 from kajenn import Avatar
 
 # inside a handler that has verified the credentials:
-session.attach_avatar(Avatar("alice", tags="admin,ops"))
+_request.session.attach_avatar(Avatar("alice", tags="admin,ops"))
 ```
 
 From then on, requests bearing the session cookie resolve to that avatar — no
@@ -149,7 +153,7 @@ $ curl -b "session_id=..." http://127.0.0.1:8000/index
 ## Gotchas
 
 - `MemorySessionStore` loses everything on restart and does not share across
-  processes — the shutdown snapshot (below) covers the development restart,
+  processes — the shutdown snapshot described above covers the development restart,
   not multi-process deployments.
 - The cookie is always `HttpOnly`; you cannot turn that off. You *can* set
   `secure` and `samesite`.

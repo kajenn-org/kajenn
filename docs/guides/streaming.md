@@ -23,66 +23,57 @@ from kajenn.streaming import StreamingResponse
 from kajenn.sse import SseStream
 ```
 
-## Chunked streaming
+## Run a chunked response and an event stream
 
-Return a `StreamingResponse` fed by an async generator that yields bytes:
+Prerequisite: [request handlers](requests.md). Save this complete example as
+`streams.py` and run `python streams.py`:
 
 ```python
+from genro_routes import route
+from kajenn import AsgiServer, RoutedApplication
 from kajenn.streaming import StreamingResponse
-
-
-async def chunks():
-    yield b"one"
-    yield b"two"
-
-
-resp = StreamingResponse(chunks(), media_type="text/plain")
-```
-
-Each yielded chunk is sent as it is produced, so the client starts receiving
-before the generator finishes.
-
-## Server-Sent Events
-
-Wrap an async source of events in an `SseStream` and turn it into a response:
-
-```python
 from kajenn.sse import SseStream
 
 
-async def source(*evts):
-    for e in evts:
-        yield e
+class Streams(RoutedApplication):
+    mount = ""
+
+    async def chunks(self):
+        yield b"one"
+        yield b"two"
+
+    async def events(self):
+        yield {"data": "a"}
+        yield {"data": "b"}
+
+    @route()
+    async def download(self):
+        return StreamingResponse(self.chunks(), media_type="text/plain")
+
+    @route()
+    async def updates(self):
+        return SseStream(self.events(), retry_ms=5000).response()
 
 
-stream = SseStream(source({"data": "a"}, {"data": "b"}), retry_ms=5000)
-resp = stream.response()   # a StreamingResponse with the SSE headers set
+if __name__ == "__main__":
+    AsgiServer(applications=[Streams]).serve(host="127.0.0.1", port=8000)
 ```
 
-- The source yields event dicts (`{"data": ...}`).
-- `retry_ms` sets the client's reconnection hint.
-- `.response()` returns a `StreamingResponse` already carrying the SSE headers, so
-  you return it like any other response.
+In another terminal:
 
-## How to verify it
-
-For chunked output:
-
-```console
-$ curl -N http://127.0.0.1:8000/<your-route>
-onetwo
+```bash
+curl -N http://127.0.0.1:8000/download
+curl -N http://127.0.0.1:8000/updates
 ```
 
-For SSE, `curl -N` shows the event frames as they arrive:
+The download returns `onetwo`; the event stream includes `data: a` and `data: b`
+frames separated by blank lines, plus a 5000-millisecond reconnection hint.
+These finite examples finish themselves. Stop the server with Ctrl-C.
 
-```console
-$ curl -N http://127.0.0.1:8000/<your-sse-route>
-data: a
-
-data: b
-```
-
-The `-N` flag disables curl's buffering so you see chunks as they come.
+The `-N` option disables curl's buffering. Network packets need not align with
+generator yields. A browser's EventSource understands SSE framing; a plain byte
+stream does not add that framing. Return `SseStream.response()`, not the stream
+object itself.
 
 ## Gotchas
 
@@ -112,3 +103,11 @@ then run; this is not a five-second bound on the entire shutdown sequence.
 A stream that should not wait to be cancelled reads its source through
 `await server.get_until_leaving(queue)`, which answers `None` as soon as the
 server starts leaving, and ends on it. See [Lifecycle](lifecycle.md).
+
+```{admonition} In revisione
+:class: warning
+
+The finite HTTP examples are verified. A reproducible walkthrough of an endless
+stream, client disconnect and bounded shutdown remains to be completed; see the
+lifecycle guide for the implemented shutdown contract.
+```

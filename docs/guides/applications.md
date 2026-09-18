@@ -49,7 +49,16 @@ class HostedApplication(BaseApplication):
         await self.asgi_app(scope, receive, send)
 ```
 
-Compose it with `HostedApplication(existing_asgi_app, code="external")`. The
+Pass the class and its constructor parameters to the server (the hosted callable
+itself remains an instance):
+
+```python
+server = AsgiServer(applications=[
+    (HostedApplication, {"asgi_app": existing_asgi_app, "code": "external"}),
+])
+```
+
+This is a composition fragment: supply your existing ASGI callable first. The
 server strips the mount from `path`; it does **not** add it to `root_path`.
 If a hosted framework needs a public URL prefix for generated links, configure
 or adapt that framework's scope handling explicitly. This adapter does not

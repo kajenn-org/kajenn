@@ -53,8 +53,9 @@ own paths through the server.
 
 ### How the application is selected
 
-The server first checks whether it is running. Otherwise it returns **503**
-with a Retry-After header, without registering new work.
+After middleware, core dispatch checks whether the server is running. Otherwise it returns **503**
+with a Retry-After header, without registering new work. Middleware that
+answers directly can respond before this gate.
 
 For an ordinary path, dispatch starts with its first segment:
 

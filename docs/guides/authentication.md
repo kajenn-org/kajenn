@@ -101,6 +101,11 @@ the [sessions guide](sessions.md)).
 
 ## Server-side login flow
 
+Header credentials in the earlier `auth` dictionary do not create stored users.
+Password login checks a configured **UserStore**, then attaches the verified
+identity to the session. Follow the [management walkthrough](management.md) to
+create a user, log in with a cookie jar, and log out.
+
 `ServerApplication` (from `kajenn_server_app`, declared like any other
 application with the code `_server`) exposes a login flow for session-based
 clients. Nothing mounts it for you:
@@ -108,7 +113,8 @@ clients. Nothing mounts it for you:
 - `POST /_server/login` with body `{"identity", "password"}` → `200` with
   `{identity, tags, session_id}` on success.
 - `GET /_server/login_methods` — a public JSON descriptor of available methods.
-- `POST /_server/logout`.
+- `POST /_server/logout` with the `session_id` returned by login.
+  Omitting it does not invalidate the current session.
 
 All three answer JSON; there is no HTML login page here. Login attaches the
 avatar to the **existing** session, so the session id does not change and no
@@ -120,10 +126,20 @@ attempts and a 30-second base with exponential backoff.
 
 ## OIDC
 
+```{admonition} In revisione
+:class: warning
+
+The application declaration is checked locally. A complete provider login,
+including callback registration and token exchange, still requires verification
+against your chosen external provider.
+```
+
 OIDC providers are the app's own `oidc=` kwarg, and the server must know its
 own **public base address** — `external_url`:
 
 ```python
+from kajenn_server_app import ServerApplication
+
 PROVIDER = {
     "issuer": "https://accounts.example.com",
     "client_id": "client-123",
@@ -132,7 +148,7 @@ PROVIDER = {
     "tags": [],
 }
 server = AsgiServer(
-    applications=[ServerApplication(oidc={"google": PROVIDER}), App()],
+    applications=[(ServerApplication, {"oidc": {"google": PROVIDER}}), App],
     external_url="https://shop.example.com",
 )
 ```
