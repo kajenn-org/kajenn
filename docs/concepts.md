@@ -182,13 +182,9 @@ Putting it together, here is the path an HTTP request travels:
 
 ```mermaid
 flowchart TD
-    req([HTTP request]) --> uv["uvicorn — one loop, owned by the server"]
-    uv --> srv["AsgiServer — the ASGI app is the server object itself"]
-    srv --> chain["middleware chain, outer to inner:<br/>errors → logging → cors → session → auth"]
-    chain --> demux["demux on the first path segment:<br/>a mount, else the root app, else 307, else 404"]
-    demux --> handler["@route handler(**params)<br/>query and body bound to the signature, typed"]
-    handler --> resp["dict → JSON · str + media_type → HTML · StreamingResponse → chunks"]
-    resp --> out([ASGI send])
+    network["Client and uvicorn"] --> middleware["HTTP middleware"]
+    middleware --> route["Choose application and handler"]
+    route --> response["Send response"]
 ```
 
 The middleware are ordered by priority (lower number = more outer). The
