@@ -189,3 +189,15 @@ New pages use the same tokens, icon family, states and density without arbitrary
 - Observed showcase: `gramlot-poc: src/gramlot/showcase/showcase.css`.
 - Observed theme and inspector: `gramlot-poc: js/pages/src/theme.css` and `inspector-theme.css`.
 - Architecture boundaries: `gramlot: docs/00-constitution.md`.
+
+## Light and dark backgrounds
+
+The root README uses `<picture>` with `prefers-color-scheme: dark` to select
+[`kajenn-logo-dark.png`](kajenn-logo-dark.png). The existing
+[`kajenn-logo.png`](kajenn-logo.png) remains the light-mode fallback.
+
+The dark variant uses light lettering on an opaque charcoal background intended
+for GitHub's default dark theme. It is not a transparent export: other dark themes
+may show a visible rectangular background. These raster variants share the same
+1145 × 1374 canvas; they are visually matched, not pixel-identical masters.
+The standalone symbol asset is unchanged.
