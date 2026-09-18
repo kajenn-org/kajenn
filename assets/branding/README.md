@@ -22,4 +22,4 @@ Extensions reference this guide rather than duplicating its palette and componen
 
 These are raster assets, not SVG masters. The wordmark is lettering rather than an identified font. Its visible dark-pixel bounds measure 615 × 168 px on the 1145 × 1374 canvas; matching between related raster variants is approximate, not pixel-identical. A common lettering master, small-size favicon and monochrome exports remain to be prepared.
 
-`references/gramlot-logo.png` is an unchanged visual reference from the local Gramlot site. `references/kajenn-logo-original.png` preserves the superseded heavier wordmark; it is not the current logo. Files in `proposals/` are exploratory material, not canonical assets.
+`references/kajenn-logo-original.png` preserves the superseded heavier wordmark; it is not the current logo. Files in `proposals/` are exploratory material, not canonical assets.
