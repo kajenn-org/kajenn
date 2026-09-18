@@ -1,379 +1,329 @@
 # Architecture overview
 
-This page explains how kajenn is put together: what runs when a request
-arrives, what the server owns, and how each subsystem reaches the next. Every
-diagram below is drawn from the modules named under it, and each is followed by
-the classes it shows with the module they live in. The normative source is
-[`SPECIFICATION.md`](https://github.com/kajenn-org/kajenn/blob/main/SPECIFICATION.md)
-(the decision log, D1…); this page summarizes it and never contradicts it.
+kajenn receives a request, selects an application and sends its response.
+The server also owns the resources shared by those applications: configuration,
+storage, sessions, authentication and background work.
+
+This page follows those responsibilities one at a time. Start with the request
+path; the remaining sections explain the supporting services. For exact classes
+and modules, use the [source map](#source-map) at the end.
 
 ## Core principles
 
-These are the guiding principles of the design (SPECIFICATION.md §1). They
-explain most of the decisions you will meet in the code.
+- **State belongs to a server instance.** Each instance owns its resources;
+  shutdown releases active tasks, threads and connections.
+- **Configuration describes the deployment.** Recipes select settings and
+  backends without changing the application's structure.
+- **Resources are created when needed.** Expensive services such as the thread
+  pool and task manager are initialized on first use.
+- **Routes are established at startup.** The route tree describes the
+  application; it is not a registry of changing runtime state.
+- **Capabilities compose.** Applications extend base classes; server mixins
+  contribute services such as authentication, storage and tasks.
 
-- **No globals.** The server is an instance with its own state — no
-  module-level variables, no singletons. State lives in objects connected by
-  semantic parent references. Releasing resources is the lifespan shutdown's
-  job; dropping a reference does not stop active tasks, threads or child
-  processes.
-- **Config is data, not structure.** What a server *is* comes from a
-  configuration recipe rendered onto it; the code shape does not change with
-  the deployment.
-- **Objects always exist; backends come from config.** There is no `X | None`
-  attribute a flag flips on. The session store, the auth core and the task
-  manager are always there — configuration selects their *backend*.
-- **Work at the time of use.** Expensive machinery (the thread pool, the task
-  manager) is provisioned lazily, on first use.
-- **Routes are static from boot.** The routing tree is built once; routing is
-  never used as a mutable registry.
-- **Extension by subclassing; capabilities as mixins.** You add behaviour by
-  subclassing an application, and the server composes capabilities (auth,
-  session, tasks…) as mixins over a base.
+(a-the-request-path)=
+## The request path
 
-## (a) The request path
+uvicorn handles the network connection and calls the kajenn server as an ASGI
+application. kajenn applies HTTP middleware, chooses the mounted application
+and calls its handler. The response travels back through the middleware.
 
 ```mermaid
 flowchart TD
-    client([HTTP client]) --> uvicorn[uvicorn]
-    uvicorn --> asgi["AsgiServer.__call__<br/>the server IS the ASGI app"]
-    asgi --> errors["ErrorMiddleware · 100"]
-    errors --> logging["LoggingMiddleware · 200<br/>off by default"]
-    logging --> cors["CORSMiddleware · 300<br/>off by default"]
-    cors --> session["SessionMiddleware · 400<br/>armed by SessionMixin"]
-    session --> auth["AuthMiddleware · 450<br/>armed by AuthMixin"]
-    auth --> state{"state == RUNNING?"}
-    state -- no --> refuse["503 + Retry-After"]
-    state -- yes --> demux["BaseServer.demux<br/>first path segment"]
-    demux -- "dotted segment" --> hidden["404, or a declared<br/>.well-known document"]
-    demux -- "matches a mount" --> mounted["BaseApplication<br/>segment stripped"]
-    demux -- "site root" --> root["the app with mount ''"]
-    demux -- "'/' and a default" --> redirect["307 to the default mount"]
-    demux -- "nothing" --> notfound["404"]
-    mounted --> router
-    root --> router["RoutedApplication.route<br/>@route handler(**params)"]
-    router --> response["Response · StreamingResponse"]
-    response --> send([ASGI send])
+    client["Client and uvicorn"] --> middleware["HTTP middleware"]
+    middleware --> app["Choose application and route"]
+    app --> response["Handler and response"]
 ```
 
-`AsgiServer` (`src/kajenn/asgi_server.py`) is the ASGI callable uvicorn is
-handed; there is no separate app object. `MiddlewareMixin`
-(`src/kajenn/middleware/__init__.py`) routes only `http` scopes through the
-chain it assembled once with `build_chain` (`src/kajenn/middleware/base.py`);
-`lifespan` and `websocket` scopes go straight down the MRO. The chain order is
-each class's `middleware_order`, lowest outermost: `ErrorMiddleware` 100
-(`errors.py`), `LoggingMiddleware` 200 (`logging.py`), `CORSMiddleware` 300
-(`cors.py`), `SessionMiddleware` 400 (`session.py`), `AuthMiddleware` 450
-(`authentication.py`). Only `errors` carries `middleware_default = True`;
-`session` and `auth` are armed by `SessionMixin` and `AuthMixin`, which inject
-their switch into the `middleware` config as they forward it down the
-cooperative `__init__` chain.
+### What the middleware does
 
-`BaseServer.__call__` (`src/kajenn/server.py`) reads `state` first: anything but
-`RUNNING` answers 503 with `Retry-After` and registers nothing. `BaseServer.demux`
-then applies the one dispatch rule, and `RequestRegistry`
-(`src/kajenn/request_registry.py`) holds the request for the span of the
-dispatch. `RoutedApplication` (`src/kajenn/routed_application.py`) builds a
-`Request` (`src/kajenn/request.py`), awaits `init()` and calls the
-`@route`-decorated method through its genro-routes router; the return value
-becomes a `Response` (`src/kajenn/response.py`) or a `StreamingResponse`
-(`src/kajenn/streaming.py`).
+Middleware wraps the dispatch. Lower priority numbers run on the outside of
+the chain, so error handling can also catch failures from the inner stages.
 
-## (b) Lifespan and shutdown
+| Stage | Priority | Responsibility | Activation |
+| --- | --- | --- | --- |
+| Errors | 100 | Turn HTTP errors into responses | Enabled by default |
+| Logging | 200 | Record requests | Opt-in |
+| CORS | 300 | Apply cross-origin policy | Opt-in |
+| Session | 400 | Attach the session | Session capability |
+| Authentication | 450 | Resolve the caller's identity | Authentication capability |
 
-```mermaid
-sequenceDiagram
-    participant U as uvicorn
-    participant M as TaskMixin / SessionMixin
-    participant L as Lifespan
-    participant A as applications
-    U->>M: lifespan.startup
-    M->>M: load session snapshot, TaskManager.start()
-    M->>L: replay startup
-    L->>A: on_startup, registration order
-    L-->>U: startup.complete (or startup.failed on FatalBootError)
-    Note over U,A: serving
-    U->>U: SIGINT/SIGTERM — UvicornServer.handle_exit
-    U->>U: state := shutdown_mode (STOPPING or QUITTING)
-    U->>U: close listeners, wait shutdown_timeout_seconds
-    U->>M: lifespan.shutdown
-    M->>L: forward shutdown
-    L->>L: start_leaving(), drain requests (10 s bound)
-    L->>A: on_shutdown, reverse order
-    L-->>U: shutdown.complete
-    M->>M: TaskManager.stop(), save session snapshot
-    U->>U: WorkPool.shutdown(wait=True)
-```
+This chain applies to HTTP requests. WebSocket and lifespan events have their
+own paths through the server.
 
-`UvicornServer` (`src/kajenn/server.py`) owns the signal handlers: the first
-SIGINT or SIGTERM turns `state` to `shutdown_mode` *before* raising uvicorn's
-exit flag, so the whole graceful window is served by a server that already
-refuses new work. `Lifespan` (`src/kajenn/lifespan.py`) then calls
-`start_leaving()`, waits for the in-flight requests through
-`RequestRegistry.await_drain` bounded by `SHUTDOWN_DRAIN_TIMEOUT_SECONDS`
-(10.0), and only then runs `on_shutdown` in reverse registration order. A hook
-that raises is logged and the sequence continues; `FatalBootError` raised from
-`on_startup` is the one exception — the startup stops there and uvicorn
-receives `lifespan.startup.failed`.
+### How the application is selected
 
-`TaskMixin` and `SessionMixin` (`src/kajenn/tasks/mixin.py`,
-`src/kajenn/session/mixin.py`) wrap the lifespan scope in their own `__call__`
-instead of touching `Lifespan`: the task manager starts before the protocol is
-replayed and stops when it completes, and the session snapshot is loaded before
-and saved after. `BaseServer.__call__` tears the `WorkPool`
-(`src/kajenn/pool.py`) down once the protocol is acked.
+The server first checks whether it is running. Otherwise it returns **503**
+with a Retry-After header, without registering new work.
 
-## (c) Configuration
+For an ordinary path, dispatch starts with its first segment:
 
 ```mermaid
 flowchart TD
-    recipe["your recipe<br/>AsgiConfigBuilder subclass"]
-    base["BaseConfiguration<br/>package defaults"]
-    hostlayer["&lt;KAJENN_HOME&gt;/config.py<br/>declared by default_config"]
-    shortcut["ShortcutConfiguration<br/>the constructor kwargs"]
-    template["DefaultConfiguration<br/>template 'default'"]
-    handler["ConfigurationHandler<br/>callable by path"]
-    server["AsgiServer.__init__"]
-    kwargs["explicit constructor kwargs"]
-
-    base --> handler
-    hostlayer --> handler
-    recipe --> handler
-    template --> handler
-    shortcut --> handler
-    handler -->|"site_kwargs, server_kwargs,<br/>middleware_config, auth_entries,<br/>storage_config, applications…"| server
-    kwargs -->|"win per kwarg"| server
-    server -->|"server.config(path)"| handler
+    path["First path segment"] --> match{"Mount match?"}
+    match -->|Yes| mounted["Mounted<br/>app"]
+    match -->|No| fallback["Root or<br/>fallback"]
 ```
 
-A configuration is a recipe: a subclass of `AsgiConfigBuilder`
-(`src/kajenn/config/builder.py`) whose `main(root)` opens the `configuration`
-root and delegates each section to its own method. `DefaultConfig`
-(`src/kajenn/config/default_config.py`) computes the parent chain — the
-package's `BaseConfiguration` first, then the file the recipe's
-`default_config` attribute declares (by default `<base_dir>/config.py`, layered
-only when it exists), with the site's own recipe last and winning. `base_dir`
-resolves as the explicit argument, then `KAJENN_HOME`, then `~/.kajenn`.
+| Case | Result |
+| --- | --- |
+| A segment matches a mount | Dispatch to that application with the mount segment removed |
+| No mount matches, but a root application exists | Dispatch to the root application |
+| The path is `/`, with a default application and no root application | Redirect to the default mount with 307 |
+| No application can handle the path | Return 404 |
+| A hidden, dotted segment is requested | Return 404, except for a declared .well-known document |
 
-`ConfigurationHandler` (`src/kajenn/config/handler.py`) is the read door:
-callable by path over a four-layer stack — the written value, the element
-signature's default, the call-site `default=`, then a `KeyError` naming the
-path. `AsgiServer.__init__` asks it for one kwarg set per section and merges
-the caller's explicit kwargs over them, wholesale per kwarg. A server built
-with kwargs alone has a configuration too: `ShortcutConfiguration`
-(`src/kajenn/config/templates.py`) writes those kwargs as the top layer over
-the `default` template, so `server.config` is a handler in every case. An
-application holds an address in that tree: `app.config(path)` prefixes
-`applications.<code>.` and delegates to the same door.
+Once selected, a routed application builds the request and calls the decorated
+handler. Its result becomes a normal or streaming response. The request registry
+tracks the dispatch until it finishes, allowing shutdown to wait for active work.
 
-## (d) Sessions and authentication
+See the [application](../guides/applications.md) and
+[middleware](../guides/middleware.md) guides for configuration and examples.
+
+(b-lifespan-and-shutdown)=
+## Startup and shutdown
+
+Startup prepares the shared services before applications begin serving requests.
+Application startup hooks run in registration order.
 
 ```mermaid
 flowchart TD
-    req([request]) --> sm["SessionMiddleware<br/>reads the session_id cookie"]
-    sm --> store["SessionStore.get / create<br/>MemorySessionStore by default"]
-    store --> attach["scope['session'] = Session"]
-    attach --> am["AuthMiddleware"]
-    am --> resolve["AuthMixin.authenticate(scope)"]
-    resolve --> header{"Authorization header?"}
-    header -- yes --> core["AuthCore.authenticate<br/>basic · bearer · jwt · api key"]
-    core -- valid --> avatar["Avatar(identity, tags)"]
-    core -- invalid --> unauth["raise HTTPUnauthorized → 401"]
-    header -- no --> fallback["Session.avatar() — or None"]
-    fallback --> avatar
-    avatar --> scopeauth["scope['auth']"]
-    scopeauth --> rule["@route(auth_rule=…)<br/>default deny: 401 / 403"]
+    prepare["Restore sessions and start tasks"] --> hooks["Start applications in order"]
+    hooks --> ready["Signal startup complete"]
 ```
 
-`SessionMiddleware` (`src/kajenn/middleware/session.py`) reads the cookie,
-reconnects or creates an anonymous `Session` (`src/kajenn/session/session.py`)
-through `SessionStore` (`src/kajenn/session/store.py`), and attaches it to the
-scope. It sets `Set-Cookie` only on the response that created the session; the
-cookie's `Max-Age` is the session TTL times `COOKIE_LIFETIME_FACTOR` (24),
-because the server-side TTL slides with activity while `Max-Age` is fixed from
-issue time.
-
-`AuthMiddleware` (`src/kajenn/middleware/authentication.py`) delegates the whole
-verdict to `AuthMixin.authenticate` (`src/kajenn/auth/mixin.py`) and publishes
-the result on `scope["auth"]`. The precedence is API-first: an `Authorization`
-header is judged by `AuthCore` (`src/kajenn/auth/core.py`) and wins, and a
-credential that is present but invalid raises `HTTPUnauthorized` rather than
-falling back; with no header the session's root avatar is used. "Nobody" is
-`None` uniformly — there is no anonymous `Avatar`
-(`src/kajenn/session/avatar.py`). Because `SessionMiddleware` (400) sits outside
-`AuthMiddleware` (450), the session is already on the scope when that fallback
-runs. Identity stores are declared, never handed over: `FileUserStore` and
-`FileApiKeyStore` (`src/kajenn/auth/user_store.py`,
-`src/kajenn/auth/api_key_store.py`) are built by the mixin over the server's
-storage, and the server creates no user at boot.
-
-## (e) WebSocket and the WSX envelope
+Shutdown reverses that progression. The first termination signal changes the
+server state immediately, so it refuses new work during the graceful shutdown
+window.
 
 ```mermaid
 flowchart TD
-    ws([websocket handshake]) --> gate{"state == RUNNING?"}
-    gate -- no --> refused["closed before accept"]
-    gate -- yes --> conn["WsxConnection.serve"]
-    conn --> origin{"Origin allowed?"}
-    origin -- no --> rejected["refused before accept"]
-    origin -- yes --> home["demux the handshake path<br/>→ home application"]
-    home --> cookie{"handshake_cookie present?"}
-    cookie -- no --> close1008["accept, then close 1008"]
-    cookie -- yes --> accepted["accept · register in WebSocketRegistry"]
-    accepted --> loop["read text messages"]
-    loop --> parse{"WSX:// + JSON?"}
-    parse -- no --> dropped["logged and dropped"]
-    parse -- yes --> env["WsxEnvelope<br/>id · method · path · data · page_id"]
-    env --> ping{"path == /_wsx/ping?"}
-    ping -- yes --> pong["answered inline"]
-    ping -- no --> synth["synthetic http scope, method WSK<br/>→ BaseServer.demux → application"]
-    synth --> answer{"envelope carries an id?"}
-    answer -- yes --> reply["WsxEnvelope(id=…, status=…, data=…)"]
-    answer -- no --> event["an event — nobody answers"]
+    stop["Refuse new work and close listeners"] --> drain["Drain active requests"]
+    drain --> apps["Stop applications in reverse order"]
+    apps --> release["Stop tasks, save sessions, release pool"]
 ```
 
-`BaseServer.on_websocket` (`src/kajenn/server.py`) judges the server state
-first, then hands the socket to one `WsxConnection` (`src/kajenn/wsx.py`), which
-lives the whole connection: it gates the handshake, accepts, reads messages and
-answers the ones carrying an `id`. `WebSocket` (`src/kajenn/websocket.py`) is
-the transport underneath — the ASGI scope, `receive` and `send` as one object —
-and `WebSocketRegistry` holds the live sockets plus the `page_id → socket`
-association a client writes with `/_wsx/openchannel`.
+There are two waiting stages: uvicorn's configured graceful timeout and the
+lifespan request drain, bounded at 10 seconds. A failing shutdown hook is logged
+and later hooks still run. A fatal startup error stops startup and reports its
+failure to uvicorn.
 
-A WSX message is the text `WSX://` followed by JSON; `WsxEnvelope` is that
-message as an object. Its `data` field carries a TYTX string kept serialized
-while routing (`SerializedWsxPayload`, `src/kajenn/wsx_payload.py`). Every
-message with an `id` becomes a synthetic HTTP scope with the method `WSK` and
-goes through the server's ordinary demux, so an application learns no new
-method. The HTTP middleware chain does not run on the handshake or per message:
-identity and session are read once at the handshake and travel with every
-message. A hostile Origin is refused before the accept; an unknown home
-application or a missing `handshake_cookie` is accepted and then closed 1008.
-`WEBSOCKET_MAX_CONCURRENT` (16, overridable with `websocket(max_concurrent=…)`)
-bounds how many messages of one connection are served at once, and
-`server.send_message(page_id, path, data)` writes one message of the server's
-own onto a bound socket.
+The task and session capabilities wrap the lifespan protocol. They prepare
+before application startup and clean up after the protocol completes. The
+thread pool is released last. See [lifecycle](../guides/lifecycle.md).
 
-## (f) The channel between processes
+(c-configuration)=
+## Configuration
 
-```mermaid
-flowchart LR
-    subgraph parent["parent process"]
-        hub["ChannelHub<br/>binds uds: or tcp:"]
-        rubric["the rubric of members"]
-        hub --- rubric
-    end
-    subgraph child["another process"]
-        client["ChannelClient<br/>connect + REGISTER"]
-    end
-    local["LocalChannel<br/>in-process member"]
-
-    client -- "FrameStream over a socket" --> hub
-    local -- "attach_local, queue-backed codec" --> hub
-    hub -- "CALL → future on the frame id" --> client
-    client -- "REPLY, same id" --> hub
-    hub -- "EVENT, fire and forget" --> client
-    hub -- "EOF → on_channel_lost(member)" --> rubric
-```
-
-The channel (`src/kajenn/channel/`) is the seam the core offers for running
-application code in another process; nothing in it reaches up to whoever spawns
-that process. `Frame` and `FrameStream` (`frame.py`) are the wire: the magic
-`KJNF`, a version byte and two big-endian unsigned 32-bit lengths (`!4sBII`),
-then JSON routing info, then opaque payload bytes the frame layer never
-interprets. `ChannelHub` (`hub.py`) is the parent end — it binds the socket,
-keeps the rubric of registered members and routes the three envelope kinds
-`CALL`, `REPLY` and `EVENT`. `ChannelClient` (`client.py`) is the child end: it
-retries the connect until `connect_timeout`, presents a `REGISTER` frame and
-relays frames both ways; there is no steady-state reconnection, so a hub that
-goes away fires `on_orphan(client)`. `LocalChannel` (`local.py`) joins the same
-rubric in-process over a queue-backed codec twin.
-
-Over that wire, `RemoteApplication` (`src/kajenn/remote_application.py`) mounts
-one application served by an endpoint in another process, and
-`RemoteApplicationRunner` (`src/kajenn/remote_runner.py`) is that endpoint.
-Both sides carry the HTTP call as an `HttpRecord` (`src/kajenn/http_record.py`)
-and call the application through `BufferedAsgiEndpoint`
-(`src/kajenn/asgi_endpoint.py`). The wire limits are environment policy, read by
-`src/kajenn/transport_limits.py` — see [the channel protocol](../design/channel-protocol.md).
-
-## (g) Tasks
+A Python recipe builds a configuration tree. The server reads that tree to
+assemble its capabilities and applications.
 
 ```mermaid
 flowchart TD
-    mixin["TaskMixin<br/>lifespan hook"] --> manager["TaskManager<br/>built lazily"]
-    manager --> spool["TaskSpool<br/>folder model on server.storage"]
-    manager --> executor["LocalTaskExecutor<br/>worker_id 'local'"]
-    manager --> scheduler["TaskScheduler"]
-    manager --> hub["EventHub<br/>live progress"]
-    manager --> taskstore["FileTaskStore<br/>site:tasks"]
-    scheduler --> taskstore
-    scheduler -->|"task_every · task_cron"| spool
-    loop["_worker_loop — polls every 0.5 s"] --> spool
-    manager --> loop
-    loop -->|"assign + run as its own task"| executor
-    executor -->|"blocking body"| pool["BaseServer.run_sync<br/>WorkPool"]
-    executor --> hub
+    defaults["Package and optional host defaults"] --> recipe["Site recipe overrides"]
+    recipe --> tree["Configuration tree"]
+    tree --> server["Server and applications"]
 ```
 
-`TaskMixin` (`src/kajenn/tasks/mixin.py`) peels the `tasks=` kwarg and hooks the
-lifespan; the `TaskManager` (`src/kajenn/tasks/manager.py`) is built on first
-access, never in `__init__`, because it opens its spool over `server.storage`
-and the cooperative chain has not assigned that yet. The manager owns the
-`TaskSpool` (`spool.py`), the `LocalTaskExecutor` (`executor.py`), the
-`EventHub` (`hub.py`), the `TaskScheduler` (`scheduler.py`) and the
-`FileTaskStore` (`store.py`). `start()` launches two loops on the running event
-loop — the fire-and-forget worker loop, which polls the pending queue every
-`POLL_SECONDS` (0.5), assigns each task to `worker_id` (`"local"`) and launches
-its execution as a task of its own, and the scheduler's tick loop for the
-cadences `AtSpec`, `EverySpec` and `CronSpec` (`schedule.py`). The D2 thread
-pool is reserved for the blocking handler body inside `execute`, reached through
-`server.run_sync`; the loops themselves never block it.
+Two kinds of precedence are involved:
 
-## The two layers: server and application
+- **Recipe layers:** package defaults, optional host configuration, then the
+  site recipe. Later layers override individual attributes.
+- **Value reads:** an explicit value, then the grammar default, then a
+  call-site default. If none exists, the read raises a missing-path error.
 
-`BaseServer` (`src/kajenn/server.py`) is the common substrate of every server
-(SPECIFICATION.md §4, D2). It owns one uvicorn loop, one monitored thread pool
-for blocking work, the applications it was composed with (a dict keyed by each
-app's `code`, plus an index by `mount`), the lifespan and the request registry.
-At the base, `authenticate()` and `session()` answer `None` — auth and sessions
-are capabilities layered on top, not built into the base.
+Explicit constructor arguments override configured arguments when the server
+is built, one complete argument at a time. They do not rewrite a supplied
+recipe. Even a server built using only constructor arguments has a configuration
+handler: those arguments are translated into a shortcut recipe.
 
-`AsgiServer` (`src/kajenn/asgi_server.py`) is the shipped composition: it stacks
-`CommunicationMixin`, `AuthMixin`, `SessionMixin`, `MiddlewareMixin`,
-`PluginMixin`, `StorageMixin` and `TaskMixin` over `BaseServer` in one MRO.
-`TaskMixin` sits after `StorageMixin` because it needs `server.storage`, and
-before `BaseServer` because its lifespan hook must wrap the base `Lifespan`.
-You configure a capability through a constructor kwarg; each mixin peels the
-kwargs it understands and forwards the rest down the cooperative `__init__`
-chain. A composition that leaves a mixin out simply lacks its attributes.
+Applications read relative to their own section of the same tree. Start with
+[Configuration is part of the application](../configuration.md) for the rationale
+and a complete example; the [configuration guide](../guides/configuration.md)
+explains loading, defaults and overrides.
 
-`BaseApplication` (`src/kajenn/application.py`) is the app-side contract: an
-ASGI callable with a `code` (its identity), a `mount` (the URL prefix it answers
-under) and a `server` reference assigned once at attach time — a second
-assignment raises. `RoutedApplication` (`src/kajenn/routed_application.py`)
-wires [genro-routes](https://pypi.org/project/genro-routes/) into it, so
-handlers are `@route`-decorated methods resolved through the app's own router.
-`OpenApiApplication`, `McpApplication` and `McpOpenApiApplication`
-(`src/kajenn/applications/`) add protocol faces over the *same* route tree,
-which is why one decorated method can serve REST and MCP at once.
+(d-sessions-and-authentication)=
+## Sessions and authentication
 
-## The `_server` application
+A session reconnects requests from the same client. Authentication determines
+which identity, if any, is making the request. Session middleware runs first so
+authentication can use the session when no authorization header is supplied.
 
-`ServerApplication` (`src/kajenn_server_app/server_app.py`) carries the server's
-own management surface — login, users, tokens, tasks, monitor — under
-`/_server/…`, with its OpenAPI schema at `/_server/_meta/schema_json`. It is
-declared like any other application, with the code `_server`: a hand-built
-server passes it in `applications=`, a configured one writes it on the
-`applications` section. Nothing mounts it behind the caller's back, and a server
-that declares none exposes no `/_server/…` at all. `import kajenn` loads none of
-that package.
+```mermaid
+flowchart TD
+    session["Reconnect or create session"] --> identity["Resolve identity"]
+    identity --> rule["Apply the route's access rule"]
+    rule --> result["Serve request or deny access"]
+```
+
+| Credentials supplied | Identity used |
+| --- | --- |
+| Valid Authorization header | Identity returned by the authentication backend |
+| Invalid Authorization header | Reject with 401; do not fall back to the session |
+| No Authorization header | Session identity, or no identity |
+
+The session middleware sets a cookie when it creates the session. Server-side
+expiry slides with activity; the cookie's lifetime is fixed when issued and is
+24 times the session TTL.
+
+The authentication capability builds configured user and API-key stores over
+server storage. It creates no user automatically. Routes apply their own access
+rules; denied access produces 401 or 403 as appropriate.
+
+See [sessions](../guides/sessions.md) and
+[authentication](../guides/authentication.md) for setup and policy.
+
+(e-websocket-and-the-wsx-envelope)=
+## WebSocket and WSX
+
+A WebSocket remains open for multiple messages. An application can own the raw
+protocol, or use kajenn's WSX connection to route messages to application handlers.
+The following flow describes WSX.
+
+### Establish the connection
+
+```mermaid
+flowchart TD
+    checks["Check server state and Origin"] --> accept["Accept connection"]
+    accept --> session["Validate application and identity"]
+    session --> ready["Register with session context"]
+```
+
+| Handshake condition | Outcome |
+| --- | --- |
+| Server is not running, or Origin is disallowed | Refuse before accepting |
+| Unknown home application, missing required cookie or rejected credentials | Accept, then close with code 1008 |
+| Checks succeed | Keep the connection and its session context |
+
+### Dispatch messages
+
+```mermaid
+flowchart TD
+    message["WSX message"] --> decode["Decode envelope"]
+    decode --> route["Dispatch to an application route"]
+    route --> reply["Reply when a request ID is present"]
+```
+
+A WSX message starts with `WSX://`, followed by JSON. The envelope carries a
+path, an optional request ID and a payload. The payload remains serialized while
+routing; application dispatch uses a synthetic HTTP scope with method `WSK`.
+
+Malformed messages are logged and dropped. Ping messages are answered directly.
+Messages without an ID are events and receive no reply. By default, a connection
+serves at most 16 messages concurrently; the WebSocket configuration can change
+that limit.
+
+HTTP middleware runs neither at the handshake nor for each message. Session and
+identity are established at the handshake and carried with subsequent messages.
+A page can bind its ID to a live socket so the server can send it messages.
+See the [WebSocket guide](../guides/websockets.md) for the raw protocol option,
+message format and runnable clients.
+
+(f-the-channel-between-processes)=
+## Communication between processes
+
+The channel lets an application endpoint run in another process. The core
+provides communication; the component that launches the process is separate.
+
+```mermaid
+flowchart TD
+    hub["Channel hub"] <-->|"Socket"| remote["Remote<br/>member"]
+    hub <-->|"Queue"| local["Local<br/>member"]
+```
+
+The hub listens on a Unix or TCP socket and tracks registered members. A remote
+client connects and registers; an in-process member uses a queue-backed channel.
+
+| Message | Purpose |
+| --- | --- |
+| CALL | Request work and wait for a result |
+| REPLY | Return the result with the same frame ID |
+| EVENT | Send a notification without waiting for a reply |
+
+Connection attempts are retried until the connection timeout. Once connected,
+losing the hub reports an orphaned client; it does not silently reconnect.
+
+A remote application forwards HTTP calls to a runner through this channel.
+Both ends use an HTTP record and a buffered ASGI endpoint. The frame format,
+payload handling and transport limits belong in the
+[channel protocol reference](../design/channel-protocol.md).
+
+(g-tasks)=
+## Background tasks
+
+The task manager coordinates pending work, scheduled work and execution. It is
+created on first access, after server storage is available.
+
+```mermaid
+flowchart TD
+    schedule["Scheduled or submitted work"] --> spool["Pending task spool"]
+    spool --> executor["Local executor"]
+    executor --> progress["Results and progress events"]
+```
+
+| Component | Responsibility |
+| --- | --- |
+| Spool and task store | Persist pending work and task records on server storage |
+| Scheduler | Submit work at a time, interval or cron schedule |
+| Worker loop | Poll pending work every 0.5 seconds and launch executions |
+| Local executor | Run the task; send blocking handler work to the thread pool |
+| Event hub | Publish progress to subscribers |
+
+The worker and scheduler loops run on the event loop. Each execution gets its
+own asynchronous task; only the blocking handler body uses the thread pool.
+The lifespan starts and stops the manager. See [background tasks](../guides/tasks.md).
+
+## Server and application responsibilities
+
+| Layer | Owns |
+| --- | --- |
+| Base server | Event loop, thread pool, mounted applications, lifespan and request registry |
+| Composed ASGI server | Configuration plus communication, authentication, sessions, middleware, plugins, storage and tasks |
+| Base application | An ASGI callable, its identity, URL mount and attached server reference |
+| Routed application | Decorated handlers resolved through its route tree |
+| Protocol applications | OpenAPI and MCP views over the same route tree |
+
+Server mixins consume the configuration arguments they understand and forward
+the rest. Their ordering matters: tasks depend on storage and must wrap the
+base lifespan. A composition that omits a capability does not acquire that
+capability's attributes.
+
+An application's server reference is assigned once when it is attached.
+Its code identifies it within the server; its mount determines its URL prefix.
+The base server itself supplies no identity or session: those come from the
+corresponding capabilities.
+
+## The management application
+
+The optional server application exposes login, users, tokens, tasks and
+monitoring under `/_server/`. Its OpenAPI schema lives at
+`/_server/_meta/schema_json`.
+
+It must be declared in the application list or recipe, with code `_server`.
+Nothing mounts it implicitly: a server without that declaration exposes no
+management application. Importing the core does not load the management package.
+
+## Source map
+
+Use these entry points when you want to follow the implementation. Class names
+and file paths are kept here so the explanations above can focus on behaviour.
+
+| Area | Source entry points |
+| --- | --- |
+| Server and dispatch | [AsgiServer](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/asgi_server.py), [BaseServer](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/server.py), [request registry](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/request_registry.py) |
+| HTTP middleware | [Composition](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/middleware/__init__.py), [chain builder](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/middleware/base.py) |
+| Requests and responses | [RoutedApplication](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/routed_application.py), [Request](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/request.py), [Response](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/response.py), [streaming](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/streaming.py) |
+| Lifecycle | [Lifespan](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/lifespan.py), [thread pool](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/pool.py) |
+| Configuration | [Recipe builder](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/builder.py), [layering](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/default_config.py), [handler](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/handler.py), [templates](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/templates.py) |
+| Sessions and identity | [Session capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/mixin.py), [session store](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/store.py), [authentication](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth/mixin.py), [auth core](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth/core.py) |
+| WebSocket | [WSX connection](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx.py), [transport](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/websocket.py), [payload](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx_payload.py) |
+| Remote applications | [Channel](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/channel), [application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/remote_application.py), [runner](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/remote_runner.py), [HTTP record](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/http_record.py) |
+| Tasks | [Capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/tasks/mixin.py), [manager and collaborators](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/tasks) |
+| Applications | [Base contract](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/application.py), [protocol views](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/applications), [management application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn_server_app/server_app.py) |
 
 ## Where to go next
 
-- [Getting started](../getting-started.md) — install and run.
-- [Concepts](../concepts.md) — the same model in more practical terms.
-- [The channel protocol](../design/channel-protocol.md) — the frame contract and
-  the environment policy that bounds it.
-- [`SPECIFICATION.md`](https://github.com/kajenn-org/kajenn/blob/main/SPECIFICATION.md)
-  — the full decision log.
+- [Concepts](../concepts.md) — the model with practical examples.
+- [How-to guides](../guides/index.md) — configure and use each capability.
+- [Specification](https://github.com/kajenn-org/kajenn/blob/main/SPECIFICATION.md)
+  — the founding decisions and their rationale.

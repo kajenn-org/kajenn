@@ -30,13 +30,16 @@ itself); `AsgiServer.grammar` is the grammar they validate against.
 
 ```mermaid
 flowchart TD
-    l1["1 · layer the recipes<br/>BaseConfiguration → defaults file → site recipe<br/>later layers win attribute by attribute"]
-    l2["2 · read through ConfigurationHandler<br/>written value → grammar default →<br/>call-site default → KeyError"]
-    l3["3 · construct AsgiServer<br/>explicit kwargs win over configured ones,<br/>wholesale per kwarg"]
-    l4["4 · read it back<br/>server.config(path) · app.config(path)"]
-    l1 --> l2 --> l3 --> l4
-    l4 -. "the recipe tree is unchanged<br/>by a constructor override" .-> l2
+    layers["Layer defaults and site recipe"] --> tree["Read the configuration tree"]
+    tree --> server["Build the server"]
+    server --> read["Read settings by path"]
 ```
+
+Recipes layer package defaults, an optional defaults file and the site recipe;
+later layers win attribute by attribute. Reads fall back from a written value
+to the grammar default, then a call-site default, otherwise raising a missing-path
+error. Explicit constructor arguments take precedence when building the server,
+but do not rewrite the supplied recipe tree.
 
 ## The recipe
 
