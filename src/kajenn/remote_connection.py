@@ -3,9 +3,15 @@
 
 """Bounded request/reply connections for operator-configured UDS or loopback TCP.
 
-A connection generation owns its parked calls. Link loss fails them without
-replay; reconnecting admits only new calls. Connectivity grants no authority
-to stop a peer process. Request limits bound retained bytes at both endpoints.
+One connection is one stream at a time, and the calls parked on it belong to
+that stream: when the link is lost they all fail, and none is replayed — the
+caller learns whether its frame was sent (``outcome`` on the failure) and
+decides for itself. Reconnecting opens a new stream, which admits new calls
+only. ``max_calls`` bounds how many calls are in flight, and with them the
+bytes both ends retain.
+
+Being connected grants no authority over the peer's process: this module
+opens, calls and closes, and stopping a process is the caller's own business.
 """
 
 import asyncio
@@ -47,6 +53,18 @@ class RemoteAddress:
     """A configured address; non-loopback binding requires explicit listener opt-in."""
 
     def __init__(self, address: str, *, allow_network_listener: bool = False) -> None:
+        """Parse one address into the form it will be opened with.
+
+        Args:
+            address: ``uds:<path>`` or ``tcp:<loopback-ip>:<port>``.
+            allow_network_listener: admit a non-loopback IP, for a listener an
+                operator placed on a private network.
+
+        Raises:
+            ValueError: the address is neither form, its TCP part does not
+                name an IP and a port, or that IP is not loopback and no
+                listener opt-in was given.
+        """
         self.address = address
         transport, _, location = address.partition(":")
         self.path = None
@@ -69,6 +87,12 @@ class RemoteAddress:
             raise ValueError("expected uds:<path> or tcp:<loopback-ip>:<port>")
 
     async def connect(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        """Open a client stream to this address.
+
+        Raises:
+            ValueError: the destination is a TCP address that is not loopback
+                — a client never leaves the machine, whatever a listener may.
+        """
         if self.path is not None:
             return await asyncio.open_unix_connection(self.path)
         if not ipaddress.ip_address(self.host).is_loopback:
@@ -76,6 +100,18 @@ class RemoteAddress:
         return await asyncio.open_connection(self.host, self.port)
 
     async def listen(self, callback: Any) -> asyncio.Server:
+        """Bind a server on this address and serve it with ``callback``.
+
+        A UDS listener binds its own socket and never unlinks a pathname it
+        did not create, so another runner's socket is refused instead of
+        stolen; the pathname it did create is remembered for
+        ``unlink_owned_socket``.
+
+        Raises:
+            RuntimeError: this address already owns a bound socket.
+            FileExistsError: the pathname already names a directory entry.
+            OSError: the pathname was replaced between the bind and the check.
+        """
         if self.path is not None:
             if self._socket_identity is not None:
                 raise RuntimeError("address already owns a bound socket")
@@ -128,6 +164,20 @@ class RemoteConnection:
 
     def __init__(self, address: str, *, timeout: float = 30.0, max_calls: int = 16,
                  expected_instance_id: str | None = None) -> None:
+        """Build a connection, without opening it.
+
+        Args:
+            address: ``uds:<path>`` or ``tcp:<loopback-ip>:<port>``.
+            timeout: seconds one call may take, from admission to reply.
+            max_calls: how many calls may be in flight at once.
+            expected_instance_id: when given, the peer must present this
+                launch identity on the first ``/_ready`` of every stream, or
+                the stream is dropped with ``RemotePeerMismatch``.
+
+        Raises:
+            ValueError: ``timeout`` is not positive, ``max_calls`` is below 1,
+                or the address is not one of the two forms.
+        """
         if timeout <= 0 or max_calls < 1:
             raise ValueError("timeout and max_calls must be positive")
         self.address = RemoteAddress(address)
@@ -142,6 +192,26 @@ class RemoteConnection:
         self._closed = False
 
     async def call(self, frame: Frame) -> Frame:
+        """Send one frame and wait for the reply correlated with it.
+
+        The call takes an admission slot, opens the stream if none is open,
+        parks itself under the frame's id and writes. A reply is accepted only
+        from the stream that carried the call and only on the same path.
+
+        Returns:
+            The ``REPLY`` frame.
+
+        Raises:
+            ValueError: the frame's method is not ``CALL``, or its id is
+                already in flight.
+            RemotePeerMismatch: the peer is not the runner this connection
+                expects; nothing was sent.
+            RemoteCallFailed: the link failed or the call timed out;
+                ``outcome`` is ``not_sent`` or ``unknown``, and a call is
+                never replayed.
+            RemoteCallCancelled: the caller was cancelled; ``outcome`` says
+                whether the frame had already gone out.
+        """
         if frame.method != "CALL":
             raise ValueError("remote request/reply calls require method CALL")
         sent = False
@@ -177,12 +247,26 @@ class RemoteConnection:
                 future.cancel()
 
     async def _abandon(self, frame: Frame, stream: FrameStream) -> None:
+        """Remember a call nobody waits for, so its reply is read and dropped.
+
+        Past 256 abandoned calls the stream is closed instead: the peer is not
+        answering, and the bookkeeping stops growing.
+        """
         if len(self._abandoned) >= 256:
             await stream.close()
             return
         self._abandoned[frame.id] = (stream, frame.path)
 
     async def _connect(self) -> FrameStream:
+        """The open stream, opening one under the lock when there is none.
+
+        A new stream is probed with ``/_ready`` when an instance id is
+        expected, and the reader task that dispatches replies is started.
+
+        Raises:
+            ConnectionError: this connection is closed.
+            RemotePeerMismatch: the peer did not present the expected identity.
+        """
         async with self._connect_lock:
             if self._closed:
                 raise ConnectionError("remote connection is closed")
@@ -209,6 +293,13 @@ class RemoteConnection:
             return self._stream
 
     async def _read_replies(self, stream: FrameStream) -> None:
+        """Read replies off one stream and hand each to the call waiting for it.
+
+        A reply for an abandoned call is dropped. A reply that belongs to
+        another stream or another path ends the stream, and so does a frame
+        that is not a ``REPLY``. When the loop ends, every call still parked on
+        this stream fails with ``outcome="unknown"``.
+        """
         reason = "remote connection ended"
         try:
             while (frame := await stream.read()) is not None:
@@ -243,6 +334,7 @@ class RemoteConnection:
             await stream.close()
 
     async def close(self) -> None:
+        """Close the stream and stop the reader; no further call is admitted."""
         self._closed = True
         if self._stream is not None:
             await self._stream.close()

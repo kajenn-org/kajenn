@@ -22,9 +22,10 @@ delivered, or from the fields somebody is about to send::
     reply = WsxEnvelope(id=envelope.id, status=200, data=…)     # write one
     await socket.send_text(reply.encode())
 
-The prefix is what tells a WSX message from any other text on the socket, and
-the routing fields parallel the internal channel's info, so a
-message copies into a CALL one field at a time.
+The prefix is what tells a WSX message from any other text on the socket. The
+routing fields — ``id``, ``method``, ``path`` — carry the same names the
+channel frame carries in its routing info, so a message crosses that boundary
+one field at a time.
 
 **A request carries ``method`` and ``path``; an answer carries ``status``.**
 Both carry ``data`` and, when they belong to a page, ``page_id``. ``id`` is
@@ -90,7 +91,7 @@ PING_PATH = f"/{WSX_ROOT}/ping"
 
 #: The command a page sends before any message of its own: the application
 #: decides — it validates the page and writes the channel on its row — and the
-#: CONNECTION binds, because it is the one holding the socket (owner, N30).
+#: CONNECTION binds, because it is the one holding the socket.
 #: Recognised on the path the demux leaves once the mount is taken off, never
 #: on the whole path: the mount is the application's, the segment is the core's.
 OPENCHANNEL_PATH = f"/{WSX_ROOT}/openchannel"
@@ -122,14 +123,19 @@ class WsxEnvelope:
             id: what correlates an answer with its message; ``None`` for an event.
             method: the request's method — ``WSK`` for a page's rpc.
             path: the request's path, which names the application and the route.
-            data: the payload, as a Python value.
+            data: the payload, as a Python value; serialized to a TYTX json
+                string, and ignored when ``serialized_data`` is given.
             page_id: the page the message belongs to, when it belongs to one.
             reply_path: where the page asks to be called back.
             status: the answer's status; ``None`` on a request.
+            serialized_data: the payload already serialized, passed through
+                untouched — what a router forwards without decoding.
 
         Raises:
-            ValueError: ``text`` is not a WSX message, its body is not JSON, or
-                that body is not an object.
+            ValueError: ``text`` is not a WSX message, its body is not JSON,
+                that body is not an object, or one of ``id``/``method``/
+                ``path``/``page_id``/``reply_path`` is not a string of at most
+                4096 characters.
         """
         if text is not None:
             fields = self.read_text(text)

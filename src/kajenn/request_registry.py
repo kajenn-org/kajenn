@@ -101,10 +101,10 @@ class RegisteredRequest:
     def run_cleanups(self, error: BaseException | None = None) -> None:
         """Run queued cleanups LIFO, isolating and logging each one's exception.
 
-        Called by the server in the http ``finally`` — so cleanups run whether
-        the request succeeded or failed. ``error`` carries the terminating
-        exception (``None`` on success) for error-aware cleanups; the base drain
-        runs every callback regardless.
+        Called by the server in the http ``finally``, so the cleanups run
+        whether the request succeeded or failed. Every callback runs, and one
+        that raises is logged and does not stop the next. ``error`` is accepted
+        and not read: the drain does not depend on how the request ended.
         """
         if self._cleanups is None:
             return

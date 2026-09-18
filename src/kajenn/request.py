@@ -64,12 +64,12 @@ the base; a form body — urlencoded OR multipart — is merged field by field
 ``doc`` as an ``UploadedFile``); a hydrated body is passed whole as
 ``body_data``; an undecoded body as ``body_raw``; an empty body adds nothing.
 
-``db`` is the deferred preparation layer (no ORM yet): on first access it
-resolves the server's registered handler for the owning app's ``db_name`` (else
-``"default"``) and registers its ``closeConnection`` as a request cleanup (drained
-by the server at end of request). ``get_db(name)`` is a plain lookup with no
-cleanup registration. Auth and session ride the scope (``scope["auth"]`` — an
-``Avatar`` or ``None`` — and ``scope["session"]``), set by the middleware chain.
+``db`` resolves, on first access, the server's registered handler for the
+owning app's ``db_name`` (else ``"default"``) and registers its
+``closeConnection`` as a request cleanup (drained by the server at end of
+request). ``get_db(name)`` is a plain lookup with no cleanup registration.
+Auth and session ride the scope (``scope["auth"]`` — an ``Avatar`` or ``None``
+— and ``scope["session"]``), set by the middleware chain.
 """
 
 from __future__ import annotations
@@ -236,9 +236,9 @@ class Request:
     def parse_body(self, body: bytes) -> Any:
         """The body as the owning application wants it: decoded, or the bytes.
 
-        An application declaring ``request(body="raw")`` — and one serving a
-        request nobody owns — keeps the bytes (an empty body is ``None``);
-        every other application gets ``decode_body`` on the declared
+        An application declaring ``request(body="raw")`` keeps the bytes (an
+        empty body is ``None``). Every other case — including a request no
+        application owns — goes through ``decode_body`` on the declared
         content-type.
         """
         application = self._application
@@ -432,11 +432,13 @@ class Request:
 
         Resolves ``server.databases[name]`` where ``name`` is the owning
         application's ``db_name`` attribute if set, else ``"default"``. On the
-        first successful resolution it registers ``handler.closeConnection`` as a
-        request cleanup (drained by the server at end of request). Returns
-        ``None`` when there is no server or no handler under that name.
+        first successful resolution it registers ``handler.closeConnection`` as
+        a cleanup of the registry's current request, when there is one (drained
+        by the server at end of request). Returns ``None`` when there is no
+        server or no handler under that name.
 
-        Preparation layer only: no pooling, no transactions, no per-app registry.
+        The handler comes from the configuration as it is: this property adds
+        no pooling, no transaction and no per-application registry.
         """
         if self._db is not None:
             return self._db
