@@ -33,12 +33,12 @@ dependencies = [
     # and not of whoever installs it. `websockets` is what is needed, and
     # nothing more — never `uvicorn[standard]`, which drags in what is not.
     "websockets>=13.0",
-    "genro-bag>=0.22.0",
-    "genro-builders>=0.23.0",
-    "genro-toolbox>=0.14.0",
-    "genro-tytx>=0.15.0",
-    "genro-routes>=0.30.0",
-    "genro-storage[encryption]>=0.8.0",
+    "genro-bag>=0.27.0",
+    "genro-builders>=0.27.0",
+    "genro-toolbox>=0.17.0",
+    "genro-tytx>=0.16.1",
+    "genro-routes>=0.30.1",
+    "genro-storage[encryption]>=0.8.1",
     "pyjwt>=2.0",
     "cryptography>=42.0",
     "httpx>=0.27",
@@ -52,7 +52,7 @@ test = [
     "pytest-asyncio>=0.23",
     # The suite exercises the TYTX msgpack transport branch of response.py:
     # without this extra that coverage silently vanishes in a clean env.
-    "genro-tytx[msgpack]>=0.15.0",
+    "genro-tytx[msgpack]>=0.16.1",
     # tests/docs/test_internals_reader.py builds the internals dossier with
     # mkdocs: the suite needs the reader, not only the developer who reads.
     "kajenn[internals]",
