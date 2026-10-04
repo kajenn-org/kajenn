@@ -142,6 +142,14 @@ async def http_status_headers(
 
 
 class TestSelfConfiguringServer:
+    @pytest.mark.parametrize("recipe", [BaseConfiguration, TwoAppConfig])
+    def test_configuration_source_validates(self, recipe: type[AsgiConfigBuilder]) -> None:
+        """Validate real recipes across the builders/Bag traversal boundary."""
+        builder = recipe()
+        builder.create()
+        assert builder.source.get_node("configuration") is not None
+        assert builder.validate_source() == []
+
     def test_server_section_reaches_the_serve_defaults(self) -> None:
         server = AsgiServer(config=TwoAppConfig)
         assert server.config_host == "0.0.0.0"
