@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Versioned channel frames with bounded JSON routing information and opaque bytes.
+"""Versioned KajennBus frames with bounded JSON routing information and opaque bytes.
 
 The frame layer never interprets payload bytes. Socket and in-process streams
 share :class:`FrameCodec`, including strict version, length and JSON checks.
@@ -33,8 +33,8 @@ from ..transport_limits import (
     frame_max_size, integer_setting,
 )
 
-CHANNEL_MAGIC = b"KJNF"
-CHANNEL_VERSION = 1
+KAJENNBUS_MAGIC = b"KJNF"
+KAJENNBUS_VERSION = 1
 HEADER = struct.Struct("!4sBII")
 HEADER_SIZE = HEADER.size
 MAX_FRAME_SIZE = DEFAULT_MAX_FRAME_SIZE
@@ -45,8 +45,8 @@ RESERVED_INFO_KEYS = frozenset({"id", "method", "path"})
 MAX_ROUTING_STRING = 4096
 ALLOWED_METHODS = frozenset({"REGISTER", "POST", "CALL", "REPLY", "EVENT"})
 __all__ = [
-    "CHANNEL_MAGIC",
-    "CHANNEL_VERSION",
+    "KAJENNBUS_MAGIC",
+    "KAJENNBUS_VERSION",
     "HEADER_SIZE",
     "MAX_FRAME_SIZE",
     "FrameTooLarge",
@@ -197,9 +197,9 @@ class FrameCodec:
         if len(header) != HEADER_SIZE:
             raise ValueError("truncated frame header")
         magic, version, info_length, payload_length = HEADER.unpack(header)
-        if magic != CHANNEL_MAGIC:
+        if magic != KAJENNBUS_MAGIC:
             raise ValueError("invalid frame magic")
-        if version != CHANNEL_VERSION:
+        if version != KAJENNBUS_VERSION:
             raise ValueError(f"unsupported frame version {version}")
         if info_length + payload_length > self.max_size:
             raise FrameTooLarge(info_length + payload_length, self.max_size)
@@ -215,7 +215,7 @@ class FrameCodec:
         size = len(info) + len(frame.payload)
         if size > self.max_size:
             raise FrameTooLarge(size, self.max_size)
-        header = HEADER.pack(CHANNEL_MAGIC, CHANNEL_VERSION, len(info), len(frame.payload))
+        header = HEADER.pack(KAJENNBUS_MAGIC, KAJENNBUS_VERSION, len(info), len(frame.payload))
         self.warn_large_frame(frame, size, "send")
         return header + info + frame.payload
 

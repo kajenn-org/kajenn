@@ -33,7 +33,7 @@ def integer_setting(name: str, default: int, *, minimum: int = 0) -> int:
 
 
 def frame_max_size() -> int:
-    """The ceiling in bytes on one channel frame.
+    """The ceiling in bytes on one KajennBus frame.
 
     Raises:
         ValueError: the configured value is below 1 or does not fit an

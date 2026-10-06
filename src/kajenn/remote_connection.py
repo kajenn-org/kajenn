@@ -23,7 +23,7 @@ import stat
 import sys
 from typing import Any
 
-from .channel.frame import Frame, FrameStream
+from .kbus.frame import Frame, FrameStream
 
 
 class RemoteCallFailed(ConnectionError):

@@ -212,7 +212,7 @@ See [Body arguments](guides/requests.md#body-arguments).
 
 No. `Request.read_body()` buffers the complete body, including multipart
 uploads, and has no size limit of its own — `KAJENN_HTTP_MAX_BODY_BYTES` bounds
-the records the channel carries, not this read. Use an ingress limit, or an
+the frames the KajennBus carries, not this read. Use an ingress limit, or an
 application that drives ASGI `receive` itself, when you need bounded or
 streaming upload processing.
 

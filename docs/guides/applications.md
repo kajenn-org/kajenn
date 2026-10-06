@@ -71,4 +71,4 @@ The raw WebSocket seam owns its handshake and Origin/auth checks. Read
 To host the application in **another process** instead of this one, the core
 offers `RemoteApplication` (`kajenn.remote_application`) and the runner it talks
 to: both ends buffer the complete request and the complete response, so that
-path carries no streaming. See [the channel protocol](../design/channel-protocol.md).
+path carries no streaming. See [the KajennBus protocol](../design/kbus-protocol.md).

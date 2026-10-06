@@ -18,7 +18,7 @@ Every name a site composes a server from is imported here and listed in
 ``__all__``: the base server and the shipped composition, the app-side
 contract and its routed base, the configuration grammar and its handler, the
 capability mixins (auth, sessions, middleware, plugins, storage,
-communication), the request/response pair, the HTTP exceptions, the channel
+communication), the request/response pair, the HTTP exceptions, the KajennBus
 and MCP surfaces, the tasks grammar and the ASGI type aliases.
 
 ``__version__`` is read from the installed distribution.
@@ -41,7 +41,7 @@ from .auth import (
     FileUserStore,
     UserStore,
 )
-from .channel import ChannelClient, Frame, FrameStream
+from .kbus import KajennBusClient, Frame, FrameStream
 from .communication import CommunicationMixin
 from .config import (
     AsgiConfigBuilder,
@@ -98,7 +98,7 @@ __all__ = [
     "BaseConfiguration",
     "BaseMiddleware",
     "BaseServer",
-    "ChannelClient",
+    "KajennBusClient",
     "CommunicationMixin",
     "ConfigError",
     "ConfigurationHandler",

@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Local channel — the in-process wire, byte-identical to the socket one.
+"""Local KajennBus — the in-process wire, byte-identical to the socket one.
 
 Both ends live in ONE process and speak the very same protocol as a child in
-another process: not "the same API", the same *bytes*. ``LocalChannel`` is
+another process: not "the same API", the same *bytes*. ``LocalKajennBus`` is
 therefore two ``asyncio.Queue``s of encoded frames — every envelope crosses
 through ``Frame.encode()`` and is re-parsed on the other side with the same
 versioned info/bytes rules ``FrameStream.read`` applies. A payload dict
@@ -26,11 +26,11 @@ mutated after ``send()`` cannot reach the peer, exactly as over a socket.
 models EOF in both directions, so closing either end has the socket meaning —
 the peer's read ends and the link-loss callback runs.
 
-``LocalChannel`` itself IS the member face, with the ``ChannelClient`` API
+``LocalKajennBus`` itself IS the member face, with the ``KajennBusClient`` API
 (``connect``/``send``/``close``/``wait_closed``, ``on_message``/``on_orphan``,
 ``connected``), plus ``send_frame(frame)`` for the frames whose id is not the
 sender's to mint — a REPLY reuses the CALL's id. The hub side is consumed by
-``ChannelHub.attach_local()``, which registers it through the same REGISTER
+``KajennBusHub.attach_local()``, which registers it through the same REGISTER
 path as any socket member: one rubric, no parallel bookkeeping.
 """
 
@@ -50,7 +50,7 @@ from .frame import (
 )
 from .control import ControlPayload
 
-__all__ = ["LocalChannel", "LocalFrameStream"]
+__all__ = ["LocalKajennBus", "LocalFrameStream"]
 
 
 class LocalFrameStream:
@@ -58,7 +58,7 @@ class LocalFrameStream:
 
     Reads from ``inbound``, writes to ``outbound``; a ``None`` in a queue is
     the EOF sentinel. ``close()`` sends it to the peer and unparks its own
-    reader, so both sides observe the end of the channel.
+    reader, so both sides observe the end of the KajennBus.
     """
 
     def __init__(
@@ -84,7 +84,7 @@ class LocalFrameStream:
         return self._closed
 
     async def read(self) -> Frame | None:
-        """The next frame, or ``None`` when the channel ended."""
+        """The next frame, or ``None`` when the KajennBus ended."""
         wire = await self.inbound.get()
         if wire is None:
             return None
@@ -93,10 +93,10 @@ class LocalFrameStream:
     async def write(self, frame: Frame) -> None:
         """Encode and enqueue one frame; a full or closed end raises."""
         if self.outbound.qsize() >= self.max_queue_size:
-            raise ConnectionError("local channel queue full; frame not sent")
+            raise ConnectionError("local KajennBus queue full; frame not sent")
         wire = self.codec.encode(frame)
         if self._closed:
-            raise BrokenPipeError("local channel end is closed")
+            raise BrokenPipeError("local KajennBus end is closed")
         await self.outbound.put(wire)
 
     async def close(self) -> None:
@@ -108,12 +108,12 @@ class LocalFrameStream:
         await self.inbound.put(None)
 
 
-class LocalChannel:
-    """In-process channel endpoint: the member face of a queue-backed wire.
+class LocalKajennBus:
+    """In-process KajennBus endpoint: the member face of a queue-backed wire.
 
     Built by whoever owns the in-process worker, then handed to
-    ``ChannelHub.attach_local()``; ``connect()`` presents the REGISTER frame
-    just like ``ChannelClient`` does, and the queues buffer it whichever side
+    ``KajennBusHub.attach_local()``; ``connect()`` presents the REGISTER frame
+    just like ``KajennBusClient`` does, and the queues buffer it whichever side
     goes first.
     """
 
@@ -155,23 +155,23 @@ class LocalChannel:
 
     @property
     def hub_stream(self) -> LocalFrameStream:
-        """The hub-side end, consumed by ``ChannelHub.attach_local()``."""
+        """The hub-side end, consumed by ``KajennBusHub.attach_local()``."""
         return self._hub_stream
 
     @property
     def connected(self) -> bool:
-        """Whether the channel is up (REGISTER sent, receive loop running)."""
+        """Whether the KajennBus is up (REGISTER sent, receive loop running)."""
         return self._connected
 
     @property
     def closed(self) -> bool:
-        """Whether the channel ended (either side; ``False`` before connect)."""
+        """Whether the KajennBus ended (either side; ``False`` before connect)."""
         return self._closed_event.is_set()
 
     async def connect(self) -> None:
         """Present the REGISTER frame and start the receive loop."""
         if self.connected:
-            raise RuntimeError("local channel is already connected")
+            raise RuntimeError("local KajennBus is already connected")
         register = Frame(
             method=REGISTER_METHOD,
             path=REGISTER_PATH,
@@ -181,7 +181,7 @@ class LocalChannel:
         self._connected = True
         self._closed_event.clear()
         self._receive_task = asyncio.create_task(self._receive_loop())
-        self._logger.info("Local channel connected as %s", self.name)
+        self._logger.info("Local KajennBus connected as %s", self.name)
 
     async def close(self) -> None:
         """Deliberate local close: no orphan signal."""
@@ -197,7 +197,7 @@ class LocalChannel:
         self._closed_event.set()
 
     async def wait_closed(self) -> None:
-        """Block until the channel ends (either side); the member's main wait."""
+        """Block until the KajennBus ends (either side); the member's main wait."""
         await self._closed_event.wait()
 
     async def send(self, *, method: str = "POST", path: str = "/", data: Any = None) -> str:
@@ -214,13 +214,13 @@ class LocalChannel:
         return frame.id
 
     async def _receive_loop(self) -> None:
-        """Read frames until the channel ends; hub gone → orphan."""
+        """Read frames until the KajennBus ends; hub gone → orphan."""
         try:
             while True:
                 try:
                     frame = await self._member_stream.read()
                 except ValueError:
-                    self._logger.exception("Protocol violation from the hub; closing the channel")
+                    self._logger.exception("Protocol violation from the hub; closing the KajennBus")
                     break
                 if frame is None:
                     break
@@ -236,7 +236,7 @@ class LocalChannel:
                 await self._fire(self.on_orphan, self)
 
     async def _fire(self, callback: Callable[..., Any] | None, *args: Any) -> None:
-        """Run a sync-or-async callback; a consumer bug must not sever the channel."""
+        """Run a sync-or-async callback; a consumer bug must not sever the KajennBus."""
         if callback is None:
             return
         try:
@@ -244,4 +244,4 @@ class LocalChannel:
             if inspect.isawaitable(result):
                 await result
         except Exception:
-            self._logger.exception("Channel callback %r failed", callback)
+            self._logger.exception("KajennBus callback %r failed", callback)

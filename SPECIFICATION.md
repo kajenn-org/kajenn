@@ -230,18 +230,18 @@ override seams. For children, identity never travels as an object (principle
 runtime spec — data, not identity.
 
 **D17 — Capabilities are mixins; communication is the first one.**
-(Amends the channel clause of D2; refines the channel part of ◆D10.)
+(Amends the channel clause of D2; refines the KajennBus part of ◆D10.)
 The base server is born WITHOUT channels. The **communication capability** is
 a mixin defined in the minimal package that holds BOTH sides as member objects
-constructed by its cooperative init: `parent_channel` (armed by `parent=`, at
-lifespan startup) and `children_channel` (the hub, armed by whoever needs it).
+constructed by its cooperative init: `parent_kbus` (armed by `parent=`, at
+lifespan startup) and `children_kbus` (the hub, armed by whoever needs it).
 Shipped compositions: public server = base + communication (+ auth, ...);
 internal server = base + communication; **the sub-commander is the public
 server class with `parent=` armed** — no new class. An unarmed side fails
 explicitly ("not armed"); a class without the mixin simply lacks the attribute
 (a different type, not a ghost — P4 targets runtime-config ghosts, not static
 class composition). Consumers of the capability type against a protocol
-("has parent_channel/children_channel"), never against concrete classes.
+("has parent_kbus/children_kbus"), never against concrete classes.
 Registration through the hub makes the registrant a **child in the tree even
 when not spawned by us** (communication ≠ process lifecycle: the remote
 sub-commander is started by its machine, yet registers as a child).
@@ -535,9 +535,9 @@ processes** (pool, spawn, forwarding, SPA roles). A mono-app minimal package
 would force the upper package to add multi-app from outside = the old dual
 dispatch reborn.
 
-### ◆D10 — The channel cut and the group runtime spec
+### ◆D10 — The KajennBus cut and the group runtime spec
 **In the minimal package**: the frame protocol (tiny, zero deps) and the
-**child side** (`ChannelClient`) — knowing how to BE a child is part of what
+**child side** (`KajennBusClient`) — knowing how to BE a child is part of what
 a server IS (D2). **In the orchestration package**: the hub (parent side),
 the `ProcessPool` (spawn, supervision, relaunch, scale), the judgments
 (occupancy, rebalance, move). The minimal knows how to *be* a child; the
@@ -552,7 +552,7 @@ current interpreter | venv (strongest isolation; exists today —
 immutable artifact; C extensions need shiv/pex extraction) | OCI (future,
 already foreseen). Multi-machine insurance, four sentences: *group =
 declarative runtime spec; spawner = replaceable actuator (local today, the
-sub-commander of D11 tomorrow); channel address = uds|tcp (tcp already in the
+sub-commander of D11 tomorrow); KajennBus address = uds|tcp (tcp already in the
 old code, `channel.py:39`); storage = a service with backends.* Never
 implicit localhost in new code. Artifacts that travel (pyz, OCI) are the
 natural bridge to remote machines — venvs do not travel.

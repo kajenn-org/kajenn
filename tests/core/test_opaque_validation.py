@@ -6,7 +6,7 @@ import struct
 import pytest
 from genro_tytx import to_tytx
 
-from kajenn.channel.frame import FrameCodec
+from kajenn.kbus.frame import FrameCodec
 from kajenn.http_record import HttpRecord
 from kajenn.wsx import WsxEnvelope
 from kajenn.wsx_payload import SerializedWsxPayload

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Explicit JSON codec for values consumed by channel control endpoints."""
+"""Explicit JSON codec for values consumed by KajennBus control endpoints."""
 
 from __future__ import annotations
 import json

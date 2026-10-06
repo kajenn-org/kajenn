@@ -22,9 +22,9 @@ silent longer than the heartbeat interval (the comment keeps proxies from
 closing an idle connection; the client ignores it). Each event ends with a
 blank line. ``data`` that is not a string is JSON-encoded.
 
-The framing is shaped like ``channel/frame.py`` (a slotted codec, its own wire
+The framing is shaped like ``kbus/frame.py`` (a slotted codec, its own wire
 format) but has no bytes in common — SSE is a text protocol over HTTP, not the
-length-prefixed channel frame. ``SseStream`` is SELF-CONTAINED: it wraps ANY
+length-prefixed KajennBus frame. ``SseStream`` is SELF-CONTAINED: it wraps ANY
 async source of event dicts (a user generator, a task hub subscription) and
 yields wire ``bytes``; the source is the caller's concern. Resumability
 (``Last-Event-ID`` → a snapshot baseline then the live source) is built by the

@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""ChannelHub tests: the rubric, the CALL/REPLY/EVENT envelopes, EOF and isolation.
+"""KajennBusHub tests: the rubric, the CALL/REPLY/EVENT envelopes, EOF and isolation.
 
 The member side is a ``MemberPeer`` over the package's own ``FrameStream``
 (both ends of the codec are exercised): it REGISTERs, records what it
 receives and answers CALLs with a REPLY **reusing the CALL id** — the
-correlation the hub keys its futures on, which ``ChannelClient.send`` cannot
+correlation the hub keys its futures on, which ``KajennBusClient.send`` cannot
 express since it mints a fresh id per frame. The protocol-violation and
 no-REGISTER cases write raw bytes on a plain connection.
 """
@@ -33,17 +33,17 @@ from typing import Any
 
 import pytest
 
-from kajenn.channel import (
+from kajenn.kbus import (
     CALL_METHOD,
     EVENT_METHOD,
     REGISTER_METHOD,
     REGISTER_PATH,
     REPLY_METHOD,
-    ChannelHub,
+    KajennBusHub,
     Frame,
     FrameStream,
 )
-from kajenn.channel.control import ControlPayload
+from kajenn.kbus.control import ControlPayload
 
 CONTROL = ControlPayload()
 
@@ -57,7 +57,7 @@ def data_of(frame):
 
 
 class MemberPeer:
-    """A child on the channel: REPLYs to CALLs reusing their id."""
+    """A child on the KajennBus: REPLYs to CALLs reusing their id."""
 
     def __init__(self, address: str, name: str) -> None:
         self.address = address
@@ -136,9 +136,9 @@ class HubHarness:
         self.joined: list[str] = []
         self.lost: list[str] = []
         self.events: list[tuple[str, Frame]] = []
-        self.hub = ChannelHub(
+        self.hub = KajennBusHub(
             on_member_joined=lambda member: self.joined.append(member.name),
-            on_channel_lost=lambda member: self.lost.append(member.name),
+            on_member_lost=lambda member: self.lost.append(member.name),
             on_event=lambda member, frame: self.events.append((member.name, frame)),
             **kwargs,
         )
@@ -300,7 +300,7 @@ async def test_member_death_fails_its_parked_calls(uds_harness):
     await peer.close()
     await uds_harness.wait_lost(1)
 
-    with pytest.raises(ConnectionError, match="channel to W:one lost"):
+    with pytest.raises(ConnectionError, match="KajennBus member W:one lost"):
         await parked
     assert not survivor.done()
 
@@ -524,7 +524,7 @@ async def test_inbound_call_is_an_unexpected_envelope(uds_harness, caplog):
     await peer.connect()
     await uds_harness.wait_members(1)
 
-    with caplog.at_level(logging.WARNING, logger="kajenn.channel.hub"):
+    with caplog.at_level(logging.WARNING, logger="kajenn.kbus.hub"):
         await peer.send(CALL_METHOD, "/ask", {"q": 1})
         await asyncio.sleep(0.1)
 
@@ -545,7 +545,7 @@ async def test_member_eof_sweeps_the_rubric(uds_harness):
     assert uds_harness.hub.resolve("W:one") is None
 
 
-async def test_deliberate_hub_stop_fires_no_channel_lost(socket_dir):
+async def test_deliberate_hub_stop_fires_no_member_lost(socket_dir):
     harness = HubHarness(path=os.path.join(socket_dir, "hub.sock"))
     await harness.hub.start()
     peer = MemberPeer(harness.hub.address, "W:one")
@@ -617,7 +617,7 @@ async def test_connection_without_register_is_rejected(uds_harness):
 
 
 async def test_address_before_start_raises(socket_dir):
-    hub = ChannelHub(path=os.path.join(socket_dir, "hub.sock"))
+    hub = KajennBusHub(path=os.path.join(socket_dir, "hub.sock"))
     assert not hub.started
     with pytest.raises(RuntimeError):
         hub.address
@@ -626,7 +626,7 @@ async def test_address_before_start_raises(socket_dir):
 
 async def test_path_and_host_together_are_rejected():
     with pytest.raises(ValueError):
-        ChannelHub(path="/tmp/x.sock", host="127.0.0.1")
+        KajennBusHub(path="/tmp/x.sock", host="127.0.0.1")
 
 
 @pytest.mark.parametrize("pid", [{}, "invalid"])
