@@ -14,7 +14,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from kajenn.channel.frame import Frame, FrameStream
+from kajenn.kbus.frame import Frame, FrameStream
 from kajenn.http_record import HttpRecord
 from kajenn.remote_connection import RemoteConnection
 

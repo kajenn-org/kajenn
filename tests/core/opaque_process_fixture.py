@@ -10,7 +10,7 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from kajenn.channel.frame import Frame, FrameStream
+from kajenn.kbus.frame import Frame, FrameStream
 
 
 @dataclass(frozen=True)

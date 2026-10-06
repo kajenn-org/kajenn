@@ -16,7 +16,7 @@
 
 *A spicy ASGI application server.*
 
-**Status**: Pre-Alpha. This README describes the `main` checkout; the PyPI badge
+**Status**: Beta. This README describes the `main` checkout; the PyPI badge
 shows the published package version. For the examples documented here, follow
 the [checkout installation instructions](docs/getting-started.md#installation).
 

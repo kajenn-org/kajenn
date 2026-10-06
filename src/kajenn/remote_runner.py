@@ -27,7 +27,7 @@ from typing import Any
 
 from .application import BaseApplication
 from .asgi_endpoint import BufferedAsgiEndpoint
-from .channel.frame import Frame, FrameStream
+from .kbus.frame import Frame, FrameStream
 from .http_record import HttpRecord
 from .exceptions import HTTPException
 from .response import Response

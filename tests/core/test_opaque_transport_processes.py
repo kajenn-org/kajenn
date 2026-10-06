@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from kajenn.channel.frame import Frame, FrameStream
+from kajenn.kbus.frame import Frame, FrameStream
 from tests.core.opaque_process_fixture import EndpointValue, decode_at_endpoint, encode_at_endpoint
 
 

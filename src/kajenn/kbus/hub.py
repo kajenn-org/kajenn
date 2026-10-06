@@ -12,14 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Channel hub — the parent side of the channel, with typed envelopes.
+"""KajennBus hub — the parent side of the KajennBus, with typed envelopes.
 
 The hub binds the socket the children connect to (``uds:`` in a private
 directory, or ``tcp:`` as the multi-host door), keeps the rubric of the
 registered members and routes envelopes. It is **transport-only**: it never
 interprets an op name and never looks inside ``data`` beyond the three keys
 the REPLY contract owns (``result``, ``error``, ``events``). The rubric key
-is the full channel name the member declares in its REGISTER frame — the
+is the full member name the member declares in its REGISTER frame — the
 typing happens at the member, not here.
 
 Three envelope kinds ride the frame protocol of ``frame.py`` (which is not
@@ -45,12 +45,12 @@ modified: ``method`` carries the kind, ``path`` the routing key):
   One task per EVENT also means per-member EVENT ordering is NOT preserved:
   a consumer that needs ordering must provide it itself.
 
-An in-process member joins through ``attach_local(local_channel)`` — the same
+An in-process member joins through ``attach_local(local_kbus)`` — the same
 REGISTER frame and the same receive loop over a queue-backed codec twin, so
 the rubric holds one kind of member however it got here (``local.py``).
 
 Liveness is the frame protocol's: EOF reports connection loss, so a member
-whose stream ends is dropped from the rubric and ``on_channel_lost(member)``
+whose stream ends is dropped from the rubric and ``on_member_lost(member)``
 fires — sweep and relaunch belong to whoever owns the member, not here. A deliberate
 ``stop()`` is not a death and fires nothing. A ``ValueError`` from the codec
 is a protocol violation of ONE member: that connection is closed, the hub
@@ -72,15 +72,15 @@ from typing import Any, Callable
 
 from .control import ControlPayload
 from .frame import REGISTER_METHOD, Frame, FrameStream
-from .local import LocalChannel, LocalFrameStream
+from .local import LocalKajennBus, LocalFrameStream
 
 __all__ = [
     "CALL_METHOD",
     "EVENT_METHOD",
     "REPLY_METHOD",
-    "ChannelCallError",
-    "ChannelHub",
-    "ChannelMember",
+    "KajennBusCallError",
+    "KajennBusHub",
+    "KajennBusMember",
 ]
 
 CALL_METHOD = "CALL"
@@ -90,7 +90,7 @@ MAX_PENDING_CALLS = 1024
 MAX_EVENT_TASKS = 1024
 
 
-class ChannelCallError(Exception):
+class KajennBusCallError(Exception):
     """A CALL answered with an error REPLY; ``error`` is the member's payload.
 
     ``payload`` is the whole REPLY the error arrived in: an errored REPLY can
@@ -108,14 +108,14 @@ class ChannelCallError(Exception):
         self.payload = payload or {}
 
 
-class ChannelMember:
+class KajennBusMember:
     """A child connection in the rubric, keyed by the name it declared."""
 
     __slots__ = ("hub", "name", "pid", "stream")
 
     def __init__(
         self,
-        hub: ChannelHub,
+        hub: KajennBusHub,
         name: str,
         pid: int,
         stream: FrameStream | LocalFrameStream,
@@ -130,10 +130,10 @@ class ChannelMember:
         await self.stream.write(frame)
 
     def __repr__(self) -> str:
-        return f"<ChannelMember {self.name} pid={self.pid}>"
+        return f"<KajennBusMember {self.name} pid={self.pid}>"
 
 
-class ChannelHub:
+class KajennBusHub:
     """Parent-side endpoint: binds the socket, tracks members, routes envelopes.
 
     Give ``path`` for UDS, ``host`` (with ``port=0`` to let the OS choose) for
@@ -150,7 +150,7 @@ class ChannelHub:
         host: str | None = None,
         port: int = 0,
         on_member_joined: Callable[..., Any] | None = None,
-        on_channel_lost: Callable[..., Any] | None = None,
+        on_member_lost: Callable[..., Any] | None = None,
         on_event: Callable[..., Any] | None = None,
         max_size: int | None = None,
         max_pending_calls: int = MAX_PENDING_CALLS,
@@ -161,7 +161,7 @@ class ChannelHub:
         if max_pending_calls < 1 or max_event_tasks < 1:
             raise ValueError("max_pending_calls and max_event_tasks must be positive")
         self.on_member_joined = on_member_joined
-        self.on_channel_lost = on_channel_lost
+        self.on_member_lost = on_member_lost
         self.on_event = on_event
         self.max_size = max_size
         self.control_payload = ControlPayload()
@@ -177,9 +177,9 @@ class ChannelHub:
         self.host = host
         self.port = port
         self._server: asyncio.Server | None = None
-        self._members: dict[str, ChannelMember] = {}
-        self._pending: dict[str, tuple[ChannelMember, str, asyncio.Future[Frame]]] = {}
-        self._abandoned: dict[str, tuple[ChannelMember, str]] = {}
+        self._members: dict[str, KajennBusMember] = {}
+        self._pending: dict[str, tuple[KajennBusMember, str, asyncio.Future[Frame]]] = {}
+        self._abandoned: dict[str, tuple[KajennBusMember, str]] = {}
         self._local_loops: set[asyncio.Task[None]] = set()
         self._event_tasks: set[asyncio.Task[None]] = set()
         self._closing = False
@@ -199,8 +199,8 @@ class ChannelHub:
         return f"tcp:{self.host}:{self.port}"
 
     @property
-    def members(self) -> dict[str, ChannelMember]:
-        """Snapshot of the rubric, by channel name."""
+    def members(self) -> dict[str, KajennBusMember]:
+        """Snapshot of the rubric, by member name."""
         return dict(self._members)
 
     async def start(self) -> None:
@@ -210,10 +210,10 @@ class ChannelHub:
         else:
             self._server = await asyncio.start_server(self._handle_connection, self.host, self.port)
             self.port = self._server.sockets[0].getsockname()[1]
-        self.logger.info("Channel hub listening on %s", self.address)
+        self.logger.info("KajennBus hub listening on %s", self.address)
 
     async def stop(self) -> None:
-        """Deliberate shutdown: close every member without firing channel_lost.
+        """Deliberate shutdown: close every member without firing member_lost.
 
         The members go first: ``Server.wait_closed()`` waits for the
         connection handlers, and a handler parked on a live member's read
@@ -234,10 +234,10 @@ class ChannelHub:
         if self._owned_dir is not None:
             shutil.rmtree(self._owned_dir, ignore_errors=True)
             self._owned_dir = None
-        self.logger.info("Channel hub stopped")
+        self.logger.info("KajennBus hub stopped")
 
-    async def attach_local(self, local: LocalChannel) -> ChannelMember | None:
-        """Register an in-process member arriving over a ``LocalChannel``.
+    async def attach_local(self, local: LocalKajennBus) -> KajennBusMember | None:
+        """Register an in-process member arriving over a ``LocalKajennBus``.
 
         The single attachment point for the local wire: the REGISTER frame and
         the receive loop are the socket ones, so the rubric holds one kind of
@@ -250,8 +250,8 @@ class ChannelHub:
             loop_task.add_done_callback(self._local_loops.discard)
         return member
 
-    def resolve(self, name: str) -> ChannelMember | None:
-        """The member registered under this channel name, or ``None``."""
+    def resolve(self, name: str) -> KajennBusMember | None:
+        """The member registered under this member name, or ``None``."""
         return self._members.get(name)
 
     async def post(self, name: str, path: str, data: Any = None) -> str:
@@ -289,7 +289,7 @@ class ChannelHub:
         if member is None:
             raise LookupError(f"no member named {name!r}")
         if len(self._pending) >= self.max_pending_calls:
-            raise RuntimeError(f"channel has {self.max_pending_calls} outstanding calls")
+            raise RuntimeError(f"KajennBus hub has {self.max_pending_calls} outstanding calls")
         if frame.id in self._pending:
             raise RuntimeError(f"a call with id {frame.id!r} is already pending")
         if frame.id in self._abandoned:
@@ -334,7 +334,7 @@ class ChannelHub:
 
     async def _register_connection(
         self, stream: FrameStream | LocalFrameStream
-    ) -> ChannelMember | None:
+    ) -> KajennBusMember | None:
         """Read and validate the presentation frame; reject anything else."""
         try:
             frame = await asyncio.wait_for(stream.read(), timeout=self.REGISTER_TIMEOUT)
@@ -374,14 +374,14 @@ class ChannelHub:
             self.logger.warning("Connection rejected: REGISTER with invalid pid")
             await stream.close()
             return None
-        member = ChannelMember(self, name, pid, stream)
+        member = KajennBusMember(self, name, pid, stream)
         self._members[name] = member
         await self._fire(self.on_member_joined, member)
         self.logger.info("Member joined: %s", member)
         return member
 
-    async def _receive_loop(self, member: ChannelMember) -> None:
-        """Read this member's frames until the channel ends; EOF → channel lost."""
+    async def _receive_loop(self, member: KajennBusMember) -> None:
+        """Read this member's frames until its stream ends; EOF → member lost."""
         try:
             while True:
                 try:
@@ -400,17 +400,17 @@ class ChannelHub:
             await member.stream.close()
             if self._members.get(member.name) is member:
                 del self._members[member.name]
-                self._fail_pending(member, f"channel to {member.name} lost")
+                self._fail_pending(member, f"KajennBus member {member.name} lost")
                 self._abandoned = {
                     frame_id: expected
                     for frame_id, expected in self._abandoned.items()
                     if expected[0] is not member
                 }
                 if not self._closing:
-                    self.logger.info("Channel lost: %s", member.name)
-                    await self._fire(self.on_channel_lost, member)
+                    self.logger.info("KajennBus member lost: %s", member.name)
+                    await self._fire(self.on_member_lost, member)
 
-    async def _dispatch(self, member: ChannelMember, frame: Frame) -> None:
+    async def _dispatch(self, member: KajennBusMember, frame: Frame) -> None:
         """Route one inbound frame by envelope kind: resolve inline, serve on a task.
 
         A REPLY only hands a payload to a parked future — O(1), so it stays in
@@ -436,7 +436,7 @@ class ChannelHub:
         else:
             self.logger.warning("Unknown envelope %s from %s", frame.method, member.name)
 
-    async def _resolve_reply(self, member: ChannelMember, frame: Frame) -> None:
+    async def _resolve_reply(self, member: KajennBusMember, frame: Frame) -> None:
         """Hand the REPLY payload to the parked future, verbatim.
 
         A REPLY whose caller already went away — its deadline expired, or it
@@ -464,7 +464,7 @@ class ChannelHub:
             return
         parked[2].set_result(frame)
 
-    def _fail_pending(self, member: ChannelMember | None, reason: str) -> None:
+    def _fail_pending(self, member: KajennBusMember | None, reason: str) -> None:
         """Fail one member's pending CALLs (``None`` = all) with ``ConnectionError``.
 
         The entries stay in ``_pending``: each caller pops its own in the
@@ -475,7 +475,7 @@ class ChannelHub:
                 future.set_exception(ConnectionError(reason))
 
     async def _fire(self, callback: Callable[..., Any] | None, *args: Any) -> None:
-        """Run a sync-or-async callback; a consumer bug must not sever the channel."""
+        """Run a sync-or-async callback; a consumer bug must not sever the KajennBus."""
         if callback is None:
             return
         try:
@@ -483,4 +483,4 @@ class ChannelHub:
             if inspect.isawaitable(result):
                 await result
         except Exception:
-            self.logger.exception("Channel callback %r failed", callback)
+            self.logger.exception("KajennBus callback %r failed", callback)

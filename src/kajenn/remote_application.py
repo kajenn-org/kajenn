@@ -21,7 +21,7 @@ from typing import Any
 
 from .application import BaseApplication
 from .asgi_endpoint import BufferedAsgiEndpoint
-from .channel.frame import Frame
+from .kbus.frame import Frame
 from .http_record import HttpRecord
 from .transport_limits import FrameTooLarge, HttpBodyTooLarge, http_max_body_size
 from .remote_connection import RemoteCallFailed, RemoteConnection, RemotePeerMismatch

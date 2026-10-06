@@ -12,26 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Channel subpackage: the frame protocol and both ends that speak it (◆D10).
+"""KajennBus subpackage: the frame protocol and both ends that speak it (◆D10).
 
-``Frame``/``FrameStream`` are the wire. ``ChannelClient`` is the child end
-over a socket, ``LocalChannel`` the in-process one, ``ChannelHub`` the parent
+``Frame``/``FrameStream`` are the wire. ``KajennBusClient`` is the child end
+over a socket, ``LocalKajennBus`` the in-process one, ``KajennBusHub`` the parent
 end that binds the socket and keeps the rubric of registered members. The far
-end of a channel may live in another process; nothing here reaches up to
+end of the KajennBus may live in another process; nothing here reaches up to
 whoever spawns it.
 """
 
-from .client import ChannelClient
+from .client import KajennBusClient
 from .frame import MAX_FRAME_SIZE, REGISTER_METHOD, REGISTER_PATH, Frame, FrameStream
 from .hub import (
     CALL_METHOD,
     EVENT_METHOD,
     REPLY_METHOD,
-    ChannelCallError,
-    ChannelHub,
-    ChannelMember,
+    KajennBusCallError,
+    KajennBusHub,
+    KajennBusMember,
 )
-from .local import LocalChannel, LocalFrameStream
+from .local import LocalKajennBus, LocalFrameStream
 
 __all__ = [
     "CALL_METHOD",
@@ -40,12 +40,12 @@ __all__ = [
     "REGISTER_METHOD",
     "REGISTER_PATH",
     "REPLY_METHOD",
-    "ChannelCallError",
-    "ChannelClient",
-    "ChannelHub",
-    "ChannelMember",
+    "KajennBusCallError",
+    "KajennBusClient",
+    "KajennBusHub",
+    "KajennBusMember",
     "Frame",
     "FrameStream",
-    "LocalChannel",
+    "LocalKajennBus",
     "LocalFrameStream",
 ]

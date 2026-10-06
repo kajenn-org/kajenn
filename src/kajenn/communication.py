@@ -14,10 +14,10 @@
 
 """Communication capability: the first mixin over the base server (D17).
 
-The base server is born WITHOUT channels. This mixin adds the communication
+The base server is born WITHOUT a KajennBus side. This mixin adds the communication
 capability as member objects built by its cooperative ``__init__``:
-``parent_channel`` — the ``ChannelClient`` of ◆D10, ARMED iff
-``parent=<address>`` was given — and ``children_channel`` — the hub side, a
+``parent_kbus`` — the ``KajennBusClient`` of ◆D10, ARMED iff
+``parent=<address>`` was given — and ``children_kbus`` — the hub side, a
 placeholder member the orchestration package arms (the minimal package knows
 how to BE a child, not how to HAVE children). Accessing an unarmed side
 raises ``RuntimeError`` ("not armed"); a composition WITHOUT the mixin simply
@@ -44,7 +44,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Any
 
-from .channel import ChannelClient
+from .kbus import KajennBusClient
 
 if TYPE_CHECKING:
     from .types import Message, Receive, Scope, Send
@@ -57,38 +57,38 @@ class CommunicationMixin:
 
     Constructor kwargs peeled here: ``parent`` — the address of the parent
     hub (``uds:<path>`` | ``tcp:<host>:<port>``); when given, the parent
-    side is armed with a ``ChannelClient``.
+    side is armed with a ``KajennBusClient``.
     """
 
     def __init__(self, **kwargs: Any) -> None:
         parent: str | None = kwargs.pop("parent", None)
         super().__init__(**kwargs)
-        self._parent_channel: ChannelClient | None = None
+        self._parent_kbus: KajennBusClient | None = None
         if parent is not None:
             name = f"{type(self).__name__.lower()}-{os.getpid()}"
-            self._parent_channel = ChannelClient(parent, name)
-        self._children_channel: Any = None
+            self._parent_kbus = KajennBusClient(parent, name)
+        self._children_kbus: Any = None
 
     @property
     def parent_armed(self) -> bool:
         """Whether the parent side was armed (``parent=`` given at init)."""
-        return self._parent_channel is not None
+        return self._parent_kbus is not None
 
     @property
-    def parent_channel(self) -> ChannelClient:
-        """The channel to the parent hub; unarmed access is an error."""
-        if self._parent_channel is None:
-            raise RuntimeError("parent_channel is not armed (no parent= at init)")
-        return self._parent_channel
+    def parent_kbus(self) -> KajennBusClient:
+        """The KajennBus to the parent hub; unarmed access is an error."""
+        if self._parent_kbus is None:
+            raise RuntimeError("parent_kbus is not armed (no parent= at init)")
+        return self._parent_kbus
 
     @property
-    def children_channel(self) -> Any:
+    def children_kbus(self) -> Any:
         """The hub side; a placeholder the orchestration package arms."""
-        if self._children_channel is None:
+        if self._children_kbus is None:
             raise RuntimeError(
-                "children_channel is not armed (the hub side lives in the orchestration package)"
+                "children_kbus is not armed (the hub side lives in the orchestration package)"
             )
-        return self._children_channel
+        return self._children_kbus
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Hook the lifespan without the base knowing it (the D16 proof).
@@ -106,7 +106,7 @@ class CommunicationMixin:
             return
         startup: Message = await receive()
         try:
-            await self.parent_channel.connect()
+            await self.parent_kbus.connect()
         except ConnectionError as error:
             await send({"type": "lifespan.startup.failed", "message": str(error)})
             raise
@@ -122,4 +122,4 @@ class CommunicationMixin:
         try:
             await super().__call__(scope, replaying_receive, send)
         finally:
-            await self.parent_channel.close()
+            await self.parent_kbus.close()

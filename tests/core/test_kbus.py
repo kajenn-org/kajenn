@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Channel tests (SPECIFICATION.md §4): the child connects to a fake hub over
+"""KajennBus tests (SPECIFICATION.md §4): the child connects to a fake hub over
 UDS, REGISTERs, and EOF is the death signal; the CommunicationMixin arms the
 parent side from ``parent=`` and hooks the lifespan cooperatively (D16/D17).
 
@@ -34,17 +34,17 @@ import tempfile
 import pytest
 
 from kajenn import BaseApplication, BaseServer
-from kajenn.channel import (
+from kajenn.kbus import (
     MAX_FRAME_SIZE,
     REGISTER_METHOD,
     REGISTER_PATH,
-    ChannelClient,
+    KajennBusClient,
     Frame,
     FrameStream,
 )
 from kajenn.communication import CommunicationMixin
-from kajenn.channel.control import ControlPayload
-from kajenn.channel.frame import FrameCodec
+from kajenn.kbus.control import ControlPayload
+from kajenn.kbus.frame import FrameCodec
 
 CONTROL = ControlPayload()
 
@@ -101,7 +101,7 @@ class FakeHub:
         self.eofs.append(stream)
 
 
-class ChannelServer(CommunicationMixin, BaseServer):
+class KajennBusServer(CommunicationMixin, BaseServer):
     """The composition under test: communication capability over the base."""
 
 
@@ -253,9 +253,9 @@ class TestFrameProtocol:
         await two.close()
 
 
-class TestChannelClient:
+class TestKajennBusClient:
     async def test_connect_presents_register_frame(self, hub, hub_path) -> None:
-        client = ChannelClient(f"uds:{hub_path}", "child_01")
+        client = KajennBusClient(f"uds:{hub_path}", "child_01")
         await client.connect()
         assert client.connected is True
         await hub.wait_frames(1)
@@ -268,14 +268,14 @@ class TestChannelClient:
         assert client.closed is True
 
     async def test_connect_twice_is_refused(self, hub, hub_path) -> None:
-        client = ChannelClient(f"uds:{hub_path}", "child_01")
+        client = KajennBusClient(f"uds:{hub_path}", "child_01")
         await client.connect()
         with pytest.raises(RuntimeError, match="already connected"):
             await client.connect()
         await client.close()
 
     async def test_reconnect_after_link_loss_keeps_the_new_generation(self, hub, hub_path) -> None:
-        client = ChannelClient(f"uds:{hub_path}", "child_01")
+        client = KajennBusClient(f"uds:{hub_path}", "child_01")
         await client.connect()
         await hub.wait_frames(1)
         await hub.streams[0].close()
@@ -291,7 +291,7 @@ class TestChannelClient:
         await client.close()
 
     async def test_send_relays_frames_to_the_hub(self, hub, hub_path) -> None:
-        client = ChannelClient(f"uds:{hub_path}", "child_01")
+        client = KajennBusClient(f"uds:{hub_path}", "child_01")
         await client.connect()
         frame_id = await client.send(path="/events/ready", data={"n": 1})
         await hub.wait_frames(2)
@@ -303,13 +303,13 @@ class TestChannelClient:
         await client.close()
 
     async def test_send_before_connect_raises(self, hub_path) -> None:
-        client = ChannelClient(f"uds:{hub_path}", "child_01")
+        client = KajennBusClient(f"uds:{hub_path}", "child_01")
         with pytest.raises(ConnectionError, match="not connected"):
             await client.send(path="/events/ready")
 
     async def test_hub_eof_orphans_the_client(self, hub, hub_path) -> None:
-        orphaned: list[ChannelClient] = []
-        client = ChannelClient(f"uds:{hub_path}", "child_01", on_orphan=orphaned.append)
+        orphaned: list[KajennBusClient] = []
+        client = KajennBusClient(f"uds:{hub_path}", "child_01", on_orphan=orphaned.append)
         await client.connect()
         await hub.wait_frames(1)
         await hub.stop()  # the hub side goes away: EOF is the death signal
@@ -320,8 +320,8 @@ class TestChannelClient:
         await client.close()  # a deliberate close after orphan stays safe
 
     async def test_protocol_violation_is_a_clean_death(self, hub, hub_path, caplog) -> None:
-        orphaned: list[ChannelClient] = []
-        client = ChannelClient(f"uds:{hub_path}", "child_01", on_orphan=orphaned.append)
+        orphaned: list[KajennBusClient] = []
+        client = KajennBusClient(f"uds:{hub_path}", "child_01", on_orphan=orphaned.append)
         await client.connect()
         await hub.wait_frames(1)
         bogus = b"BOGUS: not a wsx envelope"  # valid length prefix, invalid payload
@@ -338,8 +338,8 @@ class TestChannelClient:
         await hub.wait_eofs(1)
 
     async def test_malformed_envelope_is_a_clean_death(self, hub, hub_path, caplog) -> None:
-        orphaned: list[ChannelClient] = []
-        client = ChannelClient(f"uds:{hub_path}", "child_01", on_orphan=orphaned.append)
+        orphaned: list[KajennBusClient] = []
+        client = KajennBusClient(f"uds:{hub_path}", "child_01", on_orphan=orphaned.append)
         await client.connect()
         await hub.wait_frames(1)
         payload = b"WSX://" + json.dumps({"id": "x", "path": "/foo"}).encode("utf-8")
@@ -356,15 +356,15 @@ class TestChannelClient:
         await hub.wait_eofs(1)
 
     async def test_deliberate_close_fires_no_orphan(self, hub, hub_path) -> None:
-        orphaned: list[ChannelClient] = []
-        client = ChannelClient(f"uds:{hub_path}", "child_01", on_orphan=orphaned.append)
+        orphaned: list[KajennBusClient] = []
+        client = KajennBusClient(f"uds:{hub_path}", "child_01", on_orphan=orphaned.append)
         await client.connect()
         await client.close()
         assert orphaned == []
         assert client.closed is True
 
     async def test_connect_retries_until_the_hub_binds(self, hub_path) -> None:
-        client = ChannelClient(f"uds:{hub_path}", "late_child")
+        client = KajennBusClient(f"uds:{hub_path}", "late_child")
         task = asyncio.create_task(client.connect())
         await asyncio.sleep(0.15)  # a few retry rounds before the hub exists
         late = FakeHub(hub_path)
@@ -377,45 +377,45 @@ class TestChannelClient:
         await late.stop()
 
     async def test_connect_timeout_raises_connection_error(self, hub_path) -> None:
-        client = ChannelClient(f"uds:{hub_path}", "child_01", connect_timeout=0.2)
+        client = KajennBusClient(f"uds:{hub_path}", "child_01", connect_timeout=0.2)
         with pytest.raises(ConnectionError, match="not reachable"):
             await client.connect()
 
     def test_invalid_addresses_raise(self) -> None:
-        with pytest.raises(ValueError, match="invalid channel address"):
-            ChannelClient("bogus:/x", "child_01")
-        with pytest.raises(ValueError, match="invalid channel address"):
-            ChannelClient("uds:", "child_01")
+        with pytest.raises(ValueError, match="invalid KajennBus address"):
+            KajennBusClient("bogus:/x", "child_01")
+        with pytest.raises(ValueError, match="invalid KajennBus address"):
+            KajennBusClient("uds:", "child_01")
         with pytest.raises(ValueError, match="invalid tcp address"):
-            ChannelClient("tcp:127.0.0.1", "child_01")
+            KajennBusClient("tcp:127.0.0.1", "child_01")
 
 
 class TestCommunicationMixin:
     def test_plain_base_server_lacks_the_attributes(self) -> None:
         server = BaseServer(applications=[BaseApplication(mount="")])
-        assert hasattr(server, "parent_channel") is False
-        assert hasattr(server, "children_channel") is False
+        assert hasattr(server, "parent_kbus") is False
+        assert hasattr(server, "children_kbus") is False
 
-    def test_unarmed_parent_channel_raises(self) -> None:
-        server = ChannelServer(applications=[BaseApplication(mount="")])
+    def test_unarmed_parent_kbus_raises(self) -> None:
+        server = KajennBusServer(applications=[BaseApplication(mount="")])
         assert server.parent_armed is False
         with pytest.raises(RuntimeError, match="not armed"):
-            server.parent_channel
+            server.parent_kbus
 
-    def test_children_channel_is_unarmed_in_the_minimal_package(self, hub_path) -> None:
-        server = ChannelServer(applications=[BaseApplication(mount="")], parent=f"uds:{hub_path}")
+    def test_children_kbus_is_unarmed_in_the_minimal_package(self, hub_path) -> None:
+        server = KajennBusServer(applications=[BaseApplication(mount="")], parent=f"uds:{hub_path}")
         with pytest.raises(RuntimeError, match="not armed"):
-            server.children_channel
+            server.children_kbus
 
-    def test_armed_parent_channel_is_a_channel_client(self, hub_path) -> None:
-        server = ChannelServer(applications=[BaseApplication(mount="")], parent=f"uds:{hub_path}")
+    def test_armed_parent_kbus_is_a_kbus_client(self, hub_path) -> None:
+        server = KajennBusServer(applications=[BaseApplication(mount="")], parent=f"uds:{hub_path}")
         assert server.parent_armed is True
-        assert isinstance(server.parent_channel, ChannelClient)
-        assert server.parent_channel.address == f"uds:{hub_path}"
+        assert isinstance(server.parent_kbus, KajennBusClient)
+        assert server.parent_kbus.address == f"uds:{hub_path}"
 
     def test_cooperative_chain_names_leftover_kwargs(self, hub_path) -> None:
         with pytest.raises(TypeError, match="bogus"):
-            ChannelServer(
+            KajennBusServer(
                 applications=[BaseApplication(mount="")], parent=f"uds:{hub_path}", bogus=1
             )
 
@@ -423,7 +423,7 @@ class TestCommunicationMixin:
         self, hub, hub_path
     ) -> None:
         events: list[str] = []
-        server = ChannelServer(
+        server = KajennBusServer(
             applications=[RecordingApp(mount="", events=events)], parent=f"uds:{hub_path}"
         )
         gate = asyncio.Event()
@@ -443,13 +443,13 @@ class TestCommunicationMixin:
         await hub.wait_frames(1)  # REGISTER reached the hub while the server runs
         register = hub.frames[0]
         assert register.method == REGISTER_METHOD
-        assert data_of(register)["name"] == server.parent_channel.name
+        assert data_of(register)["name"] == server.parent_kbus.name
         assert data_of(register)["pid"] == os.getpid()
-        assert server.parent_channel.connected is True
+        assert server.parent_kbus.connected is True
         gate.set()
         await asyncio.wait_for(task, timeout=5)
-        assert server.parent_channel.connected is False
-        assert server.parent_channel.closed is True
+        assert server.parent_kbus.connected is False
+        assert server.parent_kbus.closed is True
         assert {"type": "lifespan.startup.complete"} in sent
         assert {"type": "lifespan.shutdown.complete"} in sent
         assert events == ["on_startup", "on_shutdown"]  # app hooks ran normally
@@ -457,10 +457,10 @@ class TestCommunicationMixin:
     async def test_unreachable_hub_fails_startup_and_no_hook_runs(self, hub_path) -> None:
         # hub_path exists but nothing is bound there: connect retries then fails
         events: list[str] = []
-        server = ChannelServer(
+        server = KajennBusServer(
             applications=[RecordingApp(mount="", events=events)], parent=f"uds:{hub_path}"
         )
-        server.parent_channel.connect_timeout = 0.2
+        server.parent_kbus.connect_timeout = 0.2
         queue = [{"type": "lifespan.startup"}]
         sent: list[dict[str, object]] = []
 
@@ -479,7 +479,7 @@ class TestCommunicationMixin:
         assert events == []  # the child died before any app hook ran
 
     async def test_unarmed_composition_passes_lifespan_straight_through(self) -> None:
-        server = ChannelServer(applications=[BaseApplication(mount="")])
+        server = KajennBusServer(applications=[BaseApplication(mount="")])
         queue = [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}]
         sent: list[dict[str, object]] = []
 

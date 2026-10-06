@@ -1,6 +1,6 @@
-# The channel benchmark
+# The KajennBus benchmark
 
-What the [channel protocol](channel-protocol.md) costs, measured through a real
+What the [KajennBus protocol](kbus-protocol.md) costs, measured through a real
 process boundary: one client, one endpoint subprocess, sequential echo calls
 over a Unix domain socket and over loopback TCP.
 

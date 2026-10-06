@@ -44,7 +44,7 @@ def test_root_exports_public_api():
         "BaseConfiguration",
         "BaseMiddleware",
         "BaseServer",
-        "ChannelClient",
+        "KajennBusClient",
         "CommunicationMixin",
         "ConfigError",
         "ConfigurationHandler",

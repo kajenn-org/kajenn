@@ -24,7 +24,7 @@ delivered, or from the fields somebody is about to send::
 
 The prefix is what tells a WSX message from any other text on the socket. The
 routing fields — ``id``, ``method``, ``path`` — carry the same names the
-channel frame carries in its routing info, so a message crosses that boundary
+KajennBus frame carries in its routing info, so a message crosses that boundary
 one field at a time.
 
 **A request carries ``method`` and ``path``; an answer carries ``status``.**
