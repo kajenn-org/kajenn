@@ -71,8 +71,8 @@ https://github.com/kajenn-org/kajenn-orchestra.
    :maxdepth: 1
    :caption: Design notes
 
-   design/channel-protocol
-   design/channel-benchmark
+   design/kbus-protocol
+   design/kbus-benchmark
 
 Indices and tables
 ==================

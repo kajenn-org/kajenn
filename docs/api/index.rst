@@ -14,7 +14,7 @@ base server application by subsystem; private implementation helpers are not an 
    middleware
    tasks
    config
-   channel
+   kbus
    storage
    plugins
    websocket

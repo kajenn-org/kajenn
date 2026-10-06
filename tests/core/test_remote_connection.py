@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from kajenn.channel.frame import Frame, FrameStream
+from kajenn.kbus.frame import Frame, FrameStream
 from kajenn.remote_connection import (
     RemoteCallCancelled,
     RemoteCallFailed,

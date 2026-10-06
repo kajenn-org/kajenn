@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Channel client — the child side of the parent↔child channel.
+"""KajennBus client — the child side of the parent↔child KajennBus.
 
 Knowing how to BE a child is part of what a server IS (SPECIFICATION.md
 ◆D10). The client speaks the frame protocol of ``frame.py`` and nothing above
@@ -28,7 +28,7 @@ A deliberate ``close()`` fires no orphan signal.
 
 Callbacks (``on_message(frame)``, ``on_orphan(client)``) may be sync or
 async; an exception raised by a callback is logged and never severs the
-channel — a consumer bug must not fake a member death.
+KajennBus — a consumer bug must not fake a member death.
 
 Addresses::
 
@@ -47,10 +47,10 @@ from typing import Any, Callable
 from .control import ControlPayload
 from .frame import REGISTER_METHOD, REGISTER_PATH, Frame, FrameStream
 
-__all__ = ["ChannelClient"]
+__all__ = ["KajennBusClient"]
 
 
-class ChannelClient:
+class KajennBusClient:
     """Child-side endpoint: connect to the hub, present itself, relay frames."""
 
     def __init__(
@@ -82,7 +82,7 @@ class ChannelClient:
             self._tcp = (host, int(port))
         else:
             raise ValueError(
-                f"invalid channel address: {address!r} (uds:<path> | tcp:<host>:<port>)"
+                f"invalid KajennBus address: {address!r} (uds:<path> | tcp:<host>:<port>)"
             )
         self._logger = logging.getLogger(__name__)
         self._stream: FrameStream | None = None
@@ -93,18 +93,18 @@ class ChannelClient:
 
     @property
     def connected(self) -> bool:
-        """Whether the channel is up (REGISTER sent, receive loop running)."""
+        """Whether the KajennBus is up (REGISTER sent, receive loop running)."""
         return self._connected
 
     @property
     def closed(self) -> bool:
-        """Whether the channel ended (either side; ``False`` before connect)."""
+        """Whether the KajennBus ended (either side; ``False`` before connect)."""
         return self._closed_event.is_set()
 
     async def connect(self) -> None:
         """Connect with boot-time retry/backoff, present the REGISTER frame."""
         if self.connected:
-            raise RuntimeError("channel client is already connected")
+            raise RuntimeError("KajennBus client is already connected")
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.connect_timeout
         interval = 0.05
@@ -149,7 +149,7 @@ class ChannelClient:
         self._closed_event.set()
 
     async def wait_closed(self) -> None:
-        """Block until the channel ends (either side); the child's main wait."""
+        """Block until the KajennBus ends (either side); the child's main wait."""
         await self._closed_event.wait()
 
     async def send(self, *, method: str = "POST", path: str = "/", data: Any = None) -> str:
@@ -178,7 +178,7 @@ class ChannelClient:
         return await asyncio.open_connection(host, port)
 
     async def _receive_loop(self, stream: FrameStream) -> None:
-        """Read frames until the channel ends; hub gone → orphan.
+        """Read frames until the KajennBus ends; hub gone → orphan.
 
         A protocol violation from the hub (a frame the codec rejects: bad
         magic, wrong version, oversized, malformed info JSON) is a clean
@@ -191,7 +191,7 @@ class ChannelClient:
                 try:
                     frame = await stream.read()
                 except ValueError:
-                    self._logger.exception("Protocol violation from the hub; closing the channel")
+                    self._logger.exception("Protocol violation from the hub; closing the KajennBus")
                     break
                 if frame is None:
                     break
@@ -209,7 +209,7 @@ class ChannelClient:
                 await self._fire(self.on_orphan, self)
 
     async def _fire(self, callback: Callable[..., Any] | None, *args: Any) -> None:
-        """Run a sync-or-async callback; a consumer bug must not sever the channel."""
+        """Run a sync-or-async callback; a consumer bug must not sever the KajennBus."""
         if callback is None:
             return
         try:
@@ -217,4 +217,4 @@ class ChannelClient:
             if inspect.isawaitable(result):
                 await result
         except Exception:
-            self._logger.exception("Channel callback %r failed", callback)
+            self._logger.exception("KajennBus callback %r failed", callback)

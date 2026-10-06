@@ -2,7 +2,7 @@
 
 import asyncio
 
-from kajenn.channel.frame import Frame
+from kajenn.kbus.frame import Frame
 from kajenn.remote_connection import RemoteConnection
 
 

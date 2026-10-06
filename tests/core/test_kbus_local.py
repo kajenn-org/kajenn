@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""LocalChannel tests: the in-process wire must behave like the socket one.
+"""LocalKajennBus tests: the in-process wire must behave like the socket one.
 
 Same rubric (the member joins through ``attach_local`` with a REGISTER
 frame), same envelopes (a CALL is answered with a REPLY reusing its id, via
 ``send_frame``), same death semantics (hub stop → orphan, deliberate member
-close → channel lost with no orphan) and — the point of the phase — the same
+close → member lost with no orphan) and — the point of the phase — the same
 bytes: a payload mutated after ``send`` cannot reach the peer.
 """
 
@@ -30,17 +30,17 @@ from typing import Any
 
 import pytest
 
-from kajenn.channel import (
+from kajenn.kbus import (
     CALL_METHOD,
     EVENT_METHOD,
     REGISTER_METHOD,
     REPLY_METHOD,
-    ChannelHub,
+    KajennBusHub,
     Frame,
-    LocalChannel,
+    LocalKajennBus,
     LocalFrameStream,
 )
-from kajenn.channel.control import ControlPayload
+from kajenn.kbus.control import ControlPayload
 
 CONTROL = ControlPayload()
 
@@ -63,11 +63,11 @@ class LocalPeer:
         self.reply_result: Any = None
         self.reply_events: list[dict[str, Any]] = []
         self.reply_error: Any = None
-        self.channel = LocalChannel(name, on_message=self._on_message, on_orphan=self._on_orphan)
+        self.kbus = LocalKajennBus(name, on_message=self._on_message, on_orphan=self._on_orphan)
 
-    async def join(self, hub: ChannelHub) -> None:
-        await self.channel.connect()
-        await hub.attach_local(self.channel)
+    async def join(self, hub: KajennBusHub) -> None:
+        await self.kbus.connect()
+        await hub.attach_local(self.kbus)
 
     async def wait_frames(self, count: int, timeout: float = 5.0) -> None:
         deadline = asyncio.get_running_loop().time() + timeout
@@ -84,11 +84,11 @@ class LocalPeer:
                 data["error"] = self.reply_error
             else:
                 data["result"] = self.reply_result
-            await self.channel.send_frame(
+            await self.kbus.send_frame(
                 control_frame(id=frame.id, method=REPLY_METHOD, path=frame.path, data=data)
             )
 
-    def _on_orphan(self, channel: LocalChannel) -> None:
+    def _on_orphan(self, kbus: LocalKajennBus) -> None:
         self.orphaned += 1
 
 
@@ -99,9 +99,9 @@ class LocalHarness:
         self.joined: list[str] = []
         self.lost: list[str] = []
         self.events: list[tuple[str, Frame]] = []
-        self.hub = ChannelHub(
+        self.hub = KajennBusHub(
             on_member_joined=lambda member: self.joined.append(member.name),
-            on_channel_lost=lambda member: self.lost.append(member.name),
+            on_member_lost=lambda member: self.lost.append(member.name),
             on_event=lambda member, frame: self.events.append((member.name, frame)),
         )
 
@@ -128,8 +128,8 @@ async def test_register_handshake_lands_in_the_rubric(harness):
     assert member is not None
     assert member.pid == os.getpid()
     assert harness.joined == ["W:local-1"]
-    assert peer.channel.connected is True
-    await peer.channel.close()
+    assert peer.kbus.connected is True
+    await peer.kbus.close()
 
 
 async def test_event_from_the_hub_reaches_the_member(harness):
@@ -140,20 +140,20 @@ async def test_event_from_the_hub_reaches_the_member(harness):
     frame = peer.received[0]
     assert (frame.method, frame.path, frame.id) == (EVENT_METHOD, "/occupancy", frame_id)
     assert data_of(frame) == {"users": 3}
-    await peer.channel.close()
+    await peer.kbus.close()
 
 
 async def test_event_from_the_member_reaches_the_hub(harness):
     peer = LocalPeer("W:local-1")
     await peer.join(harness.hub)
-    await peer.channel.send(method=EVENT_METHOD, path="/op/new_user", data={"seq": 1})
+    await peer.kbus.send(method=EVENT_METHOD, path="/op/new_user", data={"seq": 1})
     deadline = asyncio.get_running_loop().time() + 5.0
     while not harness.events:
         assert asyncio.get_running_loop().time() < deadline, "hub saw no event"
         await asyncio.sleep(0.01)
     name, frame = harness.events[0]
     assert (name, frame.path, data_of(frame)) == ("W:local-1", "/op/new_user", {"seq": 1})
-    await peer.channel.close()
+    await peer.kbus.close()
 
 
 async def test_payload_mutated_after_send_does_not_reach_the_peer(harness):
@@ -167,14 +167,14 @@ async def test_payload_mutated_after_send_does_not_reach_the_peer(harness):
     assert data_of(peer.received[0]) == {"users": 1}
 
     outbound = {"seq": 1}
-    await peer.channel.send(method=EVENT_METHOD, path="/op/new_user", data=outbound)
+    await peer.kbus.send(method=EVENT_METHOD, path="/op/new_user", data=outbound)
     outbound["seq"] = 999
     deadline = asyncio.get_running_loop().time() + 5.0
     while not harness.events:
         assert asyncio.get_running_loop().time() < deadline, "hub saw no event"
         await asyncio.sleep(0.01)
     assert data_of(harness.events[0][1]) == {"seq": 1}
-    await peer.channel.close()
+    await peer.kbus.close()
 
 
 async def test_call_reply_delivers_the_payload_verbatim(harness):
@@ -190,7 +190,7 @@ async def test_call_reply_delivers_the_payload_verbatim(harness):
     assert payload == {"result": {"ok": True}, "events": [{"op": "new_user", "seq": 1}]}
     assert peer.received[0].method == CALL_METHOD
     assert data_of(peer.received[0]) == {"identity": "u1"}
-    await peer.channel.close()
+    await peer.kbus.close()
 
 
 async def test_error_reply_rides_the_payload(harness):
@@ -199,18 +199,18 @@ async def test_error_reply_rides_the_payload(harness):
     await peer.join(harness.hub)
     payload = await harness.hub.call("W:local-1", "/op/new_user", {"identity": "u1"}, timeout=5.0)
     assert payload == {"error": "unsupported until phase B", "events": []}
-    await peer.channel.close()
+    await peer.kbus.close()
 
 
-async def test_member_close_is_a_channel_loss_without_orphan(harness):
+async def test_member_close_is_a_member_loss_without_orphan(harness):
     peer = LocalPeer("W:local-1")
     await peer.join(harness.hub)
-    await peer.channel.close()
+    await peer.kbus.close()
     await harness.wait_lost(1)
     assert harness.lost == ["W:local-1"]
     assert peer.orphaned == 0
-    assert peer.channel.connected is False
-    assert peer.channel.closed is True
+    assert peer.kbus.connected is False
+    assert peer.kbus.closed is True
     assert harness.hub.resolve("W:local-1") is None
 
 
@@ -218,23 +218,23 @@ async def test_hub_stop_orphans_the_member(harness):
     peer = LocalPeer("W:local-1")
     await peer.join(harness.hub)
     await harness.hub.stop()
-    await asyncio.wait_for(peer.channel.wait_closed(), timeout=5.0)
+    await asyncio.wait_for(peer.kbus.wait_closed(), timeout=5.0)
     assert peer.orphaned == 1
     assert harness.lost == []
 
 
 async def test_send_before_connect_is_refused():
-    channel = LocalChannel("W:local-1")
+    kbus = LocalKajennBus("W:local-1")
     with pytest.raises(ConnectionError):
-        await channel.send(path="/op/new_user")
+        await kbus.send(path="/op/new_user")
 
 
 async def test_connect_twice_is_refused():
-    channel = LocalChannel("W:local-1")
-    await channel.connect()
+    kbus = LocalKajennBus("W:local-1")
+    await kbus.connect()
     with pytest.raises(RuntimeError, match="already connected"):
-        await channel.connect()
-    await channel.close()
+        await kbus.connect()
+    await kbus.close()
 
 
 async def test_decode_error_is_a_protocol_violation():
@@ -260,16 +260,16 @@ async def test_oversized_frame_is_refused_both_ways():
 
 
 async def test_closing_one_end_ends_both_reads():
-    channel = LocalChannel("W:local-1")
-    hub_stream = channel.hub_stream
-    await channel.connect()
+    kbus = LocalKajennBus("W:local-1")
+    hub_stream = kbus.hub_stream
+    await kbus.connect()
     register = await hub_stream.read()
     assert register.method == REGISTER_METHOD
     await hub_stream.close()
     assert await hub_stream.read() is None
-    await asyncio.wait_for(channel.wait_closed(), timeout=5.0)
+    await asyncio.wait_for(kbus.wait_closed(), timeout=5.0)
     with pytest.raises(ConnectionError):
-        await channel.send(path="/late")
+        await kbus.send(path="/late")
 
 
 async def test_local_queue_admission_is_bounded_and_close_never_waits():

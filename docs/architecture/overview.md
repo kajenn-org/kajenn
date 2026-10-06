@@ -220,20 +220,20 @@ A page can bind its ID to a live socket so the server can send it messages.
 See the [WebSocket guide](../guides/websockets.md) for the raw protocol option,
 message format and runnable clients.
 
-(f-the-channel-between-processes)=
+(f-the-kbus-between-processes)=
 ## Communication between processes
 
-The channel lets an application endpoint run in another process. The core
+The KajennBus lets an application endpoint run in another process. The core
 provides communication; the component that launches the process is separate.
 
 ```mermaid
 flowchart TD
-    hub["Channel hub"] <-->|"Socket"| remote["Remote<br/>member"]
+    hub["KajennBus hub"] <-->|"Socket"| remote["Remote<br/>member"]
     hub <-->|"Queue"| local["Local<br/>member"]
 ```
 
 The hub listens on a Unix or TCP socket and tracks registered members. A remote
-client connects and registers; an in-process member uses a queue-backed channel.
+client connects and registers; an in-process member uses a queue-backed KajennBus.
 
 | Message | Purpose |
 | --- | --- |
@@ -244,10 +244,10 @@ client connects and registers; an in-process member uses a queue-backed channel.
 Connection attempts are retried until the connection timeout. Once connected,
 losing the hub reports an orphaned client; it does not silently reconnect.
 
-A remote application forwards HTTP calls to a runner through this channel.
+A remote application forwards HTTP calls to a runner through this KajennBus.
 Both ends use an HTTP record and a buffered ASGI endpoint. The frame format,
 payload handling and transport limits belong in the
-[channel protocol reference](../design/channel-protocol.md).
+[KajennBus protocol reference](../design/kbus-protocol.md).
 
 (g-tasks)=
 ## Background tasks
@@ -318,7 +318,7 @@ and file paths are kept here so the explanations above can focus on behaviour.
 | Configuration | [Recipe builder](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/builder.py), [layering](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/default_config.py), [handler](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/handler.py), [templates](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/templates.py) |
 | Sessions and identity | [Session capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/mixin.py), [session store](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/store.py), [authentication](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth/mixin.py), [auth core](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth/core.py) |
 | WebSocket | [WSX connection](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx.py), [transport](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/websocket.py), [payload](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx_payload.py) |
-| Remote applications | [Channel](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/channel), [application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/remote_application.py), [runner](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/remote_runner.py), [HTTP record](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/http_record.py) |
+| Remote applications | [KajennBus](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/kbus), [application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/remote_application.py), [runner](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/remote_runner.py), [HTTP record](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/http_record.py) |
 | Tasks | [Capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/tasks/mixin.py), [manager and collaborators](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/tasks) |
 | Applications | [Base contract](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/application.py), [protocol views](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/applications), [management application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn_server_app/server_app.py) |
 

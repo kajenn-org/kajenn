@@ -21,8 +21,8 @@ repository.
 import asyncio
 from unittest.mock import AsyncMock
 
-from kajenn.channel.frame import Frame, FrameCodec
-from kajenn.channel.local import LocalFrameStream
+from kajenn.kbus.frame import Frame, FrameCodec
+from kajenn.kbus.local import LocalFrameStream
 from kajenn.http_record import HttpRecord
 from kajenn.remote_runner import RemoteApplicationRunner
 

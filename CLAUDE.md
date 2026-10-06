@@ -6,9 +6,8 @@
 ## Project-Specific Context
 
 ### Current Status
-- Development Status: Pre-Alpha — Has Implementation: No
-- Version 0.0.0 reserves the name on PyPI. Code arrives with the migration phases in
-  `../kajenn-meta/MIGRATION_PLAN.md`.
+- Development Status: Beta — Has Implementation: Yes
+- Version 0.2.0: the internal lane is the KajennBus (`kajenn.kbus`).
 
 ### Content
 server core and base server application.

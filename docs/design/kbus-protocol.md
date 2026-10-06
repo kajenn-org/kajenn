@@ -1,13 +1,13 @@
-# The channel protocol
+# The KajennBus protocol
 
-The channel is how one kajenn process talks to another: the parent end
-(`ChannelHub`) binds a socket, the child end (`ChannelClient`) connects and
+The KajennBus is how one kajenn process talks to another: the parent end
+(`KajennBusHub`) binds a socket, the child end (`KajennBusClient`) connects and
 registers, and both speak the same frame protocol. This page is the wire
 contract — what is on it, what bounds it, and what a peer may assume. It is
 design material, not a how-to: the API is in
-[Channel and communication](../api/channel.rst).
+[KajennBus and communication](../api/kbus.rst).
 
-Peers are not negotiated. Every process on a channel must be configured with
+Peers are not negotiated. Every process on a KajennBus must be configured with
 the same limits and run the same protocol version; changing either requires a
 coordinated restart of all of them.
 
@@ -27,7 +27,7 @@ non-finite number. `id`, `method` and `path` are reserved and cannot be
 injected through the metadata.
 
 The same `FrameCodec` serves the socket transport and the in-process
-queue-backed one (`LocalChannel`), so a local member is validated exactly like
+queue-backed one (`LocalKajennBus`), so a local member is validated exactly like
 a remote one.
 
 ## What the hub guarantees
@@ -125,7 +125,7 @@ configure the peers consistently and restart them together after a change.
 
 Values must be integers; the frame maximum must be at least 1 and must fit an
 unsigned 32-bit length. Explicit `max_size` arguments on `FrameCodec`,
-`FrameStream` and the channel ends, and `max_body_size` on `HttpRecord` and
+`FrameStream` and the KajennBus ends, and `max_body_size` on `HttpRecord` and
 `BufferedAsgiEndpoint`, override the environment default for that object.
 Spawned children inherit the environment.
 
@@ -150,11 +150,11 @@ These limits are not a substitute for the HTTP request limit a routed
 application does not have — see the [FAQ](../faq.md) on upload size.
 
 Measured throughput for both transports is in
-[the channel benchmark](channel-benchmark.md).
+[the KajennBus benchmark](kbus-benchmark.md).
 
 ## Not part of this contract
 
-The channel carries identity as a string and the string tags of an authenticated
+The KajennBus carries identity as a string and the string tags of an authenticated
 `Avatar`, and nothing else of the session: no `Avatar` object, no `Bag` data, no
 pickle. The far endpoint rebuilds an `Avatar` from those two fields.
 

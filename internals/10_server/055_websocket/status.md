@@ -208,7 +208,7 @@ HTTP cycle at `:225-240`), the identity (`auth/core.py:160-179`,
 `auth/mixin.py:151-163`), the session from the cookie
 (`middleware/session.py:76-78, 118-127`), the routing tree with its filtered
 walk (`routed_application.py:173-218`), and the lane's own envelope, which
-already speaks WSX with the same four fields (`channel/frame.py:15-23,
+already speaks WSX with the same four fields (`kbus/frame.py:15-23,
 94-100`).
 
 Claim anchors: [`middleware`](../../../src/kajenn/config/elements.py#L167), [`BaseServer`](../../../src/kajenn/server.py#L86), [`on_websocket`](../../../src/kajenn/server.py#L365), [`MiddlewareMixin`](../../../src/kajenn/middleware/__init__.py#L80).
