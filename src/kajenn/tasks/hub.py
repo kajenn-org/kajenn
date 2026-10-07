@@ -22,7 +22,7 @@ by ``session_id`` (the launching MCP session). ``LocalTaskExecutor`` publishes t
 each ``spool.write_progress(...)`` with a ``publish``. The MCP push channel
 subscribes on a GET and drains the queue into an SSE stream.
 
-Fire-and-forget, shaped like ``KajennBusClient.send`` (kbus/client.py) but pure
+Fire-and-forget, shaped like ``KBusClient.post`` (kbus/client.py) but pure
 in-memory — no transport, no frames, nothing to import. A ``publish`` to a session
 with no subscriber is a no-op: progress is not lost, it lives on the spool; the hub
 only serves live watchers. The queue is bounded and DROPS THE OLDEST event when

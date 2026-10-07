@@ -91,7 +91,7 @@ The examples above describe a `StreamingResponse` returned directly by a core
 `RoutedApplication`. The request body has already been fully read before that
 handler runs; streaming the response does not stream an upload.
 
-An application hosted in another process through `RemoteApplication` buffers the
+An application hosted in another process through the KajennBus buffers the
 complete request and the complete response: `BufferedAsgiEndpoint` refuses a
 chunked or event-stream answer rather than buffering it, so that seam delivers
 no incremental chunks and no endless SSE. [WSX](websockets.md) likewise requires

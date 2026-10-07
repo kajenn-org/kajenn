@@ -128,25 +128,25 @@ exclude = ["tests/", ".*/tests/"]
 module = "kajenn.channel.client"
 disable_error_code = ["misc", "union-attr"]
 
-# CommunicationMixin forwards __call__ cooperatively to the next class in
+# KBusMixin forwards __call__ cooperatively to the next class in
 # the MRO (mixins compose BEFORE BaseServer, D16). mypy sees the mixin's
 # static superclass as object and calls super().__call__ "undefined",
 # although the composition always provides it at runtime — the dynamic
 # mixin category the parent policy explicitly anticipates.
 [[tool.mypy.overrides]]
-module = "kajenn.communication"
+module = "kajenn.kbus_mixin"
 disable_error_code = ["misc"]
 
 # MiddlewareMixin (middleware/__init__.py) forwards __call__ cooperatively
 # to the next class in the MRO — the same dynamic-mixin category as
-# CommunicationMixin above.
+# KBusMixin above.
 [[tool.mypy.overrides]]
 module = "kajenn.middleware"
 disable_error_code = ["misc"]
 
 # SessionMixin forwards __init__ cooperatively to the next class in the MRO
 # (composed BEFORE MiddlewareMixin/BaseServer, D16) — the same dynamic-mixin
-# category as CommunicationMixin: mypy sees the static superclass as object
+# category as KBusMixin: mypy sees the static superclass as object
 # and rejects super().__init__(**kwargs), although the composition always
 # provides it at runtime.
 [[tool.mypy.overrides]]
@@ -192,7 +192,7 @@ disable_error_code = ["assignment"]
 
 # TaskMixin forwards __init__/__call__ cooperatively to the next class in the
 # MRO (composed BEFORE BaseServer, D16 — same misc category as
-# CommunicationMixin) and builds TaskManager(self): mypy sees the mixin's
+# KBusMixin) and builds TaskManager(self): mypy sees the mixin's
 # static self as object/TaskMixin, not the BaseServer the composition always
 # supplies at runtime. The dynamic-mixin category the parent policy anticipates.
 # TaskGrammar's element signatures share config.elements' implicit-Optional

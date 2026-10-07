@@ -26,7 +26,7 @@ import logging
 import time
 import struct
 import uuid
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from ..transport_limits import (
     DEFAULT_MAX_FRAME_SIZE, DEFAULT_WARN_FRAME_SIZE, FrameTooLarge,
@@ -40,21 +40,46 @@ HEADER_SIZE = HEADER.size
 MAX_FRAME_SIZE = DEFAULT_MAX_FRAME_SIZE
 _logger = logging.getLogger(__name__)
 REGISTER_METHOD = "REGISTER"
+CALL_METHOD = "CALL"
+REPLY_METHOD = "REPLY"
+EVENT_METHOD = "EVENT"
 REGISTER_PATH = "/register"
 RESERVED_INFO_KEYS = frozenset({"id", "method", "path"})
 MAX_ROUTING_STRING = 4096
-ALLOWED_METHODS = frozenset({"REGISTER", "POST", "CALL", "REPLY", "EVENT"})
+ALLOWED_METHODS = frozenset({REGISTER_METHOD, CALL_METHOD, REPLY_METHOD, EVENT_METHOD})
+
+
+def reject_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON number {value!r}")
+
+
+def object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key {key!r}")
+        result[key] = value
+    return result
+
+
 __all__ = [
     "KAJENNBUS_MAGIC",
     "KAJENNBUS_VERSION",
     "HEADER_SIZE",
     "MAX_FRAME_SIZE",
     "FrameTooLarge",
+    "ALLOWED_METHODS",
+    "CALL_METHOD",
+    "EVENT_METHOD",
     "REGISTER_METHOD",
     "REGISTER_PATH",
+    "REPLY_METHOD",
     "Frame",
     "FrameCodec",
     "FrameStream",
+    "FrameStreamProtocol",
+    "object_pairs",
+    "reject_constant",
 ]
 
 
@@ -67,7 +92,7 @@ class Frame:
         self,
         *,
         id: str | None = None,
-        method: str = "POST",
+        method: str = EVENT_METHOD,
         path: str = "/",
         info: dict[str, Any] | None = None,
         payload: bytes = b"",
@@ -149,23 +174,10 @@ class FrameCodec:
         if self._last_warning is not None and now - self._last_warning < self.warning_interval:
             return
         self._last_warning = now
-        snapshot = frame.info.get("worker_snapshot")
-        worker = snapshot.get("name") if isinstance(snapshot, dict) else None
         _logger.warning(
-            "Large transport frame: bytes=%s threshold=%s direction=%s method=%s path=%s worker=%s",
-            size, self.warn_size, direction, frame.method, frame.path, worker,
+            "Large transport frame: bytes=%s threshold=%s direction=%s method=%s path=%s",
+            size, self.warn_size, direction, frame.method, frame.path,
         )
-
-    def reject_constant(self, value: str) -> None:
-        raise ValueError(f"non-finite JSON number {value!r}")
-
-    def object_pairs(self, pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key {key!r}")
-            result[key] = value
-        return result
 
     def validate_json(self, value: Any) -> None:
         if value is None or isinstance(value, (str, bool, int)):
@@ -231,8 +243,8 @@ class FrameCodec:
         try:
             record = json.loads(
                 wire[HEADER_SIZE : HEADER_SIZE + ilength],
-                object_pairs_hook=self.object_pairs,
-                parse_constant=self.reject_constant,
+                object_pairs_hook=object_pairs,
+                parse_constant=reject_constant,
             )
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
             raise ValueError(f"invalid frame info JSON: {exc}") from exc
@@ -253,6 +265,17 @@ class FrameCodec:
         )
         self.warn_large_frame(frame, ilength + plength, "receive")
         return frame
+
+
+@runtime_checkable
+class FrameStreamProtocol(Protocol):
+    """What a link must offer to carry frames: sockets and in-process queues alike."""
+
+    async def read(self) -> Frame | None: ...
+
+    async def write(self, frame: Frame) -> None: ...
+
+    async def close(self) -> None: ...
 
 
 class FrameStream:

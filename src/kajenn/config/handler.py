@@ -60,6 +60,8 @@ from typing import Any
 
 from genro_builders.contrib.config import ConfigHandler
 
+from ..kbus.address import KBusAddress
+
 __all__ = ["ConfigError", "ConfigurationHandler"]
 
 
@@ -86,7 +88,8 @@ class ConfigurationHandler(ConfigHandler):
         and, when it names a ``store_class``, the ``session_store`` the server is
         handed — the class is instantiated HERE, with the section's remaining
         attributes, ``tasks`` becomes the ``tasks``
-        tuning dict and ``websocket`` the websocket options: all three are
+        tuning dict, ``websocket`` the websocket options and ``kbus`` the hub
+        options (a non-loopback address without a secret is refused): all are
         server-domain (sessions, the task backbone and the sockets live on the
         server), so their values lift to the kwargs the owning mixins peel
         while the config keeps them under ``server`` where they belong. The
@@ -120,6 +123,13 @@ class ConfigurationHandler(ConfigHandler):
             if origins is not None:
                 websocket["origins"] = [part.strip() for part in str(origins).split(",") if part.strip()]
             kwargs["websocket"] = websocket
+        if self.node("server.kbus") is not None:
+            kbus = self.closed_attrs("server.kbus", "address", "secret")
+            address = kbus.get("address")
+            if (address is not None and not kbus.get("secret")
+                    and KBusAddress(address, allow_network_listener=True).network):
+                raise ValueError(f"server.kbus address {address} is not loopback: it needs a secret")
+            kwargs["kbus"] = kbus
         if self.node("server.tasks") is not None:
             kwargs["tasks"] = self.closed_attrs(
                 "server.tasks", "enabled", "tick_seconds", "mount"

@@ -12,53 +12,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Local KajennBus — the in-process wire, byte-identical to the socket one.
+"""LocalKBus — the in-process wire, byte-identical to the socket one.
 
 Both ends live in ONE process and speak the very same protocol as a child in
-another process: not "the same API", the same *bytes*. ``LocalKajennBus`` is
+another process: not "the same API", the same *bytes*. ``LocalKBus`` is
 therefore two ``asyncio.Queue``s of encoded frames — every envelope crosses
 through ``Frame.encode()`` and is re-parsed on the other side with the same
 versioned info/bytes rules ``FrameStream.read`` applies. A payload dict
-mutated after ``send()`` cannot reach the peer, exactly as over a socket.
+mutated after ``post()`` cannot reach the peer, exactly as over a socket.
 
 ``LocalFrameStream`` is the codec twin of ``FrameStream``: ``read()`` returns
 ``None`` at EOF, an oversized or malformed frame raises ``ValueError``. A queue sentinel
 models EOF in both directions, so closing either end has the socket meaning —
-the peer's read ends and the link-loss callback runs.
+the peer's read ends and the link-loss callback runs. The queues are bounded:
+a full queue makes ``write`` wait for the peer to read (backpressure), the way
+a socket buffer does, and no frame is dropped.
 
-``LocalKajennBus`` itself IS the member face, with the ``KajennBusClient`` API
-(``connect``/``send``/``close``/``wait_closed``, ``on_message``/``on_orphan``,
-``connected``), plus ``send_frame(frame)`` for the frames whose id is not the
-sender's to mint — a REPLY reuses the CALL's id. The hub side is consumed by
-``KajennBusHub.attach_local()``, which registers it through the same REGISTER
-path as any socket member: one rubric, no parallel bookkeeping.
+``LocalKBus`` itself IS the member face, with the ``KBusClient`` API. The hub
+side is consumed by ``KBusHub.attach_local()``, which registers it through the
+same REGISTER path as any socket member: one rubric, no parallel bookkeeping.
 """
 
 from __future__ import annotations
 
 import asyncio
-import inspect
-import logging
-import os
-from typing import Any, Callable
+from typing import Any
 
-from .frame import (
-    REGISTER_METHOD,
-    REGISTER_PATH,
-    Frame,
-    FrameCodec,
-)
-from .control import ControlPayload
+from .client import KBusEnd
+from .frame import Frame, FrameCodec
 
-__all__ = ["LocalKajennBus", "LocalFrameStream"]
+__all__ = ["LocalFrameStream", "LocalKBus"]
 
 
 class LocalFrameStream:
     """Frame codec over a pair of byte queues — the in-process ``FrameStream``.
 
     Reads from ``inbound``, writes to ``outbound``; a ``None`` in a queue is
-    the EOF sentinel. ``close()`` sends it to the peer and unparks its own
-    reader, so both sides observe the end of the KajennBus.
+    the EOF sentinel. ``write`` waits while ``outbound`` is full;
+    ``max_queue_size`` is the bound ``LocalKBus`` gives both queues.
+    ``close()`` never waits: it drops the frames nobody will read from
+    ``inbound``, unparks its own reader, and sends the sentinel to the peer
+    behind the frames already queued, so both sides observe the end of the
+    KajennBus. Two ends built over the same queues share ``ended``: closing
+    either one releases a ``write`` parked on a full queue on both sides.
     """
 
     def __init__(
@@ -68,6 +64,7 @@ class LocalFrameStream:
         *,
         max_size: int | None = None,
         max_queue_size: int = 16,
+        ended: asyncio.Event | None = None,
     ) -> None:
         if max_queue_size < 1:
             raise ValueError("max_queue_size must be positive")
@@ -77,6 +74,8 @@ class LocalFrameStream:
         self.codec = FrameCodec(max_size=max_size)
         self.max_size = self.codec.max_size
         self._closed = False
+        self._ended = ended if ended is not None else asyncio.Event()
+        self._eof: asyncio.Task[None] | None = None
 
     @property
     def closed(self) -> bool:
@@ -91,157 +90,73 @@ class LocalFrameStream:
         return self.codec.get_frame(wire)
 
     async def write(self, frame: Frame) -> None:
-        """Encode and enqueue one frame; a full or closed end raises."""
-        if self.outbound.qsize() >= self.max_queue_size:
-            raise ConnectionError("local KajennBus queue full; frame not sent")
+        """Encode and enqueue one frame, waiting while the queue is full.
+
+        Raises:
+            BrokenPipeError: this end is closed, or either end closes while
+                the write waits for room.
+        """
         wire = self.codec.encode(frame)
-        if self._closed:
+        if self._closed or self._ended.is_set():
             raise BrokenPipeError("local KajennBus end is closed")
-        await self.outbound.put(wire)
+        if not self.outbound.full():
+            self.outbound.put_nowait(wire)
+            return
+        put = asyncio.ensure_future(self.outbound.put(wire))
+        ended = asyncio.ensure_future(self._ended.wait())
+        try:
+            await asyncio.wait({put, ended}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            ended.cancel()
+            if not put.done():
+                put.cancel()
+        if not put.done() or put.cancelled():
+            raise BrokenPipeError("local KajennBus closed while the write waited")
 
     async def close(self) -> None:
-        """Close this end: EOF to the peer, EOF to our own parked reader."""
+        """Close this end: EOF to our own parked reader, EOF to the peer."""
         if self._closed:
             return
         self._closed = True
-        await self.outbound.put(None)
-        await self.inbound.put(None)
+        self._ended.set()
+        while not self.inbound.empty():
+            self.inbound.get_nowait()
+        self.inbound.put_nowait(None)
+        if self.outbound.full():
+            self._eof = asyncio.create_task(self.outbound.put(None))
+        else:
+            self.outbound.put_nowait(None)
 
 
-class LocalKajennBus:
-    """In-process KajennBus endpoint: the member face of a queue-backed wire.
+class LocalKBus(KBusEnd):
+    """In-process KajennBus end: the member face of a queue-backed wire.
 
     Built by whoever owns the in-process worker, then handed to
-    ``KajennBusHub.attach_local()``; ``connect()`` presents the REGISTER frame
-    just like ``KajennBusClient`` does, and the queues buffer it whichever side
-    goes first.
+    ``KBusHub.attach_local()``, which registers and connects it in one call.
     """
 
-    def __init__(
-        self,
-        name: str,
-        *,
-        on_message: Callable[..., Any] | None = None,
-        on_orphan: Callable[..., Any] | None = None,
-        max_size: int | None = None,
-        max_queue_size: int = 16,
-    ) -> None:
+    def __init__(self, name: str, *, max_queue_size: int = 16, **kwargs: Any) -> None:
         if max_queue_size < 1:
             raise ValueError("max_queue_size must be positive")
-        self.name = name
-        self.on_message = on_message
-        self.on_orphan = on_orphan
-        self.max_size = max_size
+        super().__init__(name, **kwargs)
         self.address = "local:"
-        to_hub: asyncio.Queue[bytes | None] = asyncio.Queue()
-        to_member: asyncio.Queue[bytes | None] = asyncio.Queue()
+        to_hub: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=max_queue_size)
+        to_member: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=max_queue_size)
+        ended = asyncio.Event()
         self._member_stream = LocalFrameStream(
-            to_member,
-            to_hub,
-            max_size=max_size,
-            max_queue_size=max_queue_size,
+            to_member, to_hub, max_size=self.max_size, max_queue_size=max_queue_size,
+            ended=ended,
         )
         self._hub_stream = LocalFrameStream(
-            to_hub,
-            to_member,
-            max_size=max_size,
-            max_queue_size=max_queue_size,
+            to_hub, to_member, max_size=self.max_size, max_queue_size=max_queue_size,
+            ended=ended,
         )
-        self._logger = logging.getLogger(__name__)
-        self._receive_task: asyncio.Task[None] | None = None
-        self._connected = False
-        self._closing = False
-        self._closed_event = asyncio.Event()
 
     @property
     def hub_stream(self) -> LocalFrameStream:
-        """The hub-side end, consumed by ``KajennBusHub.attach_local()``."""
+        """The hub-side end, consumed by ``KBusHub.attach_local()``."""
         return self._hub_stream
 
-    @property
-    def connected(self) -> bool:
-        """Whether the KajennBus is up (REGISTER sent, receive loop running)."""
-        return self._connected
-
-    @property
-    def closed(self) -> bool:
-        """Whether the KajennBus ended (either side; ``False`` before connect)."""
-        return self._closed_event.is_set()
-
-    async def connect(self) -> None:
-        """Present the REGISTER frame and start the receive loop."""
-        if self.connected:
-            raise RuntimeError("local KajennBus is already connected")
-        register = Frame(
-            method=REGISTER_METHOD,
-            path=REGISTER_PATH,
-            payload=ControlPayload().encode({"name": self.name, "pid": os.getpid()}),
-        )
-        await self._member_stream.write(register)
-        self._connected = True
-        self._closed_event.clear()
-        self._receive_task = asyncio.create_task(self._receive_loop())
-        self._logger.info("Local KajennBus connected as %s", self.name)
-
-    async def close(self) -> None:
-        """Deliberate local close: no orphan signal."""
-        self._closing = True
-        if self._receive_task is not None and not self._receive_task.done():
-            self._receive_task.cancel()
-            try:
-                await self._receive_task
-            except asyncio.CancelledError:
-                pass
-        await self._member_stream.close()
-        self._connected = False
-        self._closed_event.set()
-
-    async def wait_closed(self) -> None:
-        """Block until the KajennBus ends (either side); the member's main wait."""
-        await self._closed_event.wait()
-
-    async def send(self, *, method: str = "POST", path: str = "/", data: Any = None) -> str:
-        """Send one frame to the hub (fire-and-forget); returns the frame id."""
-        return await self.send_frame(
-            Frame(method=method, path=path, payload=ControlPayload().encode(data))
-        )
-
-    async def send_frame(self, frame: Frame) -> str:
-        """Send an already-built frame — a REPLY reuses the CALL's id."""
-        if not self.connected:
-            raise ConnectionError("not connected")
-        await self._member_stream.write(frame)
-        return frame.id
-
-    async def _receive_loop(self) -> None:
-        """Read frames until the KajennBus ends; hub gone → orphan."""
-        try:
-            while True:
-                try:
-                    frame = await self._member_stream.read()
-                except ValueError:
-                    self._logger.exception("Protocol violation from the hub; closing the KajennBus")
-                    break
-                if frame is None:
-                    break
-                await self._fire(self.on_message, frame)
-        except asyncio.CancelledError:
-            return
-        finally:
-            self._connected = False
-            await self._member_stream.close()
-            self._closed_event.set()
-            if not self._closing:
-                self._logger.info("Hub side gone: %s is orphan", self.name)
-                await self._fire(self.on_orphan, self)
-
-    async def _fire(self, callback: Callable[..., Any] | None, *args: Any) -> None:
-        """Run a sync-or-async callback; a consumer bug must not sever the KajennBus."""
-        if callback is None:
-            return
-        try:
-            result = callback(*args)
-            if inspect.isawaitable(result):
-                await result
-        except Exception:
-            self._logger.exception("KajennBus callback %r failed", callback)
+    async def open_stream(self) -> LocalFrameStream:
+        """The member-side end of the queues."""
+        return self._member_stream
