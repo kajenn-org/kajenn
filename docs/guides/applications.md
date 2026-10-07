@@ -68,7 +68,7 @@ the adapter's `on_startup` and `on_shutdown` hooks as required by that framework
 The raw WebSocket seam owns its handshake and Origin/auth checks. Read
 [WebSockets](websockets.md) before exposing it.
 
-To host the application in **another process** instead of this one, the core
-offers `RemoteApplication` (`kajenn.remote_application`) and the runner it talks
-to: both ends buffer the complete request and the complete response, so that
-path carries no streaming. See [the KajennBus protocol](../design/kbus-protocol.md).
+To host an application in **another process**, declare it with `spawner=` on
+its own `application` element (`spawner="subprocess"`): the server starts a
+process from the same configuration that serves only that application, and its
+routes stay reachable through `server.kbus_call(path, data)`. See [the KajennBus protocol](../design/kbus-protocol.md).

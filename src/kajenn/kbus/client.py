@@ -12,106 +12,220 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""KajennBus client — the child side of the parent↔child KajennBus.
+"""KBusClient — the child side of the parent↔child KajennBus.
 
 Knowing how to BE a child is part of what a server IS (SPECIFICATION.md
-◆D10). The client speaks the frame protocol of ``frame.py`` and nothing above
-it; the parent end it registers with may live in another process.
+◆D10). ``connect()`` retries with short backoff until ``connect_timeout``
+(boot race: the hub socket may not be bound yet), presents the child with a
+REGISTER frame (``{"name", "pid", **presentation}``) and waits for the hub's
+REPLY: its payload is the ``welcome``, an error REPLY or a closed link fails
+the connect with ``ConnectionError``. From then on the link is one
+``KBusConnector``: either side calls, either side serves.
 
-``connect()`` retries with short backoff until ``connect_timeout`` (boot
-race: the hub socket may not be bound yet) and presents the child with a
-REGISTER frame (``data={"name", "pid"}``). Steady state is fire-and-forget
-frames in both directions. There is no steady-state reconnection: when the
-hub side goes away (EOF — the connection-loss signal),
+There is no steady-state reconnection: when the hub side goes away,
 ``on_orphan(client)`` fires and the child is expected to terminate cleanly.
 A deliberate ``close()`` fires no orphan signal.
-
-Callbacks (``on_message(frame)``, ``on_orphan(client)``) may be sync or
-async; an exception raised by a callback is logged and never severs the
-KajennBus — a consumer bug must not fake a member death.
 
 Addresses::
 
     uds:/path/to/hub.sock     Unix domain socket (default)
-    tcp:127.0.0.1:8731        TCP (multi-host door)
+    tcp:127.0.0.1:8731        TCP, loopback
 """
 
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 import os
 from typing import Any, Callable
 
+from .address import KBusAddress
+from .callback import run_callback
+from .connector import KBusCallFailed, KBusConnector
 from .control import ControlPayload
-from .frame import REGISTER_METHOD, REGISTER_PATH, Frame, FrameStream
+from .frame import (
+    CALL_METHOD,
+    EVENT_METHOD,
+    REGISTER_METHOD,
+    REGISTER_PATH,
+    REPLY_METHOD,
+    Frame,
+    FrameStream,
+    FrameStreamProtocol,
+)
 
-__all__ = ["KajennBusClient"]
+__all__ = ["KBusCallError", "KBusClient"]
+
+CONTROL_INFO = {"format": "control-json"}
 
 
-class KajennBusClient:
-    """Child-side endpoint: connect to the hub, present itself, relay frames."""
+class KBusCallError(Exception):
+    """A CALL answered with an error REPLY; ``error`` is what the REPLY carried."""
+
+    def __init__(self, path: str, error: Any, status: int | None = None) -> None:
+        super().__init__(f"call {path} failed: {error}")
+        self.path = path
+        self.error = error
+        self.status = status
+
+
+def control_call_frame(path: str, data: Any) -> Frame:
+    """A CALL carrying ``data`` as control-json."""
+    return Frame(
+        method=CALL_METHOD, path=path, info=dict(CONTROL_INFO), payload=ControlPayload().encode(data)
+    )
+
+
+def control_event_frame(path: str, data: Any) -> Frame:
+    """An EVENT carrying ``data`` as control-json."""
+    return Frame(
+        method=EVENT_METHOD, path=path, info=dict(CONTROL_INFO), payload=ControlPayload().encode(data)
+    )
+
+
+def control_reply_data(reply: Frame) -> Any:
+    """The decoded payload of a REPLY; an ``info["error"]`` raises ``KBusCallError``."""
+    if "error" in reply.info:
+        raise KBusCallError(reply.path, reply.info["error"])
+    return ControlPayload().decode(reply.payload)
+
+
+class KBusEnd:
+    """The member side of one KajennBus link, whatever carries it.
+
+    Subclasses open the stream; this class presents, waits for the welcome,
+    and delegates the live link to one ``KBusConnector``.
+    """
 
     def __init__(
         self,
-        address: str,
         name: str,
         *,
-        on_message: Callable[..., Any] | None = None,
+        presentation: dict[str, Any] | None = None,
+        on_call: Callable[..., Any] | None = None,
+        on_event: Callable[..., Any] | None = None,
         on_orphan: Callable[..., Any] | None = None,
         connect_timeout: float = 10.0,
         max_size: int | None = None,
     ) -> None:
-        self.address = address
         self.name = name
-        self.on_message = on_message
+        self.presentation = dict(presentation or {})
+        self.on_call = on_call
+        self.on_event = on_event
         self.on_orphan = on_orphan
         self.connect_timeout = connect_timeout
         self.max_size = max_size
-        self.control_payload = ControlPayload()
-        transport, _, rest = address.partition(":")
-        self._uds_path: str | None = None
-        self._tcp: tuple[str, int] | None = None
-        if transport == "uds" and rest:
-            self._uds_path = rest
-        elif transport == "tcp" and rest:
-            host, _, port = rest.rpartition(":")
-            if not host or not port.isdigit():
-                raise ValueError(f"invalid tcp address: {address!r}")
-            self._tcp = (host, int(port))
-        else:
-            raise ValueError(
-                f"invalid KajennBus address: {address!r} (uds:<path> | tcp:<host>:<port>)"
-            )
+        self.welcome: Any = None
+        self.connector: KBusConnector | None = None
         self._logger = logging.getLogger(__name__)
-        self._stream: FrameStream | None = None
-        self._receive_task: asyncio.Task[None] | None = None
-        self._connected = False
-        self._closing = False
         self._closed_event = asyncio.Event()
 
     @property
     def connected(self) -> bool:
-        """Whether the KajennBus is up (REGISTER sent, receive loop running)."""
-        return self._connected
+        """Whether the link is up (welcomed, not ended)."""
+        return self.connector is not None and self.connector.connected
 
     @property
     def closed(self) -> bool:
-        """Whether the KajennBus ended (either side; ``False`` before connect)."""
+        """Whether the link ended (either side; ``False`` before connect)."""
         return self._closed_event.is_set()
 
+    async def open_stream(self) -> FrameStreamProtocol:
+        """The stream this end presents itself on."""
+        raise NotImplementedError
+
     async def connect(self) -> None:
-        """Connect with boot-time retry/backoff, present the REGISTER frame."""
+        """Present the REGISTER frame, wait for the welcome, start the link."""
         if self.connected:
-            raise RuntimeError("KajennBus client is already connected")
+            raise RuntimeError(f"KajennBus end {self.name} is already connected")
+        stream = await self.open_stream()
+        register = Frame(
+            method=REGISTER_METHOD,
+            path=REGISTER_PATH,
+            info=dict(CONTROL_INFO),
+            payload=ControlPayload().encode(
+                {"name": self.name, "pid": os.getpid(), **self.presentation}
+            ),
+        )
+        try:
+            await stream.write(register)
+            reply = await asyncio.wait_for(stream.read(), self.connect_timeout)
+            if reply is None or reply.method != REPLY_METHOD or reply.id != register.id:
+                raise ConnectionError(f"hub refused {self.name}: no welcome")
+            self.welcome = control_reply_data(reply)
+        except (KBusCallError, OSError, TimeoutError, ValueError) as exc:
+            await stream.close()
+            if isinstance(exc, ConnectionError):
+                raise
+            raise ConnectionError(f"hub refused {self.name}: {exc}") from exc
+        self._closed_event.clear()
+        self.connector = KBusConnector(
+            stream,
+            name=self.name,
+            on_call=self.on_call,
+            on_event=self.on_event,
+            on_lost=self._orphaned,
+        )
+        self.connector.start()
+        self._logger.info("KajennBus end %s connected", self.name)
+
+    async def call(self, path: str, data: Any = None, timeout: float | None = None) -> Any:
+        """CALL the hub with control-json ``data``; returns the decoded REPLY payload."""
+        return control_reply_data(await self.call_frame(control_call_frame(path, data), timeout))
+
+    async def call_frame(self, frame: Frame, timeout: float | None = None) -> Frame:
+        """Send a CALL frame and return the whole REPLY frame."""
+        return await self.link().call(frame, timeout)
+
+    async def post(self, path: str, data: Any = None) -> None:
+        """Send one control-json EVENT to the hub."""
+        await self.link().post(control_event_frame(path, data))
+
+    async def close(self) -> None:
+        """Deliberate close: no orphan signal."""
+        if self.connector is not None:
+            await self.connector.close()
+        self._closed_event.set()
+
+    async def wait_closed(self) -> None:
+        """Block until the link ends (either side); the member's main wait."""
+        await self._closed_event.wait()
+
+    def link(self) -> KBusConnector:
+        """The live connector; ``KBusCallFailed(not_sent)`` when there is none."""
+        if self.connector is None or not self.connector.connected:
+            raise KBusCallFailed(f"KajennBus end {self.name} is not connected", outcome="not_sent")
+        return self.connector
+
+    async def _orphaned(self, connector: KBusConnector) -> None:
+        self._closed_event.set()
+        self._logger.info("Hub side gone: %s is orphan", self.name)
+        await run_callback(self.on_orphan, self, logger=self._logger)
+
+
+class KBusClient(KBusEnd):
+    """Child-side endpoint over a socket: ``uds:`` or loopback ``tcp:``.
+
+    ``secret`` is presented in the REGISTER and admits a non-loopback ``tcp:``
+    destination: the network listener it opens to requires it.
+    """
+
+    def __init__(self, address: str, name: str, *, secret: str | None = None, **kwargs: Any) -> None:
+        super().__init__(name, **kwargs)
+        if secret:
+            self.presentation["secret"] = secret
+        self.address = address
+        self.kbus_address = KBusAddress(address, allow_network_client=bool(secret))
+
+    async def open_stream(self) -> FrameStream:
+        """Connect with boot-time retry/backoff until ``connect_timeout``."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self.connect_timeout
         interval = 0.05
         while True:
             try:
-                reader, writer = await self._open_connection()
-                break
+                reader, writer = await self.kbus_address.connect()
+                return FrameStream(reader, writer, max_size=self.max_size)
             except OSError:
                 if loop.time() + interval >= deadline:
                     raise ConnectionError(
@@ -119,102 +233,3 @@ class KajennBusClient:
                     ) from None
                 await asyncio.sleep(interval)
                 interval = min(interval * 2, 0.5)
-        self._stream = FrameStream(
-            reader, writer, max_size=self.max_size
-        )
-        register = Frame(
-            method=REGISTER_METHOD,
-            path=REGISTER_PATH,
-            payload=self.control_payload.encode({"name": self.name, "pid": os.getpid()}),
-        )
-        await self._stream.write(register)
-        self._connected = True
-        self._closed_event.clear()
-        self._receive_task = asyncio.create_task(self._receive_loop(self._stream))
-        self._logger.info("Connected to hub at %s as %s", self.address, self.name)
-
-    async def close(self) -> None:
-        """Deliberate local close: no orphan signal."""
-        self._closing = True
-        if self._receive_task is not None and not self._receive_task.done():
-            self._receive_task.cancel()
-            try:
-                await self._receive_task
-            except asyncio.CancelledError:
-                pass
-        if self._stream is not None:
-            await self._stream.close()
-            self._stream = None
-        self._connected = False
-        self._closed_event.set()
-
-    async def wait_closed(self) -> None:
-        """Block until the KajennBus ends (either side); the child's main wait."""
-        await self._closed_event.wait()
-
-    async def send(self, *, method: str = "POST", path: str = "/", data: Any = None) -> str:
-        """Send one frame to the hub (fire-and-forget); returns the frame id.
-
-        A connection dropping mid-send is a dying hub: the frame is lost by
-        design and the orphan signal follows on the receive side.
-        """
-        if self._stream is None or not self.connected:
-            raise ConnectionError("not connected")
-        frame = Frame(method=method, path=path, payload=self.control_payload.encode(data))
-        return await self.send_frame(frame)
-
-    async def send_frame(self, frame: Frame) -> str:
-        """Send an already encoded frame without opening its payload."""
-        if self._stream is None or not self.connected:
-            raise ConnectionError("not connected")
-        await self._stream.write(frame)
-        return frame.id
-
-    async def _open_connection(self) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        """Open the transport for the parsed address (uds or tcp)."""
-        if self._uds_path is not None:
-            return await asyncio.open_unix_connection(self._uds_path)
-        host, port = self._tcp
-        return await asyncio.open_connection(host, port)
-
-    async def _receive_loop(self, stream: FrameStream) -> None:
-        """Read frames until the KajennBus ends; hub gone → orphan.
-
-        A protocol violation from the hub (a frame the codec rejects: bad
-        magic, wrong version, oversized, malformed info JSON) is a clean
-        death: logged, the loop breaks and the orphan path follows —
-        the exception never leaves the task. The ``finally`` closes the
-        stream so the writer never outlives the loop.
-        """
-        try:
-            while True:
-                try:
-                    frame = await stream.read()
-                except ValueError:
-                    self._logger.exception("Protocol violation from the hub; closing the KajennBus")
-                    break
-                if frame is None:
-                    break
-                await self._fire(self.on_message, frame)
-        except asyncio.CancelledError:
-            return
-        finally:
-            if self._stream is stream:
-                self._connected = False
-                self._stream = None
-            await stream.close()
-            self._closed_event.set()
-            if not self._closing:
-                self._logger.info("Hub connection lost: %s is orphan", self.name)
-                await self._fire(self.on_orphan, self)
-
-    async def _fire(self, callback: Callable[..., Any] | None, *args: Any) -> None:
-        """Run a sync-or-async callback; a consumer bug must not sever the KajennBus."""
-        if callback is None:
-            return
-        try:
-            result = callback(*args)
-            if inspect.isawaitable(result):
-                await result
-        except Exception:
-            self._logger.exception("KajennBus callback %r failed", callback)

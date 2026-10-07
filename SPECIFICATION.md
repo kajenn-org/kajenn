@@ -536,6 +536,7 @@ would force the upper package to add multi-app from outside = the old dual
 dispatch reborn.
 
 ### ◆D10 — The KajennBus cut and the group runtime spec
+(Restated on 2026-10-07: see "Ratified 2026-10-07" below.)
 **In the minimal package**: the frame protocol (tiny, zero deps) and the
 **child side** (`KajennBusClient`) — knowing how to BE a child is part of what
 a server IS (D2). **In the orchestration package**: the hub (parent side),
@@ -946,3 +947,19 @@ path, and how shared users link by a unique code, is a later decision
 (issue #83). The table row of `_server` above and the D4 mention in the wave
 record are read through this decision. Register:
 `temp/decisioni_serverapp_identita_2026-09-12.md` (D-SA-1..11).
+
+### Ratified 2026-10-07 (the KajennBus as the instance's internal communication)
+
+**◆D10 restated.** The hub (`KBusHub`), the client (`KBusClient`), the local
+member (`LocalKBus`) and the spawner interface (`KBusSpawner`, with
+`SubprocessSpawner`) live in kajenn, all over one symmetric link,
+`KBusConnector`. Orchestration keeps the supervision policies and the
+judgments (occupancy, rebalance, move). The KajennBus is the internal
+communication of one instance; klink is the communication between instances.
+
+**D17 restated.** The communication capability is `KBusMixin`: it adds
+`kbus_call`, `kbus_post` and `serve_kbus_frame` to the server and starts the
+applications declared with `spawner=` through their spawner. A `kbus_call` to
+an in-process application goes straight to `serve_kbus_frame`: no `LocalKBus`
+is attached for in-process applications. `RemoteConnection` and the remote runner
+are retired. D33 and D-SA are untouched.
