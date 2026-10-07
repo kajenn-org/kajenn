@@ -117,7 +117,13 @@ The server mints a token, and `SubprocessSpawner.ensure` starts
 `python -m kajenn serve <source> --role application:<code> --parent <hub>`
 with `KAJENN_KBUS_TOKEN` (and `KAJENN_KBUS_SECRET` on a network hub). The role
 process loads the same configuration, serves only that application and registers
-with the hub, and ends when it loses the link to the hub. A member lost while
+with the hub, and ends when it loses the link to the hub. Its REGISTER presents
+`role` (`application:<code>`), `token` and `well_known`: the list of discovery
+names the application answers under `/.well-known/`. The server refuses a token
+that is not the one it minted and a `well_known` that is not a list of non-empty
+strings; it indexes the names on the mount of that application at each join,
+replacing those of the previous process. Until the process registers, those
+names answer 404. A member lost while
 the server runs, or a process that exits without being stopped (before or after
 its REGISTER), is relaunched with a new token, one relaunch for the two signals
 of one process. The relaunches of a role are spaced by a backoff measured from

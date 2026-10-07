@@ -279,21 +279,34 @@ class KBusMixin:
             environment=self._spawn_environment, pid=pid)
 
     def _admit_member(self, member: Any) -> None:
-        """Refuse a member that is not an external application with its token."""
+        """Refuse a member that is not an external application with its token.
+
+        An admitted member's ``well_known`` — the discovery names its
+        application answers, absent meaning none — is indexed on the mount of
+        that application, replacing the names a previous process presented. A
+        value that is not a list of non-empty strings refuses the member.
+        """
         token = self._kbus_tokens.get(member.name)
         presented = member.presentation.get("token")
         if token is None or not (
             isinstance(presented, str) and hmac.compare_digest(presented.encode(), token.encode())
         ):
             raise PermissionError(f"member {member.name!r} refused")
+        names = member.presentation.get("well_known", [])
+        if not (isinstance(names, list)
+                and all(isinstance(name, str) and name for name in names)):
+            raise PermissionError(
+                f"member {member.name!r} refused: well_known is not a list of non-empty strings")
         app = self.external_applications[member.name]
+        self.index_well_known(app, names)
         self._kbus_spawners[app.spawner].joined(f"application:{member.name}")
 
     async def run_role(self) -> None:
         """Live as the process of one role: lifespan, REGISTER, wait, shutdown.
 
         No HTTP listener is opened. The REGISTER goes to the parent hub after
-        the hosted application's ``on_startup`` returned; SIGTERM, SIGINT or
+        the hosted application's ``on_startup`` returned and presents, as
+        ``well_known``, the discovery names that application answers; SIGTERM, SIGINT or
         the loss of the parent link closes the link and runs the shutdown.
         """
         stop = self._role_stop
@@ -308,6 +321,8 @@ class KBusMixin:
         started = await outbox.get()
         if started["type"] != "lifespan.startup.complete":
             raise RuntimeError(f"role {self.kbus_role} failed to start: {started}")
+        hosted = self.applications[self.kbus_role.partition(":")[2]]
+        self.parent_kbus.presentation["well_known"] = list(hosted.well_known_names)
         try:
             await self.parent_kbus.connect()
             await stop.wait()
