@@ -307,6 +307,10 @@ class KBusHub:
                 info={"format": "control-json"},
                 payload=self.control_payload.encode({} if welcome is None else welcome),
             )
+        except asyncio.CancelledError:
+            self._members.pop(member.name, None)
+            await stream.close()
+            raise
         except Exception as exc:
             self.logger.warning("Member %s refused: %s", member.name, exc)
             reply = Frame(

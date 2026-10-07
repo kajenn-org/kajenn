@@ -49,6 +49,8 @@ dependencies = [
 test = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
+    # `[tool.coverage.run] patch = ["subprocess"]` (below) needs coverage 7.10.
+    "coverage>=7.10",
     "pytest-asyncio>=0.23",
     # The suite exercises the TYTX msgpack transport branch of response.py:
     # without this extra that coverage silently vanishes in a clean env.
@@ -98,6 +100,15 @@ python_functions = "test_*"
 addopts = "-v --cov=kajenn --cov=kajenn_server_app --cov-report=term-missing"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+# The external-application tests start real `kajenn serve --role` processes
+# (SubprocessSpawner). `patch = ["subprocess"]` makes coverage start in every
+# Python child of the measured run, through the `.pth` file coverage installs
+# in site-packages; each child writes its own data file and pytest-cov combines
+# them into the report. `sigterm` saves the data of a child ended by SIGTERM.
+[tool.coverage.run]
+patch = ["subprocess"]
+sigterm = true
 
 [tool.ruff]
 line-length = 100
