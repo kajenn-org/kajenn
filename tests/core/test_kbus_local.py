@@ -281,10 +281,11 @@ async def test_local_queue_admission_is_bounded_and_close_never_waits():
     assert not overflow.done()
     assert outbound.qsize() == 16
     await asyncio.wait_for(stream.close(), 1)
-    received = [await outbound.get() for _ in range(18)]
-    await asyncio.wait_for(overflow, 1)
+    with pytest.raises(BrokenPipeError):
+        await asyncio.wait_for(overflow, 1)
+    received = [await outbound.get() for _ in range(17)]
     assert None not in received[:16]
-    assert received[16:].count(None) == 1
+    assert received[16] is None
 
 
 async def test_local_queue_limit_is_configurable():
