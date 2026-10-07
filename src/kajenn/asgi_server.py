@@ -88,7 +88,7 @@ from .config.templates import (
 from .db import AsgiDbHandlerBase
 from .middleware import MiddlewareMixin
 from .plugin_mixin import PluginMixin
-from .remote_application import RemoteApplication
+from .remote_application import PROXY_OPTIONS, RemoteApplication
 from .server import BaseServer
 from .session import SessionMixin
 from .site_home import SiteHome
@@ -187,6 +187,9 @@ class AsgiServer(
         HERE — the recipe named the classes and their kwargs, and a recipe error
         surfaces as a boot error instead of a broken server. There is one road:
         a server composed in code declares CLASSES too, through the shortcut.
+        An application declared with ``spawner`` becomes a ``RemoteApplication``;
+        in the process of ``role`` only the hosted application is built, without
+        the ``PROXY_OPTIONS``.
         """
         kwargs: dict[str, Any] = config.site_kwargs()
         kwargs.update(config.server_kwargs())
@@ -204,11 +207,12 @@ class AsgiServer(
         entries, default = config.applications()
         if role is not None:
             code = role.partition(":")[2]
-            entries = [(app_class, {k: v for k, v in app_kwargs.items() if k != "spawner"})
+            entries = [(app_class, {k: v for k, v in app_kwargs.items() if k not in PROXY_OPTIONS})
                        for app_class, app_kwargs in entries if app_kwargs.get("code") == code]
             default = None
         kwargs["applications"] = [
-            RemoteApplication(**app_kwargs) if "spawner" in app_kwargs else app_class(**app_kwargs)
+            RemoteApplication(app_class=app_class, **app_kwargs) if "spawner" in app_kwargs
+            else app_class(**app_kwargs)
             for app_class, app_kwargs in entries
         ]
         if default is not None:

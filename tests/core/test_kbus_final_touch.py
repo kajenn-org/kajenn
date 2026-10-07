@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import os
 import signal
 import time
@@ -275,7 +274,7 @@ async def test_an_http_frame_answers_500_for_an_application_error():
         payload=HttpRecord().encode_request(scope, b"")))
     result = HttpRecord().decode_response(reply.payload)
     assert result["status"] == 500
-    assert json.loads(result["body"]) == "LookupError: gone"
+    assert result["body"] == b"Internal Server Error"
 
 
 # -- the REGISTER ceiling of a network hub ---------------------------------------------

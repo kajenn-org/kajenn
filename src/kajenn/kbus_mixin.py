@@ -70,13 +70,17 @@ from .kbus import (
 )
 from .kbus.address import KBusAddress
 from .kbus.spawner import SPAWNERS, KBusSpawner
-from .response import Response
+from .middleware.errors import ErrorMiddleware
 from .session.avatar import Avatar
 
 if TYPE_CHECKING:
     from .types import Message, Receive, Scope, Send
 
 __all__ = ["KBusMixin"]
+
+#: The lifespan messages after which the server may end the loop.
+LIFESPAN_ENDINGS = frozenset({
+    "lifespan.startup.failed", "lifespan.shutdown.complete", "lifespan.shutdown.failed"})
 
 
 class KBusMixin:
@@ -192,14 +196,22 @@ class KBusMixin:
         each external application gets a fresh token and its process is
         ensured without waiting for its REGISTER. A member lost while the
         server runs, or whose process ends without being stopped, is relaunched
-        by its spawner. At shutdown, or when a step of the startup fails, the
-        processes already ensured are stopped and the hub closed.
+        by its spawner. The processes already ensured are stopped and the hub
+        closed before ``lifespan.shutdown.complete`` (or a ``failed`` message)
+        reaches the server, and when a step of the startup fails: the server
+        may end the loop as soon as it reads that message.
         """
         if self.kbus_source is None:
             raise RuntimeError("an external application needs a configuration file or template")
         hub = self._build_hub()
         await hub.start()
         self._children_kbus = hub
+
+        async def stopping_send(message: Message) -> None:
+            if message["type"] in LIFESPAN_ENDINGS:
+                await self._stop_children(hub)
+            await send(message)
+
         try:
             for code, app in self.external_applications.items():
                 spawner = self._kbus_spawners.get(app.spawner)
@@ -210,13 +222,21 @@ class KBusMixin:
                         on_exit=self._relaunch_role)
                 await spawner.ensure(f"application:{code}", token=self._mint_token(code),
                                      environment=self._spawn_environment)
-            await super().__call__(scope, receive, send)
+            await super().__call__(scope, receive, stopping_send)
         finally:
-            for code, app in self.external_applications.items():
-                started = self._kbus_spawners.get(app.spawner)
-                if started is not None:
-                    await started.stop(f"application:{code}")
-            await hub.stop()
+            await self._stop_children(hub)
+
+    async def _stop_children(self, hub: KBusHub) -> None:
+        """Stop the processes of the external applications, then close ``hub``.
+
+        A second call finds nothing left to stop: the spawner forgets a stopped
+        role and a stopped hub returns at once.
+        """
+        for code, app in self.external_applications.items():
+            started = self._kbus_spawners.get(app.spawner)
+            if started is not None:
+                await started.stop(f"application:{code}")
+        await hub.stop()
 
     def _build_hub(self) -> KBusHub:
         """The hub on the ``server.kbus`` address, admitting the external members."""
@@ -423,24 +443,24 @@ class KBusMixin:
     async def _serve_http_frame(self, frame: Frame) -> Frame | None:
         """Serve a CALL carrying an ``HttpRecord`` and answer an ``HttpRecord``.
 
-        An ``HTTPException`` becomes its status with its detail as a JSON
-        string, any other exception a 500 with ``"<Type>: <message>"``.
+        ``info["auth"]`` becomes the avatar and ``info["channel"]`` the scope's
+        ``"kajenn.channel"``. A raised exception is answered by
+        ``_buffered_failure``, as the server's ``ErrorMiddleware`` answers it.
         """
         scope, body = HttpRecord().decode_request(frame.payload)
         auth = frame.info.get("auth")
         scope["auth"] = Avatar(auth["identity"], auth["tags"]) if auth is not None else None
         scope["session"] = None
         scope["kajenn.kbus"] = True
+        if "channel" in frame.info:
+            scope["kajenn.channel"] = frame.info["channel"]
         item = self.requests.register(scope)
         try:
             try:
                 app, sub_scope = self.demux(scope)
                 result = await BufferedAsgiEndpoint(app).serve(sub_scope, body)
-            except HTTPException as refused:
-                result = await self._buffered_failure(scope, body, refused.status, refused.detail)
             except Exception as failure:
-                result = await self._buffered_failure(
-                    scope, body, 500, f"{type(failure).__name__}: {failure}")
+                result = await self._buffered_failure(scope, body, failure)
         finally:
             item.run_cleanups()
             self.requests.unregister(item)
@@ -455,9 +475,15 @@ class KBusMixin:
         )
 
     async def _buffered_failure(
-        self, scope: Scope, body: bytes, status: int, detail: Any
+        self, scope: Scope, body: bytes, failure: Exception
     ) -> dict[str, Any]:
-        """The buffered answer of a failed http frame: ``detail`` as a JSON string."""
-        return await BufferedAsgiEndpoint(Response(
-            content=json.dumps(detail), status_code=status,
-            media_type="application/json")).serve(scope, body)
+        """The buffered answer of a failed http frame, built by ``ErrorMiddleware``.
+
+        The same middleware answers the request in the server's process, so the
+        status, the content type and the body follow the request's ``Accept``
+        exactly as they would there.
+        """
+        async def failing(scope: Scope, receive: Receive, send: Send) -> None:
+            raise failure
+
+        return await BufferedAsgiEndpoint(ErrorMiddleware(failing, self)).serve(scope, body)

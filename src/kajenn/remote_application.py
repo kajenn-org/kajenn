@@ -7,6 +7,11 @@
 with ``spawner=``: it forwards each buffered http or WSK request as a CALL
 carrying an ``HttpRecord`` to the hub member named after the application code,
 and answers 503 while that member is not registered.
+
+The kwargs of the declaration are split in two: ``PROXY_OPTIONS`` belong to
+this mount, every other kwarg belongs to the real application, built in the
+spawned process. The mount resolves ``code`` and ``mount`` as the real class
+does, so both processes answer the same URLs.
 """
 
 import asyncio
@@ -20,6 +25,12 @@ from .kbus import CALL_METHOD, Frame, KBusCallFailed
 from .response import Response
 from .transport_limits import FrameTooLarge, HttpBodyTooLarge, http_max_body_size
 
+__all__ = ["PROXY_OPTIONS", "RemoteApplication"]
+
+#: The kwargs of an application declaration that belong to its proxy mount:
+#: the spawned process builds the real application without them.
+PROXY_OPTIONS = frozenset({"spawner", "request_timeout", "max_calls"})
+
 
 class RemoteApplication(BaseApplication):
     """Forward one mounted application to the hub member named after its code."""
@@ -29,16 +40,23 @@ class RemoteApplication(BaseApplication):
     #: without a second conversion.
     forwards_payloads = True
 
-    def __init__(self, *, spawner: str, request_timeout: float = 30.0,
-                 max_calls: int = 16, **kwargs: Any) -> None:
+    def __init__(self, *, app_class: type[BaseApplication], spawner: str,
+                 request_timeout: float = 30.0, max_calls: int = 16,
+                 **app_kwargs: Any) -> None:
         """Build the mount of an external application.
 
         Args:
+            app_class: the real application class, built in the spawned process.
             spawner: the backend that starts the process (``"subprocess"``).
             request_timeout: seconds one forwarded call may take.
             max_calls: how many calls may be in flight at once.
+            app_kwargs: the real application's kwargs; only ``code`` and
+                ``mount`` are read here, resolved against ``app_class`` the way
+                ``BaseApplication`` resolves them.
         """
-        super().__init__(**kwargs)
+        super().__init__(
+            code=app_kwargs.get("code", app_class.code) or app_class.__name__.lower(),
+            mount=app_kwargs.get("mount", app_class.mount))
         self.spawner = spawner
         self.request_timeout = request_timeout
         self.max_calls = max_calls
@@ -81,6 +99,8 @@ class RemoteApplication(BaseApplication):
                     avatar = scope.get("auth")
                     if avatar is not None:
                         info["auth"] = {"identity": avatar.identity, "tags": list(avatar.tags)}
+                    if "kajenn.channel" in scope:
+                        info["channel"] = scope["kajenn.channel"]
                     path = "/" + (self.mount or "") + scope["path"] if self.mount else scope["path"]
                     record = HttpRecord().encode_request(
                         {**scope, "path": path, "raw_path": path.encode(), "root_path": ""},
