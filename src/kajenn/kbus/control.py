@@ -17,22 +17,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .frame import object_pairs, reject_constant
+
 __all__ = ["ControlPayload"]
 
 
 class ControlPayload:
     """Serialize control values without teaching Frame about those values."""
-
-    def reject_constant(self, value: str) -> None:
-        raise ValueError(f"non-finite JSON number {value!r}")
-
-    def object_pairs(self, pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError(f"duplicate JSON key {key!r}")
-            result[key] = value
-        return result
 
     def encode(self, value: Any) -> bytes:
         try:
@@ -44,8 +35,8 @@ class ControlPayload:
         try:
             return json.loads(
                 payload,
-                object_pairs_hook=self.object_pairs,
-                parse_constant=self.reject_constant,
+                object_pairs_hook=object_pairs,
+                parse_constant=reject_constant,
             )
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
             raise ValueError(f"invalid control payload: {exc}") from exc

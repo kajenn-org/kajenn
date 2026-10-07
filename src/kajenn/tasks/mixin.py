@@ -44,7 +44,7 @@ lifespan hook, or a caller reaching ``server.tasks``), when the server is fully 
 
 The loop is server-owned, hooked in ``__call__`` — ``lifespan.py`` is never
 touched. ``__call__`` intercepts the ``lifespan`` scope exactly like
-``CommunicationMixin.__call__``: pre-receive ``lifespan.startup``, ``manager.start()``,
+``KBusMixin.__call__``: pre-receive ``lifespan.startup``, ``manager.start()``,
 replay the startup down ``super().__call__`` (so the base ``Lifespan`` still runs the
 app hooks and acks the protocol), and ``await manager.stop()`` in ``finally`` when the
 protocol completes at shutdown. Every other scope — and the disabled case — passes

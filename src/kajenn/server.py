@@ -245,10 +245,23 @@ class BaseServer:
         if mount in self._by_mount:
             raise ValueError(f"mount already claimed: {mount!r}")
         app.server = self
-        for name in app.well_known_names:
-            self._well_known[name] = app
+        self.index_well_known(app, app.well_known_names)
         self.applications[app.code] = app
         self._by_mount[mount] = app
+
+    def index_well_known(self, app: BaseApplication, names: Iterable[str]) -> None:
+        """Make ``names`` the discovery names ``app`` answers under ``/.well-known/``.
+
+        The names ``app`` held before are dropped first, then each of ``names``
+        is given to ``app``: a name another application declared belongs to
+        the LAST indexed. ``register_application`` calls it with the names the
+        app declares; the KajennBus calls it again for the mount of an external
+        application each time its process registers, with the names it presents.
+        """
+        for name in [name for name, owner in self._well_known.items() if owner is app]:
+            del self._well_known[name]
+        for name in names:
+            self._well_known[name] = app
 
     @property
     def databases(self) -> dict[str, Any]:
@@ -433,8 +446,9 @@ class BaseServer:
         ``/.env`` — so the answer is 404 and no application is reached: not a
         mount, not the root application, not the ``default`` redirect. The one
         exception is RFC 8615: when ``segment`` is ``.well-known`` and the
-        first segment of ``remainder`` is a name some application declared at
-        mount time, the request goes to that application rebuilt as
+        first segment of ``remainder`` is a name in ``well_known_applications``
+        (declared at mount time, or presented by the process of an external
+        application when it registers), the request goes to that application rebuilt as
         ``/_well_known/<name>/<rest>``, the path its own router already
         resolves. No translation is invented.
         """

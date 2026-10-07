@@ -133,7 +133,7 @@ class AsgiServerGrammar(TaskGrammar):
         boot is ``kajenn serve <name>``.
         """
 
-    @element(parent_tags="configuration", sub_tags="session[0:1],tasks[0:1],websocket[0:1]")
+    @element(parent_tags="configuration", sub_tags="session[0:1],tasks[0:1],websocket[0:1],kbus[0:1]")
     def server(
         self,
         host: str | BagResolver = None,
@@ -170,7 +170,8 @@ class AsgiServerGrammar(TaskGrammar):
         never run.
 
         Children are server-domain: ``session`` (the session TTL), ``tasks``
-        (the task backbone, declared by ``TaskGrammar``) and ``websocket``.
+        (the task backbone, declared by ``TaskGrammar``), ``websocket`` and
+        ``kbus``.
         """
 
     @element(parent_tags="server", sub_tags="")
@@ -190,6 +191,21 @@ class AsgiServerGrammar(TaskGrammar):
         ``max_concurrent`` is how many messages of ONE connection may be served
         at once (default 16). The control ping is answered outside it, so a
         connection whose slots are all busy still answers "are you there".
+        """
+
+    @element(parent_tags="server", sub_tags="")
+    def kbus(
+        self,
+        address: str | BagResolver = None,
+        secret: str | BagResolver = None,
+    ) -> None:
+        """The KajennBus hub the server starts for its external applications.
+
+        ``address`` is ``uds:<path>`` or ``tcp:<ip>:<port>``; without it the
+        hub binds a uds socket in a private directory. ``secret`` is required
+        on a non-loopback tcp address — a boot error otherwise — and every
+        process registering there must present it; on uds and loopback none is
+        checked.
         """
 
     @element(parent_tags="server", sub_tags="")

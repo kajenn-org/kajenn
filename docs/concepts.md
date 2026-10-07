@@ -140,7 +140,7 @@ monitored thread pool for blocking work, the applications it serves,
 lifespan, and the request registry.
 
 `AsgiServer` is the shipped, batteries-included server. It is a **composition of
-capability mixins** stacked over `BaseServer` in a single MRO — communication,
+capability mixins** stacked over `BaseServer` in a single MRO — KajennBus (`KBusMixin`),
 auth, session, middleware, plugins, storage, and tasks. Each mixin contributes a
 feature configured through constructor keyword arguments. Sessions, auth
 middleware and the task backbone are active on the shipped composition.

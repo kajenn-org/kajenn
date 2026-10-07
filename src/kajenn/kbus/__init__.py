@@ -14,24 +14,29 @@
 
 """KajennBus subpackage: the frame protocol and both ends that speak it (◆D10).
 
-``Frame``/``FrameStream`` are the wire. ``KajennBusClient`` is the child end
-over a socket, ``LocalKajennBus`` the in-process one, ``KajennBusHub`` the parent
-end that binds the socket and keeps the rubric of registered members. The far
+``Frame``/``FrameStream`` are the wire. ``KBusClient`` is the child end over a
+socket, ``LocalKBus`` the in-process one, ``KBusHub`` the parent end that binds
+the socket and keeps the rubric of registered members. Every live link is one
+``KBusConnector``, symmetric: both ends call and serve. The far
 end of the KajennBus may live in another process; nothing here reaches up to
 whoever spawns it.
 """
 
-from .client import KajennBusClient
-from .frame import MAX_FRAME_SIZE, REGISTER_METHOD, REGISTER_PATH, Frame, FrameStream
-from .hub import (
+from .client import KBusCallError, KBusClient
+from .connector import KBusCallCancelled, KBusCallFailed, KBusConnector
+from .frame import (
     CALL_METHOD,
     EVENT_METHOD,
+    MAX_FRAME_SIZE,
+    REGISTER_METHOD,
+    REGISTER_PATH,
     REPLY_METHOD,
-    KajennBusCallError,
-    KajennBusHub,
-    KajennBusMember,
+    Frame,
+    FrameStream,
+    FrameStreamProtocol,
 )
-from .local import LocalKajennBus, LocalFrameStream
+from .hub import KBusHub, KBusMember
+from .local import LocalFrameStream, LocalKBus
 
 __all__ = [
     "CALL_METHOD",
@@ -40,12 +45,16 @@ __all__ = [
     "REGISTER_METHOD",
     "REGISTER_PATH",
     "REPLY_METHOD",
-    "KajennBusCallError",
-    "KajennBusClient",
-    "KajennBusHub",
-    "KajennBusMember",
+    "KBusCallCancelled",
+    "KBusCallError",
+    "KBusCallFailed",
+    "KBusClient",
+    "KBusConnector",
+    "KBusHub",
+    "KBusMember",
     "Frame",
     "FrameStream",
-    "LocalKajennBus",
+    "FrameStreamProtocol",
     "LocalFrameStream",
+    "LocalKBus",
 ]

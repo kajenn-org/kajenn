@@ -12,20 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""KajennBusHub tests: the rubric, the CALL/REPLY/EVENT envelopes, EOF and isolation.
+"""KBusHub tests: the rubric, presentation, CALL/REPLY/EVENT through the hub, loss and isolation.
 
-The member side is a ``MemberPeer`` over the package's own ``FrameStream``
-(both ends of the codec are exercised): it REGISTERs, records what it
-receives and answers CALLs with a REPLY **reusing the CALL id** — the
-correlation the hub keys its futures on, which ``KajennBusClient.send`` cannot
-express since it mints a fresh id per frame. The protocol-violation and
+The member side is a ``MemberPeer`` over ``KBusClient``: it records the CALLs
+and EVENTs it receives and answers CALLs with a REPLY. Correlation itself
+(timeouts, abandoned ids, mismatched replies) belongs to ``KBusConnector`` and
+is tested in ``test_kbus_connector.py``. The protocol-violation and
 no-REGISTER cases write raw bytes on a plain connection.
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import shutil
 import tempfile
@@ -39,9 +37,10 @@ from kajenn.kbus import (
     REGISTER_METHOD,
     REGISTER_PATH,
     REPLY_METHOD,
-    KajennBusHub,
     Frame,
-    FrameStream,
+    KBusCallError,
+    KBusClient,
+    KBusHub,
 )
 from kajenn.kbus.control import ControlPayload
 
@@ -57,76 +56,40 @@ def data_of(frame):
 
 
 class MemberPeer:
-    """A child on the KajennBus: REPLYs to CALLs reusing their id."""
+    """A child on the KajennBus: records what it receives, REPLYs to CALLs."""
 
     def __init__(self, address: str, name: str) -> None:
-        self.address = address
-        self.name = name
         self.received: list[Frame] = []
         self.reply_result: Any = None
         self.reply_events: list[dict[str, Any]] = []
         self.reply_error: Any = None
-        self.answer_calls = True
-        self.stream: FrameStream | None = None
-        self._task: asyncio.Task[None] | None = None
+        self.gate = asyncio.Event()
+        self.gate.set()
+        self.client = KBusClient(address, name, on_call=self._answer, on_event=self.received.append)
 
     async def connect(self) -> None:
-        transport, _, rest = self.address.partition(":")
-        if transport == "uds":
-            reader, writer = await asyncio.open_unix_connection(rest)
-        else:
-            host, _, port = rest.rpartition(":")
-            reader, writer = await asyncio.open_connection(host, int(port))
-        self.stream = FrameStream(reader, writer)
-        await self.stream.write(
-            control_frame(
-                method=REGISTER_METHOD,
-                path=REGISTER_PATH,
-                data={"name": self.name, "pid": os.getpid()},
-            )
-        )
-        self._task = asyncio.create_task(self._receive_loop())
+        await self.client.connect()
 
     async def close(self) -> None:
-        if self._task is not None:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-        await self.stream.close()
-
-    async def send(
-        self, method: str, path: str, data: Any = None, *, id: str | None = None
-    ) -> None:
-        kwargs = {"id": id} if id is not None else {}
-        await self.stream.write(control_frame(method=method, path=path, data=data, **kwargs))
+        self.gate.set()
+        await self.client.close()
 
     async def wait_frames(self, count: int, timeout: float = 5.0) -> None:
         deadline = asyncio.get_running_loop().time() + timeout
         while len(self.received) < count:
             if asyncio.get_running_loop().time() >= deadline:
-                raise TimeoutError(f"{self.name} got {len(self.received)}/{count} frames")
+                raise TimeoutError(f"{self.client.name} got {len(self.received)}/{count} frames")
             await asyncio.sleep(0.01)
 
-    async def _receive_loop(self) -> None:
-        while True:
-            frame = await self.stream.read()
-            if frame is None:
-                return
-            self.received.append(frame)
-            if frame.method == CALL_METHOD and self.answer_calls:
-                await self._answer(frame)
-
-    async def _answer(self, call: Frame) -> None:
+    async def _answer(self, call: Frame) -> Frame:
+        self.received.append(call)
+        await self.gate.wait()
         data: dict[str, Any] = {"events": list(self.reply_events)}
         if self.reply_error is not None:
             data["error"] = self.reply_error
         else:
             data["result"] = self.reply_result
-        await self.stream.write(
-            control_frame(id=call.id, method=REPLY_METHOD, path=call.path, data=data)
-        )
+        return control_frame(id=call.id, method=REPLY_METHOD, path=call.path, data=data)
 
 
 class HubHarness:
@@ -136,7 +99,7 @@ class HubHarness:
         self.joined: list[str] = []
         self.lost: list[str] = []
         self.events: list[tuple[str, Frame]] = []
-        self.hub = KajennBusHub(
+        self.hub = KBusHub(
             on_member_joined=lambda member: self.joined.append(member.name),
             on_member_lost=lambda member: self.lost.append(member.name),
             on_event=lambda member, frame: self.events.append((member.name, frame)),
@@ -173,15 +136,22 @@ async def uds_harness(socket_dir):
     await harness.hub.stop()
 
 
+async def register_raw(path: str, data: Any) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    reader, writer = await asyncio.open_unix_connection(path)
+    writer.write(control_frame(method=REGISTER_METHOD, path=REGISTER_PATH, data=data).encode())
+    await writer.drain()
+    return reader, writer
+
+
 async def test_register_lands_in_the_rubric(uds_harness):
     peer = MemberPeer(uds_harness.hub.address, "W:one")
     await peer.connect()
-    await uds_harness.wait_members(1)
     member = uds_harness.hub.resolve("W:one")
     assert member is not None
     assert member.name == "W:one"
     assert member.pid == os.getpid()
     assert uds_harness.joined == ["W:one"]
+    assert peer.client.welcome == {}
     assert uds_harness.hub.resolve("W:missing") is None
     await peer.close()
 
@@ -192,7 +162,6 @@ async def test_register_over_tcp():
     assert harness.hub.address.startswith("tcp:127.0.0.1:")
     peer = MemberPeer(harness.hub.address, "W:tcp")
     await peer.connect()
-    await harness.wait_members(1)
     assert harness.hub.resolve("W:tcp") is not None
     await peer.close()
     await harness.hub.stop()
@@ -214,22 +183,21 @@ async def test_call_returns_the_reply_payload_verbatim(uds_harness):
     peer.reply_result = {"ok": 1}
     peer.reply_events = [{"op": "new_user", "seq": 1}, {"op": "drop_user", "seq": 2}]
     await peer.connect()
-    await uds_harness.wait_members(1)
 
     payload = await uds_harness.hub.call("W:one", "/op/new_user", {"identity": "u1"}, timeout=5.0)
 
     assert payload == {"result": {"ok": 1}, "events": peer.reply_events}
     assert peer.received[0].method == CALL_METHOD
     assert peer.received[0].path == "/op/new_user"
+    assert peer.received[0].info == {"format": "control-json"}
     assert data_of(peer.received[0]) == {"identity": "u1"}
     await peer.close()
 
 
-async def test_error_reply_is_delivered_not_raised(uds_harness):
+async def test_payload_level_error_is_delivered_not_raised(uds_harness):
     peer = MemberPeer(uds_harness.hub.address, "W:one")
     peer.reply_error = "unsupported until phase B"
     await peer.connect()
-    await uds_harness.wait_members(1)
 
     payload = await uds_harness.hub.call("W:one", "/op/http", {"http": {}}, timeout=5.0)
 
@@ -237,70 +205,60 @@ async def test_error_reply_is_delivered_not_raised(uds_harness):
     await peer.close()
 
 
-async def test_reply_without_a_parked_caller_is_dropped(uds_harness):
+async def test_error_reply_raises_the_call_error(uds_harness):
+    client = KBusClient(uds_harness.hub.address, "W:none")
+    await client.connect()
+    with pytest.raises(KBusCallError) as raised:
+        await uds_harness.hub.call("W:none", "/op/x", timeout=5.0)
+    assert raised.value.path == "/op/x"
+    assert raised.value.error.startswith("LookupError:")
+    await client.close()
+
+
+async def test_call_timeout_is_an_unknown_outcome(uds_harness):
     peer = MemberPeer(uds_harness.hub.address, "W:one")
-    peer.answer_calls = False
+    peer.gate.clear()
     await peer.connect()
-    await uds_harness.wait_members(1)
 
-    with pytest.raises(TimeoutError):
-        await uds_harness.hub.call("W:one", "/op/slow", None, timeout=0.1)
-    await peer._answer(peer.received[0])
-    await asyncio.sleep(0.05)
-
-    assert uds_harness.hub._pending == {}
-    assert uds_harness.hub.resolve("W:one") is not None
-    await peer.close()
-
-
-async def test_call_timeout_unparks_the_future(uds_harness):
-    peer = MemberPeer(uds_harness.hub.address, "W:one")
-    peer.answer_calls = False
-    await peer.connect()
-    await uds_harness.wait_members(1)
-
-    with pytest.raises(TimeoutError):
+    with pytest.raises(ConnectionError) as raised:
         await uds_harness.hub.call("W:one", "/op/silent", None, timeout=0.1)
-    assert uds_harness.hub._pending == {}
+    assert raised.value.outcome == "unknown"
     await peer.close()
 
 
 async def test_a_call_without_timeout_waits_for_its_reply(uds_harness):
     peer = MemberPeer(uds_harness.hub.address, "W:one")
-    peer.answer_calls = False
+    peer.gate.clear()
     peer.reply_result = "late"
     await peer.connect()
-    await uds_harness.wait_members(1)
 
     parked = asyncio.create_task(uds_harness.hub.call("W:one", "/op/slow", None))
     await peer.wait_frames(1)
     await asyncio.sleep(0.2)
     assert not parked.done()
 
-    await peer._answer(peer.received[0])
+    peer.gate.set()
     assert (await parked)["result"] == "late"
-    assert uds_harness.hub._pending == {}
     await peer.close()
 
 
 async def test_member_death_fails_its_parked_calls(uds_harness):
     peer = MemberPeer(uds_harness.hub.address, "W:one")
     other = MemberPeer(uds_harness.hub.address, "W:two")
-    peer.answer_calls = False
-    other.answer_calls = False
+    peer.gate.clear()
+    other.gate.clear()
     await peer.connect()
     await other.connect()
-    await uds_harness.wait_members(2)
 
     parked = asyncio.create_task(uds_harness.hub.call("W:one", "/op/slow", None))
     survivor = asyncio.create_task(uds_harness.hub.call("W:two", "/op/slow", None))
     await peer.wait_frames(1)
     await other.wait_frames(1)
 
-    await peer.close()
+    await peer.client.close()
     await uds_harness.wait_lost(1)
 
-    with pytest.raises(ConnectionError, match="KajennBus member W:one lost"):
+    with pytest.raises(ConnectionError):
         await parked
     assert not survivor.done()
 
@@ -312,9 +270,8 @@ async def test_stop_fails_every_parked_call(socket_dir):
     harness = HubHarness(path=os.path.join(socket_dir, "hub.sock"))
     await harness.hub.start()
     peer = MemberPeer(harness.hub.address, "W:one")
-    peer.answer_calls = False
+    peer.gate.clear()
     await peer.connect()
-    await harness.wait_members(1)
 
     parked = asyncio.create_task(harness.hub.call("W:one", "/op/slow", None))
     await peer.wait_frames(1)
@@ -332,144 +289,14 @@ async def test_call_on_unknown_member_raises_lookup(uds_harness):
         await uds_harness.hub.call("W:ghost", "/op/new_user", None, timeout=0.5)
 
 
-async def test_call_frame_requires_call_and_rejects_duplicate_pending_id(uds_harness):
-    peer = MemberPeer(uds_harness.hub.address, "W:one")
-    await peer.connect()
-    await uds_harness.wait_members(1)
-    peer.answer_calls = False
-    with pytest.raises(ValueError, match="requires a CALL"):
-        await uds_harness.hub.call_frame(
-            "W:one", Frame(id="event", method=EVENT_METHOD, path="/event")
-        )
-    first = asyncio.create_task(
-        uds_harness.hub.call_frame("W:one", Frame(id="same", method=CALL_METHOD, path="/one"))
-    )
-    await peer.wait_frames(1)
-    with pytest.raises(RuntimeError, match="already pending"):
-        await uds_harness.hub.call_frame("W:one", Frame(id="same", method=CALL_METHOD, path="/two"))
-    first.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await first
-
-
-async def test_reply_from_another_member_cannot_complete_a_call(uds_harness):
-    one = MemberPeer(uds_harness.hub.address, "W:one")
-    two = MemberPeer(uds_harness.hub.address, "W:two")
-    await one.connect()
-    await two.connect()
-    await uds_harness.wait_members(2)
-    one.answer_calls = False
-    pending = asyncio.create_task(
-        uds_harness.hub.call_frame(
-            "W:one", Frame(id="owned", method=CALL_METHOD, path="/ask"), timeout=1
-        )
-    )
-    await one.wait_frames(1)
-    await two.send(REPLY_METHOD, "/ask", {"result": "spoof"}, id="owned")
-    await asyncio.wait_for(two._task, timeout=1)
-    assert not pending.done()
-    assert uds_harness.hub.resolve("W:two") is None
-    await one.send(REPLY_METHOD, "/ask", {"result": "real"}, id="owned")
-    assert data_of(await pending) == {"result": "real"}
-
-
-async def test_late_reply_cannot_resolve_reused_id_or_wrong_path(uds_harness):
-    peer = MemberPeer(uds_harness.hub.address, "W:one")
-    peer.answer_calls = False
-    await peer.connect()
-    await uds_harness.wait_members(1)
-    expired = Frame(id="late", method=CALL_METHOD, path="/old")
-    with pytest.raises(TimeoutError):
-        await uds_harness.hub.call_frame("W:one", expired, timeout=0.01)
-    with pytest.raises(RuntimeError, match="awaiting a late reply"):
-        await uds_harness.hub.call_frame("W:one", Frame(id="late", method=CALL_METHOD, path="/new"))
-    await peer.send(REPLY_METHOD, "/wrong", {"result": "wrong"}, id="late")
-    await uds_harness.wait_lost(1)
-    assert uds_harness.hub.resolve("W:one") is None
-
-    replacement_peer = MemberPeer(uds_harness.hub.address, "W:one")
-    replacement_peer.answer_calls = False
-    await replacement_peer.connect()
-    await uds_harness.wait_members(1)
-    replacement = asyncio.create_task(uds_harness.hub.call_frame("W:one", expired))
-    await replacement_peer.wait_frames(1)
-    await replacement_peer.send(REPLY_METHOD, "/old", {"result": "fresh"}, id="late")
-    assert data_of(await replacement) == {"result": "fresh"}
-
-
-async def test_cancel_during_write_reserves_id_until_late_reply(uds_harness, monkeypatch):
-    peer = MemberPeer(uds_harness.hub.address, "W:one")
-    peer.answer_calls = False
-    await peer.connect()
-    await uds_harness.wait_members(1)
-    member = uds_harness.hub.resolve("W:one")
-    original_write = type(member).write
-    transmitted = asyncio.Event()
-    release = asyncio.Event()
-
-    async def blocked_after_write(self, frame):
-        await original_write(self, frame)
-        transmitted.set()
-        await release.wait()
-
-    monkeypatch.setattr(type(member), "write", blocked_after_write)
-    frame = Frame(id="during-write", method=CALL_METHOD, path="/old")
-    call = asyncio.create_task(uds_harness.hub.call_frame("W:one", frame))
-    await transmitted.wait()
-    await peer.wait_frames(1)
-    call.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await call
-
-    with pytest.raises(RuntimeError, match="awaiting a late reply"):
-        await uds_harness.hub.call_frame("W:one", frame)
-    await peer.send(REPLY_METHOD, "/old", {"result": "late"}, id="during-write")
-    await asyncio.sleep(0.01)
-
-    monkeypatch.setattr(type(member), "write", original_write)
-    replacement = asyncio.create_task(uds_harness.hub.call_frame("W:one", frame))
-    await peer.wait_frames(2)
-    await peer.send(REPLY_METHOD, "/old", {"result": "fresh"}, id="during-write")
-    assert data_of(await replacement) == {"result": "fresh"}
-    release.set()
-
-
-async def test_inbound_event_background_work_is_bounded(socket_dir, caplog):
-    gate = asyncio.Event()
-
-    async def held_event(member, frame):
-        await gate.wait()
-
-    harness = HubHarness(path=os.path.join(socket_dir, "bounded.sock"))
-    harness.hub.on_event = held_event
-    harness.hub.max_event_tasks = 1
-    await harness.hub.start()
-    try:
-        peer = MemberPeer(harness.hub.address, "W:one")
-        await peer.connect()
-        await harness.wait_members(1)
-        await peer.send(EVENT_METHOD, "/first")
-        while len(harness.hub._event_tasks) != 1:
-            await asyncio.sleep(0)
-        await peer.send(EVENT_METHOD, "/dropped")
-        await asyncio.sleep(0.02)
-        assert len(harness.hub._event_tasks) == 1
-        assert "event task limit 1 reached" in caplog.text
-        gate.set()
-    finally:
-        await harness.hub.stop()
-
-
 async def test_post_reaches_one_member_only(uds_harness):
     one = MemberPeer(uds_harness.hub.address, "W:one")
     two = MemberPeer(uds_harness.hub.address, "W:two")
     await one.connect()
     await two.connect()
-    await uds_harness.wait_members(2)
 
-    frame_id = await uds_harness.hub.post("W:one", "/occupancy", {"users": 3})
+    await uds_harness.hub.post("W:one", "/occupancy", {"users": 3})
     await one.wait_frames(1)
-    assert one.received[0].id == frame_id
     assert one.received[0].method == EVENT_METHOD
     assert data_of(one.received[0]) == {"users": 3}
     assert two.received == []
@@ -480,9 +307,8 @@ async def test_post_reaches_one_member_only(uds_harness):
 async def test_inbound_event_reaches_the_consumer(uds_harness):
     peer = MemberPeer(uds_harness.hub.address, "W:one")
     await peer.connect()
-    await uds_harness.wait_members(1)
 
-    await peer.send(EVENT_METHOD, "/op/drop_user", {"seq": 7})
+    await peer.client.post("/op/drop_user", {"seq": 7})
     deadline = asyncio.get_running_loop().time() + 5.0
     while not uds_harness.events:
         assert asyncio.get_running_loop().time() < deadline, "no event reached the hub"
@@ -493,7 +319,7 @@ async def test_inbound_event_reaches_the_consumer(uds_harness):
 
 
 async def test_a_slow_event_consumer_does_not_delay_the_reply_behind_it(uds_harness):
-    """Serving is a task: the member's receive loop stays free for the REPLY."""
+    """Serving is a task: the member's link stays free for the REPLY."""
     gate = asyncio.Event()
     served = []
 
@@ -505,9 +331,8 @@ async def test_a_slow_event_consumer_does_not_delay_the_reply_behind_it(uds_harn
     peer = MemberPeer(uds_harness.hub.address, "W:one")
     peer.reply_result = {"ok": 1}
     await peer.connect()
-    await uds_harness.wait_members(1)
 
-    await peer.send(EVENT_METHOD, "/op/slow", {"seq": 1})
+    await peer.client.post("/op/slow", {"seq": 1})
     deadline = asyncio.get_running_loop().time() + 5.0
     while not served:
         assert asyncio.get_running_loop().time() < deadline, "the consumer never ran"
@@ -519,25 +344,23 @@ async def test_a_slow_event_consumer_does_not_delay_the_reply_behind_it(uds_harn
     await peer.close()
 
 
-async def test_inbound_call_is_an_unexpected_envelope(uds_harness, caplog):
-    peer = MemberPeer(uds_harness.hub.address, "W:one")
+async def test_inbound_call_is_served_by_the_hub(socket_dir):
+    def on_call(member, frame):
+        return control_frame(id=frame.id, method=REPLY_METHOD, path=frame.path,
+                             data={"member": member.name, "asked": data_of(frame)})
+
+    harness = HubHarness(path=os.path.join(socket_dir, "hub.sock"), on_call=on_call)
+    await harness.hub.start()
+    peer = MemberPeer(harness.hub.address, "W:one")
     await peer.connect()
-    await uds_harness.wait_members(1)
-
-    with caplog.at_level(logging.WARNING, logger="kajenn.kbus.hub"):
-        await peer.send(CALL_METHOD, "/ask", {"q": 1})
-        await asyncio.sleep(0.1)
-
-    assert "Unknown envelope CALL from W:one" in caplog.text
-    assert peer.received == []
-    assert uds_harness.hub.resolve("W:one") is not None
+    assert await peer.client.call("/ask", {"q": 1}) == {"member": "W:one", "asked": {"q": 1}}
     await peer.close()
+    await harness.hub.stop()
 
 
 async def test_member_eof_sweeps_the_rubric(uds_harness):
     peer = MemberPeer(uds_harness.hub.address, "W:one")
     await peer.connect()
-    await uds_harness.wait_members(1)
 
     await peer.close()
     await uds_harness.wait_lost(1)
@@ -550,7 +373,6 @@ async def test_deliberate_hub_stop_fires_no_member_lost(socket_dir):
     await harness.hub.start()
     peer = MemberPeer(harness.hub.address, "W:one")
     await peer.connect()
-    await harness.wait_members(1)
 
     await harness.hub.stop()
     await asyncio.sleep(0.1)
@@ -561,15 +383,8 @@ async def test_deliberate_hub_stop_fires_no_member_lost(socket_dir):
 async def test_protocol_violation_isolates_that_member(uds_harness):
     survivor = MemberPeer(uds_harness.hub.address, "W:good")
     await survivor.connect()
-    await uds_harness.wait_members(1)
 
-    reader, writer = await asyncio.open_unix_connection(uds_harness.hub.path)
-    writer.write(
-        control_frame(
-            method=REGISTER_METHOD, path=REGISTER_PATH, data={"name": "W:bad", "pid": 1}
-        ).encode()
-    )
-    await writer.drain()
+    reader, writer = await register_raw(uds_harness.hub.path, {"name": "W:bad", "pid": 1})
     await uds_harness.wait_members(2)
     payload = b"NOTWSX-garbage"
     writer.write(len(payload).to_bytes(4, "big") + payload)
@@ -589,13 +404,11 @@ async def test_protocol_violation_isolates_that_member(uds_harness):
 async def test_duplicate_name_refuses_the_new_connection(uds_harness):
     first = MemberPeer(uds_harness.hub.address, "W:one")
     await first.connect()
-    await uds_harness.wait_members(1)
     registered = uds_harness.hub.resolve("W:one")
 
     second = MemberPeer(uds_harness.hub.address, "W:one")
-    await second.connect()
-    # The refusal is the closed stream: the newcomer's receive loop reads EOF.
-    await asyncio.wait_for(second._task, timeout=5.0)
+    with pytest.raises(ConnectionError):
+        await second.connect()
 
     assert uds_harness.hub.resolve("W:one") is registered
     assert uds_harness.joined == ["W:one"]
@@ -603,7 +416,6 @@ async def test_duplicate_name_refuses_the_new_connection(uds_harness):
     first.reply_result = "still here"
     payload = await uds_harness.hub.call("W:one", "/ping", None, timeout=5.0)
     assert payload["result"] == "still here"
-    await second.close()
     await first.close()
 
 
@@ -617,7 +429,7 @@ async def test_connection_without_register_is_rejected(uds_harness):
 
 
 async def test_address_before_start_raises(socket_dir):
-    hub = KajennBusHub(path=os.path.join(socket_dir, "hub.sock"))
+    hub = KBusHub(path=os.path.join(socket_dir, "hub.sock"))
     assert not hub.started
     with pytest.raises(RuntimeError):
         hub.address
@@ -626,19 +438,15 @@ async def test_address_before_start_raises(socket_dir):
 
 async def test_path_and_host_together_are_rejected():
     with pytest.raises(ValueError):
-        KajennBusHub(path="/tmp/x.sock", host="127.0.0.1")
+        KBusHub(path="/tmp/x.sock", host="127.0.0.1")
 
 
 @pytest.mark.parametrize("pid", [{}, "invalid"])
 async def test_malformed_register_pid_closes_only_offending_socket(uds_harness, pid):
     survivor = MemberPeer(uds_harness.hub.address, "W:good")
     await survivor.connect()
-    await uds_harness.wait_members(1)
-    reader, writer = await asyncio.open_unix_connection(uds_harness.hub.path)
+    reader, writer = await register_raw(uds_harness.hub.path, {"name": "W:bad", "pid": pid})
     try:
-        writer.write(control_frame(method=REGISTER_METHOD, path=REGISTER_PATH,
-                                   data={"name": "W:bad", "pid": pid}).encode())
-        await writer.drain()
         assert await asyncio.wait_for(reader.read(), timeout=1) == b""
         assert uds_harness.hub.resolve("W:bad") is None
         survivor.reply_result = "alive"

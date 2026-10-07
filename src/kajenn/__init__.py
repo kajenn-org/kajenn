@@ -41,8 +41,8 @@ from .auth import (
     FileUserStore,
     UserStore,
 )
-from .kbus import KajennBusClient, Frame, FrameStream
-from .communication import CommunicationMixin
+from .kbus import KBusClient, Frame, FrameStream
+from .kbus_mixin import KBusMixin
 from .config import (
     AsgiConfigBuilder,
     AsgiServerGrammar,
@@ -98,8 +98,8 @@ __all__ = [
     "BaseConfiguration",
     "BaseMiddleware",
     "BaseServer",
-    "KajennBusClient",
-    "CommunicationMixin",
+    "KBusClient",
+    "KBusMixin",
     "ConfigError",
     "ConfigurationHandler",
     "DefaultConfig",

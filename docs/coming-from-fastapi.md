@@ -20,7 +20,7 @@ other libraries. kajenn ships those parts and feeds them from configuration.
 | Authentication | `Security(...)` schemes; the backend is yours | basic / bearer / JWT backends, a user store and an API-key store, `auth_rule` per route, default deny |
 | Sessions | Starlette's signed-cookie middleware, or your own store | a session object with its store and its cookie, an `Avatar` identity attached at login, a snapshot at shutdown |
 | WebSockets | a raw `WebSocket` object | WSX — request envelopes routed to the same methods as HTTP — plus the raw socket seam when you want it |
-| Internal KajennBus | none | a hub and its clients over a unix socket or TCP, with typed frames, used to reach other processes |
+| Internal KajennBus | none | the instance's internal communication: one symmetric link between the server and its applications, in-process or in spawned processes, over a unix socket or TCP |
 | Background work | `BackgroundTasks` for the current response | a task backbone: file spool, executor, scheduler with interval and cron cadences, event hub, HTTP management |
 | MCP | none | routes marked `channel_channels="mcp"` are served as MCP tools by the same route tree |
 | Storage | none | genro-storage mounted on the server, named volumes, optional encryption at rest |

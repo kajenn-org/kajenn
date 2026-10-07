@@ -235,6 +235,10 @@ flowchart TD
 The hub listens on a Unix or TCP socket and tracks registered members. A remote
 client connects and registers; an in-process member uses a queue-backed KajennBus.
 
+`KBusMixin` gives the server `kbus_call(path, data)`: the route at `path` is
+served through the same demux an HTTP request takes, with the data crossing as
+JSON bytes. `serve_kbus_frame` is the one place a frame becomes an ASGI scope.
+
 | Message | Purpose |
 | --- | --- |
 | CALL | Request work and wait for a result |
@@ -318,7 +322,7 @@ and file paths are kept here so the explanations above can focus on behaviour.
 | Configuration | [Recipe builder](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/builder.py), [layering](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/default_config.py), [handler](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/handler.py), [templates](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/templates.py) |
 | Sessions and identity | [Session capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/mixin.py), [session store](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/store.py), [authentication](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth/mixin.py), [auth core](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth/core.py) |
 | WebSocket | [WSX connection](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx.py), [transport](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/websocket.py), [payload](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx_payload.py) |
-| Remote applications | [KajennBus](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/kbus), [application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/remote_application.py), [runner](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/remote_runner.py), [HTTP record](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/http_record.py) |
+| Applications in other processes | [KajennBus](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/kbus), [KBusMixin](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/kbus_mixin.py), [spawner](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/kbus/spawner.py), [HTTP record](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/http_record.py) |
 | Tasks | [Capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/tasks/mixin.py), [manager and collaborators](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/tasks) |
 | Applications | [Base contract](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/application.py), [protocol views](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/applications), [management application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn_server_app/server_app.py) |
 

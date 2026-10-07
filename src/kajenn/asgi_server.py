@@ -15,7 +15,7 @@
 """AsgiServer — the shipped mono-process server composition (D22, D6, D16).
 
 ``AsgiServer`` stacks every core capability mixin over ``BaseServer`` in one
-MRO (``CommunicationMixin, AuthMixin, SessionMixin, MiddlewareMixin,
+MRO (``KBusMixin, AuthMixin, SessionMixin, MiddlewareMixin,
 PluginMixin, StorageMixin, TaskMixin, BaseServer``): the complete mono-process
 async server of D22. ``TaskMixin`` sits after ``StorageMixin`` (it needs
 ``server.storage``) and before ``BaseServer`` (its lifespan hook must wrap the
@@ -76,7 +76,7 @@ from typing import Any
 from genro_builders.builder import BuilderBase
 
 from .auth import AuthMixin
-from .communication import CommunicationMixin
+from .kbus_mixin import KBusMixin
 from .config.elements import AsgiServerGrammar
 from .config.default_config import DefaultConfig
 from .config.handler import ConfigurationHandler
@@ -88,6 +88,7 @@ from .config.templates import (
 from .db import AsgiDbHandlerBase
 from .middleware import MiddlewareMixin
 from .plugin_mixin import PluginMixin
+from .remote_application import PROXY_OPTIONS, RemoteApplication
 from .server import BaseServer
 from .session import SessionMixin
 from .site_home import SiteHome
@@ -100,7 +101,7 @@ ConfigSource = str | Path | type | BuilderBase | ConfigurationHandler
 
 
 class AsgiServer(
-    CommunicationMixin,
+    KBusMixin,
     AuthMixin,
     SessionMixin,
     MiddlewareMixin,
@@ -123,8 +124,11 @@ class AsgiServer(
     grammar: type = AsgiServerGrammar
 
     def __init__(self, config: ConfigSource | None = None, **kwargs: Any) -> None:
+        role: str | None = kwargs.get("role")
+        if isinstance(config, (str, Path)):
+            kwargs["kbus_source"] = str(config)
         self._config = self._build_config(config, kwargs)
-        kwargs = {**self._configured_kwargs(self.config), **kwargs}
+        kwargs = {**self._configured_kwargs(self.config, role), **kwargs}
         self._site_name: str | None = kwargs.pop("site_name", None)
         site_home = kwargs.pop("site_home", None)
         self._site_home = SiteHome(site_home) if site_home is not None else None
@@ -172,7 +176,9 @@ class AsgiServer(
             config = defaults.recipe_class(config)
         return ConfigurationHandler(config, parents=defaults.parents_for(config))
 
-    def _configured_kwargs(self, config: ConfigurationHandler) -> dict[str, Any]:
+    def _configured_kwargs(
+        self, config: ConfigurationHandler, role: str | None = None
+    ) -> dict[str, Any]:
         """The constructor kwargs the configuration declares.
 
         One helper of the read door per section, each mapped to the kwarg the
@@ -181,6 +187,9 @@ class AsgiServer(
         HERE — the recipe named the classes and their kwargs, and a recipe error
         surfaces as a boot error instead of a broken server. There is one road:
         a server composed in code declares CLASSES too, through the shortcut.
+        An application declared with ``spawner`` becomes a ``RemoteApplication``;
+        in the process of ``role`` only the hosted application is built, without
+        the ``PROXY_OPTIONS``.
         """
         kwargs: dict[str, Any] = config.site_kwargs()
         kwargs.update(config.server_kwargs())
@@ -196,7 +205,16 @@ class AsgiServer(
         if storage is not None:
             kwargs["storage"], kwargs["storage_key"] = storage
         entries, default = config.applications()
-        kwargs["applications"] = [app_class(**app_kwargs) for app_class, app_kwargs in entries]
+        if role is not None:
+            code = role.partition(":")[2]
+            entries = [(app_class, {k: v for k, v in app_kwargs.items() if k not in PROXY_OPTIONS})
+                       for app_class, app_kwargs in entries if app_kwargs.get("code") == code]
+            default = None
+        kwargs["applications"] = [
+            RemoteApplication(app_class=app_class, **app_kwargs) if "spawner" in app_kwargs
+            else app_class(**app_kwargs)
+            for app_class, app_kwargs in entries
+        ]
         if default is not None:
             kwargs["default"] = default
         return kwargs

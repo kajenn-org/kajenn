@@ -1,4 +1,4 @@
-"""The application served by ``kajenn.remote_runner`` in this example."""
+"""The application this example runs in a process of its own."""
 
 import asyncio
 import json
@@ -23,7 +23,7 @@ class RemoteDemoApplication(OpenApiApplication):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        # The standalone runner deliberately owns only a BaseServer, so this
+        # The role process builds the whole configuration, yet this
         # example carries the signature plugin its OpenAPI and `_request`
         # injection need instead of relying on frontend plugin configuration.
         self.route.plug("pydantic")

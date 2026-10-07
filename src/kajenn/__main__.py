@@ -73,6 +73,7 @@ one line on stderr.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import importlib
 import importlib.util
 import json
@@ -254,6 +255,8 @@ class ServerLauncher:
         self.port = options.port
         self.reload = options.reload
         self.debug = options.debug
+        self.role = getattr(options, "role", None)
+        self.parent = getattr(options, "parent", None)
         if not (self.is_quickstart or self.is_template or self.is_config_path):
             self.adopt_registered(self.source)
 
@@ -433,6 +436,8 @@ class ServerLauncher:
         if self.is_config_path:
             config_path = Path(self.resolved_source).resolve()
             self.ensure_importable(config_path.parent)
+            if self.role is not None:
+                return AsgiServer(config=str(config_path), role=self.role, parent=self.parent)
             return AsgiServer(config=str(config_path), **self.constructor_kwargs)
         raise CliError(
             f"cannot serve {self.resolved_source!r}: not an existing config.py path, "
@@ -496,6 +501,9 @@ class ServerLauncher:
     def run(self) -> int:
         """Boot the server (blocking), filing the card and the pid first."""
         server = self.build_server()
+        if self.role is not None:
+            asyncio.run(server.run_role())
+            return 0
         self.adopt_site_identity(server)
         if self.name:
             self.registry.save(self.name, self.entry)
@@ -694,6 +702,8 @@ class Cli:
             help="declare the server runs in debug mode (optional comma-separated parameters)",
         )
         serve.add_argument("--name", help="register the server under this name")
+        serve.add_argument("--role", help="play one role of the configuration: application:<code>")
+        serve.add_argument("--parent", help="the hub address the role process registers with")
         serve.set_defaults(handler=self.serve)
 
         configure = commands.add_parser(

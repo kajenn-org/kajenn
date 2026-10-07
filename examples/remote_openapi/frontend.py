@@ -1,25 +1,25 @@
-"""Frontend composition with one remote mount and one unrelated local mount."""
+"""Frontend configuration: one application in its own process, one local mount."""
 
 from genro_routes import route
 
-from kajenn import AsgiServer, RoutedApplication
-from kajenn.remote_application import RemoteApplication
+from kajenn import RoutedApplication
+from kajenn.config.templates import CONFIGURATION_TEMPLATES
+
+from examples.remote_openapi.app import RemoteDemoApplication
 
 
 class LocalApplication(RoutedApplication):
-    """A local endpoint that remains available when the remote peer is down."""
+    """A local endpoint that remains available when the external process is down."""
 
     @route()
     def health(self) -> dict[str, bool]:
         return {"local": True}
 
 
-def create_server(address: str, *, own_process: bool = True) -> AsgiServer:
-    """Build a frontend; ``own_process=False`` connects to an external runner."""
-    factory = "examples.remote_openapi.app:create_application" if own_process else None
-    return AsgiServer(
-        applications=[
-            LocalApplication(code="local", mount=""),
-            RemoteApplication(address=address, factory=factory, code="demo", mount="demo"),
-        ]
-    )
+class RemoteOpenApiConfiguration(CONFIGURATION_TEMPLATES["default"]):
+    """``demo`` runs in a process the server spawns; ``local`` runs in the server."""
+
+    def applications_section(self, cfg):
+        apps = cfg.applications()
+        apps.application(code="local", app_class=LocalApplication, mount="")
+        apps.application(code="demo", app_class=RemoteDemoApplication, spawner="subprocess")

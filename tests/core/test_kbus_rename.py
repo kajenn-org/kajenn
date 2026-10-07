@@ -20,17 +20,18 @@ import importlib
 import pytest
 
 import kajenn
-from kajenn import CommunicationMixin
+from kajenn import KBusMixin
 
 
 def test_kbus_package_exports_the_renamed_names():
     kbus = importlib.import_module("kajenn.kbus")
     for name in (
-        "KajennBusClient",
-        "KajennBusHub",
-        "KajennBusMember",
-        "KajennBusCallError",
-        "LocalKajennBus",
+        "KBusClient",
+        "KBusHub",
+        "KBusMember",
+        "KBusCallError",
+        "KBusConnector",
+        "LocalKBus",
         "LocalFrameStream",
         "Frame",
         "FrameStream",
@@ -58,8 +59,8 @@ def test_old_class_names_are_gone():
 
 
 def test_root_exports_the_kbus_client():
-    assert kajenn.KajennBusClient is importlib.import_module("kajenn.kbus").KajennBusClient
-    assert "KajennBusClient" in kajenn.__all__
+    assert kajenn.KBusClient is importlib.import_module("kajenn.kbus").KBusClient
+    assert "KBusClient" in kajenn.__all__
 
 
 def test_wire_bytes_unchanged():
@@ -76,7 +77,7 @@ def test_control_payload_moved():
 
 
 def test_communication_mixin_exposes_kbus_attributes():
-    assert isinstance(CommunicationMixin.parent_kbus, property)
-    assert isinstance(CommunicationMixin.children_kbus, property)
-    assert not hasattr(CommunicationMixin, "parent_channel")
-    assert not hasattr(CommunicationMixin, "children_channel")
+    assert isinstance(KBusMixin.parent_kbus, property)
+    assert isinstance(KBusMixin.children_kbus, property)
+    assert not hasattr(KBusMixin, "parent_channel")
+    assert not hasattr(KBusMixin, "children_channel")
