@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import json
 import os
 import time
 from contextlib import asynccontextmanager
@@ -101,7 +102,6 @@ async def get(server: AsgiServer, path: str, query: bytes = b"") -> tuple[int, A
         "root_path": "", "query_string": query, "headers": [],
         "client": ("127.0.0.1", 1), "server": ("127.0.0.1", 80),
     }, b"")
-    import json
     return result["status"], json.loads(result["body"])
 
 

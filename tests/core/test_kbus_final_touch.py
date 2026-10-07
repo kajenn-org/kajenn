@@ -37,6 +37,7 @@ from kajenn import AsgiServer, RoutedApplication
 from kajenn.http_record import HttpRecord
 from kajenn.kbus import (
     CALL_METHOD,
+    EVENT_METHOD,
     REGISTER_METHOD,
     REGISTER_PATH,
     REPLY_METHOD,
@@ -313,8 +314,6 @@ def parked_pair() -> tuple[LocalFrameStream, LocalFrameStream]:
 
 @pytest.mark.parametrize("closing", ["peer", "own"])
 async def test_a_write_parked_on_a_full_queue_is_released_by_a_close(closing):
-    from kajenn.kbus.frame import EVENT_METHOD, Frame
-
     a, b = parked_pair()
     await a.write(Frame(method=EVENT_METHOD, path="/fill"))
     parked = [asyncio.create_task(a.write(Frame(method=EVENT_METHOD, path="/wait")))

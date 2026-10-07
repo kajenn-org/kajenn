@@ -57,7 +57,8 @@ async def joined(server: AsgiServer, previous: object = None):
         await asyncio.sleep(0.05)
 
 
-async def test_the_hub_address_is_configured(tmp_path, no_process):
+@pytest.mark.usefixtures("no_process")
+async def test_the_hub_address_is_configured(tmp_path):
     # wf:contract: server.kbus(address=...) in the configuration sets the hub's address;
     # wf:contract: without the element the hub binds a uds socket in a private directory.
     directory = tempfile.mkdtemp(prefix="kb")
