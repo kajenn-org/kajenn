@@ -17,8 +17,10 @@
 from genro_builders.builder import element
 from genro_routes import RoutingClass, route
 
+from kajenn.applications.telegram import TelegramBotInstanceGrammar
 
-class DemoBotGrammar:
+
+class DemoBotGrammar(TelegramBotInstanceGrammar):
     """Each registered instance chooses its greeting and dataset label."""
 
     @element(node_label="settings", sub_tags="")
@@ -46,3 +48,10 @@ class DemoBot(RoutingClass):
     async def echo(self, text: str = "") -> str:
         """Repeat the text following /echo."""
         return text or "Send /echo followed by some text."
+
+    @route()
+    async def conversation(self, text, sender=None, conversation=None, action=""):
+        """Reply within the selected PR conversation without broadcasting to others."""
+        if conversation is None:
+            return "Reply to a conversation message to continue."
+        return f"PR {conversation['context'].get('pr', '?')}: {action or text}"

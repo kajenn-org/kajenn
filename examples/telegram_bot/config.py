@@ -15,6 +15,7 @@
 """A webhook bot with an application-owned encrypted filesystem registry."""
 
 import json
+import threading
 
 from genro_bag.resolvers import EnvResolver
 from genro_routes import route
@@ -29,6 +30,10 @@ from examples.telegram_bot import DemoBot
 
 class DemoRegistry(RoutedApplication):
     """Persistence provider called internally; no HTTP routes are exposed."""
+
+    def __init__(self, **kwargs):
+        self.conversation_lock = threading.Lock()
+        super().__init__(**kwargs)
 
     @route()
     def bots(self, operation: str, application: str, record: dict | None = None):
@@ -45,6 +50,9 @@ class DemoRegistry(RoutedApplication):
                 encrypted=True,
             )
             return None
+        if operation in ("list_conversations", "get_conversation", "save_conversation"):
+            with self.conversation_lock:
+                return self._persist_conversation(directory, operation, record)
         receipts = directory.child("receipts")
         if operation == "prune_receipts":
             if receipts.is_dir():
@@ -62,6 +70,28 @@ class DemoRegistry(RoutedApplication):
             )
             return None
         raise ValueError(f"unknown registry operation: {operation}")
+
+    def _persist_conversation(self, directory, operation, record):
+        """Compare and save revisions within this single-process example provider."""
+        conversations = directory.child(f"conversations/{record['bot_code']}")
+        if operation == "list_conversations":
+            if not conversations.is_dir():
+                return []
+            return [
+                json.loads(node.read_text())
+                for node in conversations.children()
+                if node.ext == "json"
+            ]
+        node = conversations.child(f"{record['id']}.json")
+        current = json.loads(node.read_text()) if node.exists() else None
+        if operation == "get_conversation":
+            return current
+        revision = current["revision"] if current else 0
+        if record["revision"] != revision:
+            raise RuntimeError("conversation revision conflict")
+        saved = dict(record, revision=revision + 1)
+        node.write_text(json.dumps(saved), encrypted=True)
+        return saved
 
     async def __call__(self, scope, receive, send):
         await Response("Not Found", status_code=404)(scope, receive, send)
@@ -88,12 +118,16 @@ class TelegramDemoConfiguration(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
         apps = cfg.applications()
         app = apps.application(code="telegram", app_class=TelegramBotApplication)
-        app.telegram(
-            persistence_route="registry/bots",
-            webhook_url=EnvResolver("KAJENN_TELEGRAM_WEBHOOK_URL"),
-        )
+        self.telegram_section(app)
         registry = apps.application(code="registry", app_class=DemoRegistry)
         registry.parameters(
             alpha_token=EnvResolver("KAJENN_TELEGRAM_ALPHA_TOKEN", default=None),
             beta_token=EnvResolver("KAJENN_TELEGRAM_BETA_TOKEN", default=None),
+        )
+
+    def telegram_section(self, app):
+        """Receive on the central server's public HTTPS mount."""
+        app.telegram(
+            persistence_route="registry/bots",
+            webhook_url=EnvResolver("KAJENN_TELEGRAM_WEBHOOK_URL"),
         )

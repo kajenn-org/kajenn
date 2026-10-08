@@ -15,6 +15,7 @@
 """Implementation tests for Telegram registration, webhook delivery and isolation."""
 
 import asyncio
+from pathlib import Path
 
 import httpx
 import pytest
@@ -259,3 +260,45 @@ def test_filesystem_receipts_are_separate_and_pruned(tmp_path):
     assert registry.bots("get_receipt", "telegram", {"task_id": "telegram-test"}) == 100
     registry.bots("prune_receipts", "telegram", {"now": 100})
     assert registry.bots("get_receipt", "telegram", {"task_id": "telegram-test"}) is None
+
+
+@pytest.mark.parametrize("url", ["", "http://example.com/telegram"])
+async def test_invalid_webhook_url_does_not_silently_enable_send_only(setup, url):
+    server, app, api = setup
+    app._webhook_url = url
+    with pytest.raises(ValueError, match="HTTPS"):
+        await register(app)
+    assert api.calls == []
+
+
+async def test_sender_does_not_use_receipts_or_execute_inbound_tasks(setup, monkeypatch):
+    server, central, api = setup
+    app = TelegramBotApplication(
+        code="sender", persistence_route="registry/bots", client=central.client
+    )
+    app.server = server
+    operations = []
+    persist = app._persist
+
+    async def registry_only(operation, record=None):
+        operations.append(operation)
+        assert operation in {"list", "save"}
+        return await persist(operation, record)
+
+    monkeypatch.setattr(app, "_persist", registry_only)
+    await app.on_startup()
+    await register(app)
+    assert operations == ["list", "save"]
+    with pytest.raises(RuntimeError, match="disabled"):
+        await app.deliver_update("alpha", "hello", "", 42)
+    assert [method for method, _ in api.calls] == ["getMe"]
+
+
+def test_local_recipe_omits_webhook_even_with_central_url_in_environment(monkeypatch):
+    monkeypatch.setenv("GENRO_STORAGE_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv("KAJENN_TELEGRAM_WEBHOOK_URL", "https://central.example.com/telegram")
+    recipe = Path(__file__).resolve().parents[2] / "examples/telegram_bot/local_config.py"
+    server = AsgiServer(config=recipe)
+    app = server.applications["telegram"]
+    assert app.webhook_url is None
+    assert app.persistence_route == "registry/bots"

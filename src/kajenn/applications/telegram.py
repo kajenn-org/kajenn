@@ -12,7 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Telegram application: registered RoutingClass bots, webhook ingress and replies.
+"""Telegram application: registered RoutingClass bots, outbound messages and webhooks.
+
+``webhook_url`` selects reception on this deployment. With an HTTPS mount URL,
+the application owns the bots' webhooks and executes incoming commands. Without
+it, this application only sends: registration, restoration and activation never
+set or delete a webhook, inbound HTTP returns 404, and task delivery is disabled.
+A sender can share the central bot's token while replies go to the central
+webhook. Send-only deployments need registration persistence but no task manager
+or receipt operations.
 
 One application owns an application-wide persistence route. That trusted route
 accepts ``operation``, ``application=<code>`` and ``record=<dict>``. ``list``
@@ -34,8 +42,12 @@ bot's command route with anonymous auth filters: provider credentials authentica
 delivery, never the sender's application identity. Protected commands stay closed.
 Handlers receive ``text`` (the command tail) and return text or None.
 
-This transport processes message commands only. Polling, identity onboarding,
-dialogs, media and automatic outbound retries are outside this contract.
+Message commands, conversation text and inline callbacks are staged before ACK.
+Conversation state and admission decisions use the same persistence route, with
+atomic revision checks; see telegram_conversations for its persistence contract.
+Bot grammars may inherit TelegramBotInstanceGrammar to opt into admin admission.
+Polling, application identity provisioning, media and automatic outbound retries
+are outside this contract.
 """
 
 from __future__ import annotations
@@ -45,6 +57,7 @@ import copy
 import hashlib
 import hmac
 import importlib
+import inspect
 import json
 import re
 import secrets
@@ -66,8 +79,9 @@ from ..routed_application import RoutedApplication
 from ..server import BaseServer
 from ..tasks import TaskManager, new_descriptor
 from ..types import Receive, Scope, Send
+from .telegram_conversations import _Conversations, _TelegramAPIError
 
-__all__ = ["TelegramBotApplication", "TelegramBotGrammar"]
+__all__ = ["TelegramBotApplication", "TelegramBotGrammar", "TelegramBotInstanceGrammar"]
 
 BOT_CODE = re.compile(r"[a-zA-Z][a-zA-Z0-9_-]{0,63}")
 UPDATE_RETENTION_SECONDS = 48 * 60 * 60
@@ -75,13 +89,26 @@ COMMAND = re.compile(r"/([a-z0-9_]{1,32})(?:@([a-zA-Z0-9_]+))?(?:\s+(.*))?", re.
 
 
 class TelegramBotGrammar(ApplicationGrammar):
-    """The Telegram application's registry and public webhook location."""
+    """The Telegram application's registry and optional public webhook location."""
 
     @element(sub_tags="", node_label="telegram")
     def telegram(
-        self, persistence_route: str | BagResolver, webhook_url: str | BagResolver
+        self, persistence_route: str | BagResolver, webhook_url: str | BagResolver | None = None
     ) -> None:
-        """One persistence route and the public HTTPS URL of this app's mount."""
+        """One persistence route; omit webhook_url for a send-only application."""
+
+
+class TelegramBotInstanceGrammar:
+    """Common instance options; bot grammars inherit and add their own elements."""
+
+    @element(sub_tags="", node_label="access")
+    def access(
+        self,
+        approval_required: bool = False,
+        admins: list[int] | None = None,
+        approval_policy: str = "first",
+    ) -> None:
+        """Optional admission by configured Telegram users: first decision or all approvals."""
 
 
 class _BotConfiguration(BuilderBase):
@@ -103,7 +130,7 @@ class _BotConfiguration(BuilderBase):
 
 
 class TelegramBotApplication(RoutedApplication):
-    """Own independently configured bot instances behind verified webhooks.
+    """Own bot instances, sending directly and optionally receiving webhooks.
 
     ``register_bot`` is a trusted in-process API, not a public HTTP route.
     ``client`` optionally supplies an httpx client (owned by the caller).
@@ -129,6 +156,7 @@ class TelegramBotApplication(RoutedApplication):
         self._registry_lock = asyncio.Lock()
         self._ingress_lock = asyncio.Lock()
         self._ready = asyncio.Event()
+        self._conversations = _Conversations(self)
         super().__init__(**kwargs)
 
     @property
@@ -136,8 +164,13 @@ class TelegramBotApplication(RoutedApplication):
         return self._persistence_route or self.config("telegram.persistence_route")
 
     @property
-    def webhook_url(self) -> str:
-        url = self._webhook_url or self.config("telegram.webhook_url")
+    def webhook_url(self) -> str | None:
+        """The public HTTPS mount URL, or None when this app only sends."""
+        url = self._webhook_url
+        if url is None:
+            url = self.config("telegram.webhook_url", default=None)
+        if url is None:
+            return None
         return self._validate_webhook_url(url)
 
     def _validate_webhook_url(self, url: str) -> str:
@@ -173,6 +206,10 @@ class TelegramBotApplication(RoutedApplication):
     def ready(self) -> asyncio.Event:
         return self._ready
 
+    @property
+    def conversations(self) -> _Conversations:
+        return self._conversations
+
     def get_bot(self, code: str) -> RoutingClass:
         return self.bots[code]
 
@@ -187,7 +224,7 @@ class TelegramBotApplication(RoutedApplication):
         return server
 
     async def _call(self, node: Any, **kwargs: Any) -> Any:
-        if asyncio.iscoroutinefunction(node):
+        if inspect.iscoroutinefunction(node):
             return await node(**kwargs)
         return await self._require_server().run_sync(lambda: node(**kwargs))
 
@@ -214,6 +251,7 @@ class TelegramBotApplication(RoutedApplication):
         if errors:
             raise ValueError(f"invalid bot configuration: {errors}")
         bot: RoutingClass = bot_class(application=self, code=record["code"], config=config)
+        self.conversations.validate_access(bot)
         bot.route.plug("auth")
         getattr(self._require_server(), "arm_router")(bot.route)
         return bot
@@ -226,29 +264,35 @@ class TelegramBotApplication(RoutedApplication):
                 json=payload,
             )
         except httpx.HTTPError:
-            raise RuntimeError(f"Telegram {method} transport failed") from None
+            raise _TelegramAPIError(f"Telegram {method} transport failed") from None
+        if response.status_code == 400 and method == "editMessageText":
+            description = response.json().get("description", "")
+            if description.startswith("Bad Request: message is not modified"):
+                return True
         if response.status_code != 200:
-            raise RuntimeError(f"Telegram {method} failed (HTTP {response.status_code})")
+            raise _TelegramAPIError(f"Telegram {method} failed (HTTP {response.status_code})")
         data = response.json()
         if not data.get("ok"):
-            raise RuntimeError(f"Telegram {method} failed")
+            raise _TelegramAPIError(f"Telegram {method} failed")
         return data["result"]
 
-    async def _activate(self, record: dict[str, Any], bot: RoutingClass, url: str) -> None:
+    async def _activate(self, record: dict[str, Any], bot: RoutingClass, url: str | None) -> None:
         code = record["code"]
         # Expose the verified endpoint before Telegram can deliver its first update.
         self.bots[code] = bot
         self.registrations[code] = record
+        if url is None:
+            return
         await self._telegram(
             record["token"],
             "setWebhook",
             url=f"{url}/{code}",
             secret_token=record["webhook_secret"],
-            allowed_updates=["message"],
+            allowed_updates=["message", "callback_query"],
         )
 
     async def activate_bot(self, code: str) -> RoutingClass:
-        """Retry webhook activation for a saved bot, preserving its credentials."""
+        """Activate a saved bot; only receivers configure a webhook."""
         async with self.registry_lock:
             bot = self.get_bot(code)
             await self._activate(self.registrations[code], bot, self.webhook_url)
@@ -269,7 +313,8 @@ class TelegramBotApplication(RoutedApplication):
 
         Failed persistence leaves the bot inactive. Failed webhook activation
         leaves its registration available for ``activate_bot`` or startup. Duplicate
-        codes and tokens are rejected; one Telegram token has only one webhook.
+        codes and tokens within this application are rejected. A separate
+        send-only application can use the same token without replacing its webhook.
         """
         async with self.registry_lock:
             if not BOT_CODE.fullmatch(code):
@@ -304,15 +349,18 @@ class TelegramBotApplication(RoutedApplication):
             return bot
 
     async def on_startup(self) -> None:
-        """Restore the registry and renew each webhook; a broken registry is fatal."""
+        """Restore bots, renewing webhooks only when reception is configured."""
         try:
             async with self.registry_lock:
                 self.ready.clear()
                 url = self.webhook_url
                 records = await self._persist("list")
-                await self._persist("prune_receipts", {"now": time.time()})
+                if url is not None:
+                    await self._persist("prune_receipts", {"now": time.time()})
                 for record in records:
                     await self._activate(record, self._build_bot(record), url)
+                    if url is not None:
+                        await self.conversations.restore_admissions(record["code"])
                 self.ready.set()
         except Exception as exc:
             raise FatalBootError("Telegram bot registry startup failed") from exc
@@ -324,6 +372,9 @@ class TelegramBotApplication(RoutedApplication):
             self._client = None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if self.webhook_url is None:
+            await Response("Not Found", status_code=404)(scope, receive, send)
+            return
         code = scope["path"].strip("/")
         if code not in self.registrations:
             await Response("Not Found", status_code=404)(scope, receive, send)
@@ -343,25 +394,56 @@ class TelegramBotApplication(RoutedApplication):
             if not isinstance(update, dict) or type(update.get("update_id")) is not int:
                 raise ValueError("invalid update")
             message = update.get("message", {})
+            query = update.get("callback_query")
             if not isinstance(message, dict):
                 raise ValueError("invalid message")
             text = message.get("text", "")
             if not isinstance(text, str):
                 raise ValueError("invalid text")
             command = COMMAND.fullmatch(text)
-            if command:
+            chat_id = 0
+            if text:
                 chat_id = message["chat"]["id"]
                 if type(chat_id) is not int:
                     raise ValueError("invalid chat")
+                sender = message.get("from", {})
+                if not isinstance(sender, dict):
+                    raise ValueError("invalid sender")
+            if query is not None:
+                if (
+                    not isinstance(query, dict)
+                    or not isinstance(query.get("id"), str)
+                    or not isinstance(query.get("data", ""), str)
+                    or type(query["from"]["id"]) is not int
+                ):
+                    raise ValueError("invalid callback")
+                callback_message = query.get("message")
+                if callback_message is not None and (
+                    not isinstance(callback_message, dict)
+                    or type(callback_message.get("message_id")) is not int
+                    or not isinstance(callback_message.get("chat"), dict)
+                    or type(callback_message["chat"].get("id")) is not int
+                ):
+                    raise ValueError("invalid callback message")
         except (ValueError, KeyError, TypeError):
             await Response("Bad Request", status_code=400)(scope, receive, send)
             return
-        if command and (not command[2] or command[2].lower() == record["username"].lower()):
+        addressed = (
+            not command or not command[2] or command[2].lower() == record["username"].lower()
+        )
+        if query is not None or (text and addressed):
             digest = hashlib.sha256(
                 f"{self.code}:{code}:{update['update_id']}".encode()
             ).hexdigest()
             task_id = f"telegram-{digest}"
-            await self._stage_update(task_id, code, command[1], command[3] or "", chat_id)
+            await self._stage_update(
+                task_id,
+                code,
+                command[1] if command else "",
+                command[3] or "" if command else text,
+                chat_id,
+                update,
+            )
         await Response("OK")(scope, receive, send)
 
     async def _stage_update(
@@ -371,6 +453,7 @@ class TelegramBotApplication(RoutedApplication):
         command: str,
         text: str,
         chat_id: int,
+        update: dict[str, Any] | None = None,
     ) -> None:
         """Persist the task and receipt before ACK; serialize concurrent deliveries.
 
@@ -401,6 +484,7 @@ class TelegramBotApplication(RoutedApplication):
                         "command": command,
                         "text": text,
                         "chat_id": chat_id,
+                        "update": update,
                     },
                 )
             await self._persist(
@@ -412,10 +496,28 @@ class TelegramBotApplication(RoutedApplication):
             )
 
     @route()
-    async def deliver_update(self, bot_code: str, command: str, text: str, chat_id: int) -> None:
+    async def deliver_update(
+        self,
+        bot_code: str,
+        command: str,
+        text: str,
+        chat_id: int,
+        update: dict[str, Any] | None = None,
+    ) -> None:
         """Task entry point; resolve only public commands, then deliver their text."""
+        if self.webhook_url is None:
+            raise RuntimeError("Telegram webhook reception is disabled")
         await self.ready.wait()
         bot = self.get_bot(bot_code)
+        if update is not None and "callback_query" in update:
+            await self.conversations.handle_callback(bot_code, update["callback_query"])
+            return
+        message = (update or {}).get("message", {"chat": {"id": chat_id}})
+        if not await self.conversations.admit_sender(bot_code, message):
+            return
+        if not command:
+            await self.conversations.handle_message(bot_code, message)
+            return
         try:
             node = bot.route.node(command, errors=self.ROUTER_ERRORS)
             result = await self._call(node, text=text)
@@ -426,10 +528,86 @@ class TelegramBotApplication(RoutedApplication):
                 raise TypeError("Telegram command handlers must return str or None")
             await self.send_message(bot_code, chat_id, result)
 
-    async def send_message(self, bot_code: str, chat_id: int, text: str) -> Any:
+    async def send_message(
+        self, bot_code: str, chat_id: int, text: str, *, reply_markup: dict[str, Any] | None = None
+    ) -> Any:
         """Send a plain-text message to a known Telegram chat."""
         if not 1 <= len(text) <= 4096:
             raise ValueError("Telegram text must contain between 1 and 4096 characters")
-        return await self._telegram(
-            self.registrations[bot_code]["token"], "sendMessage", chat_id=chat_id, text=text
-        )
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        return await self._telegram(self.registrations[bot_code]["token"], "sendMessage", **payload)
+
+    async def create_conversation(
+        self,
+        bot_code: str,
+        *,
+        participants: list[dict[str, Any]],
+        route: str,
+        context: dict[str, Any] | None = None,
+        expires_at: float | None = None,
+    ) -> dict[str, Any]:
+        """Persist an independent conversation; participants include user_id and chat_id."""
+        async with self.conversations.lock:
+            return await self.conversations.create_record(
+                bot_code, participants, route, context, expires_at
+            )
+
+    async def get_conversation(self, bot_code: str, conversation_id: str) -> dict[str, Any]:
+        """Read one conversation through the application persistence route."""
+        async with self.conversations.lock:
+            record = await self.conversations.get_record(bot_code, conversation_id)
+            await self.conversations.expire_record(record)
+            return record
+
+    async def send_conversation_message(
+        self,
+        bot_code: str,
+        conversation_id: str,
+        user_id: int,
+        text: str,
+        *,
+        buttons: dict[str, str] | None = None,
+        chat_id: int | None = None,
+    ) -> Any:
+        """Send to one participant; buttons map labels to routed action names."""
+        async with self.conversations.lock:
+            record = await self.conversations.get_record(bot_code, conversation_id)
+            await self.conversations.expire_record(record)
+            if record["state"] != "open":
+                raise ValueError("conversation is closed")
+            return await self.conversations.send_record_message(
+                record, user_id, text, buttons, chat_id
+            )
+
+    async def update_conversation_context(
+        self, bot_code: str, conversation_id: str, context: dict[str, Any], *, revision: int
+    ) -> dict[str, Any]:
+        """Replace context only when the caller's snapshot is still current."""
+        json.dumps(context)
+        async with self.conversations.lock:
+            record = await self.conversations.get_record(bot_code, conversation_id)
+            await self.conversations.expire_record(record)
+            if record["kind"] != "conversation" or record["state"] != "open":
+                raise ValueError("context updates require an open general conversation")
+            if record["revision"] != revision:
+                raise ValueError("conversation revision conflict")
+            record["context"] = copy.deepcopy(context)
+            await self.conversations.save_record(record)
+            return record
+
+    async def close_conversation(
+        self, bot_code: str, conversation_id: str, *, state: str = "closed"
+    ) -> None:
+        """Conclude or cancel a general conversation; admission decisions use admin callbacks."""
+        if state not in ("closed", "cancelled"):
+            raise ValueError("state must be closed or cancelled")
+        async with self.conversations.lock:
+            record = await self.conversations.get_record(bot_code, conversation_id)
+            await self.conversations.expire_record(record)
+            if record["kind"] != "conversation":
+                raise ValueError("admission requires an administrator decision")
+            if record["state"] == "open":
+                record["state"] = state
+                await self.conversations.save_record(record)

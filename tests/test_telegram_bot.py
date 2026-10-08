@@ -17,7 +17,10 @@
 import asyncio
 
 from examples.telegram_bot import DemoBot
-from tests.telegram.support import webhook
+from kajenn import AsgiServer
+from kajenn.applications.telegram import TelegramBotApplication
+from tests.storage_support import site_mounts
+from tests.telegram.support import Registry, drain, register, webhook
 
 pytest_plugins = ["tests.telegram.support"]
 
@@ -41,3 +44,47 @@ async def test_registered_example_replies_after_webhook_ack(setup):
         assert api.calls[-1] == ("sendMessage", {"chat_id": 42, "text": "Welcome [alpha]"})
     finally:
         await server.tasks.stop()
+
+
+async def test_local_sender_leaves_central_webhook_and_replies_on_central(setup, tmp_path):
+    central_server, central, api = setup
+    await register(central)
+    central_webhook = [payload for method, payload in api.calls if method == "setWebhook"]
+    (tmp_path / "local").mkdir()
+    local_server = AsgiServer(
+        applications=[
+            (Registry, {"code": "registry"}),
+            (
+                TelegramBotApplication,
+                {
+                    "code": "telegram",
+                    "persistence_route": "registry/bots",
+                    "client": central.client,
+                },
+            ),
+        ],
+        storage=site_mounts(tmp_path / "local"),
+        tasks=False,
+    )
+    local = local_server.applications["telegram"]
+    await local.on_startup()
+    await register(local)
+    await local.send_message("alpha", 42, "You have a new PR")
+    assert api.calls[-1] == ("sendMessage", {"chat_id": 42, "text": "You have a new PR"})
+    assert (await webhook(local_server, local)).status_code == 404
+    await local.activate_bot("alpha")
+    await local.on_shutdown()
+
+    restored = TelegramBotApplication(
+        code="telegram", persistence_route="registry/bots", client=central.client
+    )
+    restored.server = local_server
+    await restored.on_startup()
+    await restored.send_message("alpha", 42, "Another PR")
+    await restored.on_shutdown()
+    assert [payload for method, payload in api.calls if method == "setWebhook"] == central_webhook
+    assert {method for method, _ in api.calls} == {"getMe", "setWebhook", "sendMessage"}
+
+    assert (await webhook(central_server, central, text="/echo thanks")).status_code == 200
+    await drain(central_server)
+    assert api.calls[-1] == ("sendMessage", {"chat_id": 42, "text": "thanks"})

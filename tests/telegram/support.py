@@ -40,6 +40,7 @@ class Registry(RoutedApplication):
     def __init__(self, **kwargs):
         self.records = {}
         self.receipts = {}
+        self.conversations = {}
         self.fail = False
         super().__init__(**kwargs)
 
@@ -64,12 +65,36 @@ class Registry(RoutedApplication):
         if operation == "save_receipt":
             self.receipts.setdefault(application, {})[record["task_id"]] = record["expires_at"]
             return None
+        if operation == "list_conversations":
+            return copy.deepcopy(
+                [
+                    r
+                    for (a, b, _), r in self.conversations.items()
+                    if a == application and b == record["bot_code"]
+                ]
+            )
+        if operation == "get_conversation":
+            return copy.deepcopy(
+                self.conversations.get((application, record["bot_code"], record["id"]))
+            )
+        if operation == "save_conversation":
+            key = (application, record["bot_code"], record["id"])
+            current = self.conversations.get(key)
+            revision = current["revision"] if current else 0
+            if record["revision"] != revision:
+                raise RuntimeError("conversation revision conflict")
+            saved = copy.deepcopy(record)
+            saved["revision"] += 1
+            self.conversations[key] = saved
+            return copy.deepcopy(saved)
         raise ValueError(operation)
 
 
 class TelegramAPI:
     def __init__(self):
         self.calls = []
+        self.messages = {}
+        self.fail_edits = set()
         self.fail_webhook = False
 
     def respond(self, request):
@@ -79,6 +104,12 @@ class TelegramAPI:
         if method == "getMe":
             token_id = request.url.path.split("/")[1].split(":")[0][3:]
             result = {"id": int(token_id), "is_bot": True, "username": f"bot{token_id}"}
+        elif method == "sendMessage":
+            message_id = len(self.messages) + 1
+            self.messages[message_id] = payload
+            result = {"message_id": message_id, "chat": {"id": payload["chat_id"]}}
+        elif method == "editMessageText" and payload["chat_id"] in self.fail_edits:
+            return httpx.Response(400, json={"ok": False})
         elif method == "setWebhook" and self.fail_webhook:
             return httpx.Response(400, json={"ok": False, "description": "failed"})
         else:
