@@ -2,7 +2,8 @@ Middleware
 ==========
 
 The middleware base and mixin, and the shipped middleware: errors, logging,
-CORS, authentication, session. Hidden paths and ``.well-known`` are not a
+CORS, session. Authentication is not a middleware since 0.4.0 — the execution
+point authenticates on demand; see :doc:`../guides/authentication`. Hidden paths and ``.well-known`` are not a
 middleware — they are the server's own demux rule; see
 :doc:`../guides/hidden-paths`.
 
@@ -23,10 +24,6 @@ middleware — they are the server's own demux rule; see
    :show-inheritance:
 
 .. automodule:: kajenn.middleware.cors
-   :members:
-   :show-inheritance:
-
-.. automodule:: kajenn.middleware.authentication
    :members:
    :show-inheritance:
 
