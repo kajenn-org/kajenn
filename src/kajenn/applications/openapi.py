@@ -25,10 +25,12 @@ introspection endpoints:
 - ``_meta/docs`` — a Swagger-UI page pointing at ``_meta/schema_json``;
 - ``_meta/index`` — an HTML splash linking to the docs.
 
-The schema is built STANDALONE from the app's own router
-(``router_openapi(app.route)``): it depends on no other application of the
-site. The mounted routing class is linked as an eager ``instance`` branch, so
-it inherits the app router's plugins — pydantic among them — and its handler
+The schema is built STANDALONE from the app's own router: it depends on no
+other application of the site. It reads the application's ``discover`` with
+the schema request's scope, so it lists what that request may execute — the
+same channel and identity filters ``execute`` resolves with. The mounted
+routing class is linked as an eager ``instance`` branch, so it inherits the
+app router's plugins — pydantic among them — and its handler
 signatures are captured into the neutral ``params``/``result`` blocks the
 ``OpenAPITranslator`` reads; in direct mode the same plugins reach the app's
 own router through the server's plugin arming (``PluginMixin`` config).
@@ -54,7 +56,7 @@ from typing import Any, ClassVar
 from genro_routes import RoutingClass, route
 
 from ..exceptions import HTTPNotFound
-from ..plugins.openapi import router_openapi
+from ..plugins.openapi import OpenAPITranslator
 from ..routed_application import RoutedApplication
 
 __all__ = ["OpenApiApplication"]
@@ -118,15 +120,6 @@ class OpenApiApplication(RoutedApplication):
             for operation in path_item.values():
                 operation["responses"][status] = {"description": "Invalid argument values"}
 
-    def schema_filters(self) -> dict[str, Any]:
-        """Node filters forwarded to ``router_openapi`` when building the schema.
-
-        Empty by default (the whole router). A subclass whose router carries the
-        ``channel`` plugin overrides this to select the REST-facing channel so
-        the schema stays visible (the ``McpOpenApiApplication`` bridge).
-        """
-        return {}
-
     def _mount_routing_class(self, routing_class: RoutingClass) -> None:
         """Mount the routing class under ``api_name`` as an eager branch.
 
@@ -148,11 +141,17 @@ class OpenApiMeta(RoutingClass):
         self.application = application
 
     @route()
-    def schema_json(self) -> dict[str, Any]:
-        """Return the OpenAPI 3.1 document for the app's routes (standalone)."""
+    async def schema_json(self, _request=None) -> dict[str, Any]:
+        """Return the OpenAPI 3.1 document of the routes this request may execute.
+
+        The tree is the application's ``discover`` on the request's scope: the
+        channel of the request and the caller's tags filter it as they filter
+        execution. ``_request`` is injected by ``bind_kwargs`` and left
+        unannotated, out of the schema.
+        """
         app = self.application
         info = app.api_info
-        paths_data = router_openapi(app.route, **app.schema_filters())
+        paths_data = OpenAPITranslator.translate_openapi(await app.discover(_request.scope))
         app.declare_validation_error(paths_data.get("paths") or {})
         return {
             "openapi": "3.1.0",

@@ -239,8 +239,9 @@ class RoutedApplication(BaseApplication, RoutingClass):
         KajennBus through ``__call__``. The resolved node is left on
         ``request.node``. An async handler runs on the loop, a sync one through
         ``server.run_sync`` with ``route_cleanup`` after it on the same thread.
-        A scope without ``auth`` is authenticated through ``server.authenticate``
-        before resolution: an invalid credential raises ``HTTPUnauthorized`` (401).
+        A scope without ``auth`` is authenticated before resolution
+        (``authenticate_scope``, the step ``discover`` shares): an invalid
+        credential raises ``HTTPUnauthorized`` (401).
 
         Raises the mapped ``ROUTER_ERRORS`` exception when resolution fails. A
         call that does not fit the handler signature surfaces as
@@ -249,11 +250,7 @@ class RoutedApplication(BaseApplication, RoutingClass):
         strict, 422 FastAPI). Both keep the original error as ``__cause__``.
         What the handler body raises is mapped to neither: it propagates.
         """
-        server = self.server
-        if server is None:
-            raise RuntimeError(f"{type(self).__name__} dispatch requires an owning server")
-        if request.scope.get("auth") is None:
-            request.scope["auth"] = await server.authenticate(request.scope)
+        server = await self.authenticate_scope(request.scope)
         errors = {
             **self.ROUTER_ERRORS,
             "signature_error": _HandlerSignatureInvalid,
@@ -274,6 +271,37 @@ class RoutedApplication(BaseApplication, RoutingClass):
             raise HTTPException(
                 self.validation_error_status, f"Invalid argument values: {detail}"
             ) from exc
+
+    async def authenticate_scope(self, scope: Scope) -> Any:
+        """Put the request identity on ``scope["auth"]`` when it is missing; return the server.
+
+        The step ``execute`` and ``discover`` share: a scope without ``auth``
+        is authenticated through ``server.authenticate`` — an invalid
+        credential raises ``HTTPUnauthorized`` (401), no credential leaves
+        ``None`` (anonymous). A scope that already carries an identity is left
+        as it is.
+        """
+        server = self.server
+        if server is None:
+            raise RuntimeError(f"{type(self).__name__} dispatch requires an owning server")
+        if scope.get("auth") is None:
+            scope["auth"] = await server.authenticate(scope)
+        return server
+
+    async def discover(self, scope: Scope, **kwargs: Any) -> dict[str, Any]:
+        """The neutral ``nodes()`` tree this request may execute.
+
+        The discovery every format reads (the OpenAPI schema, the MCP
+        ``tools/list``): the scope is authenticated as ``execute`` does it,
+        then the router tree is filtered by the same ``auth_filters`` the
+        execution resolves with — the request's channel and the caller's
+        tags — with ``forbidden=False``, so an entry the caller may not
+        execute is not listed. ``kwargs`` reach ``nodes()`` unchanged
+        (``basepath``, ``lazy``, ``pattern``).
+        """
+        await self.authenticate_scope(scope)
+        filters: dict[str, Any] = self.auth_filters(scope)
+        return self.route.nodes(forbidden=False, **kwargs, **filters)
 
     def auth_filters(self, scope: Scope) -> dict[str, str]:
         """Filters for node resolution, from the scope identity and channel.

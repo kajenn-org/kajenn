@@ -17,12 +17,15 @@
 The ``tools`` branch of :class:`~kajenn.mcp.engine.McpDispatcher`. Two
 ``@route`` methods, ``list`` and ``call``, and everything that builds their
 answers; the engine is read for its configuration (``router``, ``channel``,
-``tool_separator``, ``invoke``) and nothing else. Every route takes the
-protocol signature ``(params, auth_tags)``.
+``tool_separator``, ``discover``, ``invoke``) and nothing else. Every route
+takes the protocol signature ``(params, auth_tags)``.
 
-- ``list`` walks ``router.nodes(forbidden=False, channel_channel=...)`` so
-  only the entries reachable on the engine's channel are advertised. Tool
-  names join the router path with ``tool_separator`` (default ``"."``, a
+- ``list`` walks the tree the engine's ``discover`` callback returns — a host
+  application's ``discover`` (the request's channel and the caller's tags, the
+  filters its execution resolves with), the default on the engine's router
+  with its channel and ``auth_tags`` — so only the entries the caller can call
+  on this channel are advertised. Tool names join the router path with
+  ``tool_separator`` (default ``"."``, a
   character illegal in Python identifiers, so ``sub.ping`` <-> ``sub/ping``
   round-trips losslessly). Descriptors read ONLY the neutral blocks cached by
   genro-routes' pydantic plugin at decoration time: ``inputSchema`` from the
@@ -93,16 +96,17 @@ class McpTools(RoutingClass):
         self.engine = engine
 
     @route(name="list")
-    def tools_list(self, params: dict, auth_tags: Any = None) -> dict:
-        """Enumerate the tools visible on this channel.
+    async def tools_list(self, params: dict, auth_tags: Any = None) -> dict:
+        """Enumerate the tools the caller can call on this channel.
 
-        ``forbidden=False`` excludes entries the channel does not expose, so
-        the tool list carries only what is reachable on this channel.
+        The tree comes from the engine's ``discover``: entries the channel does
+        not expose or the caller's identity does not open are not in it.
         """
-        router = self.engine.router
-        if router is None:
+        if self.engine.router is None:
             return {"tools": []}
-        nodes = router.nodes(forbidden=False, channel_channel=self.engine.channel)
+        nodes = self.engine.discover(auth_tags)
+        if inspect.isawaitable(nodes):
+            nodes = await nodes
         tools: list[dict] = []
         self._collect_tools(nodes, "", tools)
         return {"tools": tools}
