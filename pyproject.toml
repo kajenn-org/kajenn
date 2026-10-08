@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kajenn"
-version = "0.4.0"
+version = "0.4.1"
 description = "ASGI server with sessions, authentication, websocket channels, tasks, MCP, storage and a base server application included"
 readme = "README.md"
 requires-python = ">=3.11"
