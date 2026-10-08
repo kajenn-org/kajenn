@@ -115,6 +115,9 @@ curl -X POST http://127.0.0.1:8000/mcp \
 - Only routes carrying `channel_channels` that includes `"mcp"` appear as tools.
   A plain `@route()` is not offered as an MCP tool. Channel metadata does not
   prevent HTTP access; authorization rules govern access restrictions.
+- `tools/list` lists the tools the caller can call: the channel `mcp` and the
+  caller's identity filter the list as they filter `tools/call`. A tool with an
+  `auth_rule` appears only to a caller whose tags match it.
 - `GET /mcp` (the SSE push stream) is `405` unless the server has tasks armed —
   see the [tasks guide](tasks.md).
 - The MCP JSON-RPC lives on `/mcp` (segment configurable via
