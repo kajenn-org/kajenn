@@ -138,12 +138,24 @@ class McpTransport:
             tool_separator=self._tool_separator,
             channel=self.channel,
             invoke=self._invoke_tool,
+            discover=self._discover_tools,
         )
 
     def plug_if_absent(self, router: Router, name: str, **options: Any) -> None:
         """Plug ``name`` on ``router`` unless already attached (guards double-plug)."""
         if name not in {plugin.name for plugin in router.iter_plugins()}:
             router.plug(name, **options)
+
+    async def _discover_tools(self, auth_tags: Any) -> dict:
+        """The tool tree of the MCP POST, through the application's ``discover``.
+
+        The scope is the MCP POST's own: channel ``mcp`` and the identity the
+        POST came with — the filters a ``tools/call`` on the same POST executes
+        with. ``tool_root`` is the subtree the engine's router sits at.
+        ``auth_tags`` is not read: the identity is on the scope.
+        """
+        scope = self.mcp_request.get().scope
+        return await self.application.discover(scope, basepath=self.tool_root or None)
 
     async def _invoke_tool(self, path: str, arguments: dict, auth_tags: Any) -> Any:
         """Run a tool through the application's ``execute``, as a request of its own.
@@ -427,10 +439,6 @@ class McpOpenApiApplication(OpenApiApplication):
     def mcp_name_segment(self) -> str:
         """Path segment under which the MCP JSON-RPC face is served."""
         return self._mcp_segment
-
-    def schema_filters(self) -> dict[str, Any]:
-        """Build the OpenAPI schema over the REST channel (the channel plugin is armed)."""
-        return {"channel_channel": self.rest_channel}
 
     def _mount_routing_class(self, routing_class: RoutingClass) -> None:
         """Mount the API for OpenAPI, then remember its router for the MCP engine."""

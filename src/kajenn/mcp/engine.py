@@ -118,6 +118,11 @@ class McpEngine:
             Host applications pass their own to run the call through their
             execution point; the default resolves on ``router`` and calls the
             node directly.
+        discover: callback ``(auth_tags) -> nodes`` returning the neutral
+            ``nodes()`` tree ``tools/list`` advertises; ``tools/list`` awaits an
+            awaitable result. Host applications pass their own to list through
+            their ``discover``, the filters their execution resolves with; the
+            default walks ``router`` on the engine's channel and ``auth_tags``.
     """
 
     SUPPORTED_VERSIONS: tuple[str, ...] = ("2025-11-25", "2025-06-18", "2025-03-26")
@@ -131,6 +136,7 @@ class McpEngine:
         tool_separator: str = ".",
         channel: str = "mcp",
         invoke: Callable[[str, dict, Any], Any] | None = None,
+        discover: Callable[[Any], Any] | None = None,
     ) -> None:
         self.router = router
         self.name = name
@@ -138,6 +144,7 @@ class McpEngine:
         self.tool_separator = tool_separator
         self.channel = channel
         self.invoke = invoke or self._default_invoke
+        self.discover = discover or self._default_discover
         self.mcp_dispatcher = McpDispatcher(self)
 
     def _default_invoke(self, path: str, arguments: dict, auth_tags: Any) -> Any:
@@ -156,6 +163,20 @@ class McpEngine:
             channel_channel=self.channel,
         )
         return node(**arguments)
+
+    def _default_discover(self, auth_tags: Any) -> dict:
+        """The router tree on the engine's channel, filtered by ``auth_tags``.
+
+        ``forbidden=False``: an entry the channel does not expose or the tags
+        do not open is not in the tree — the same filters the default invoke
+        resolves with.
+        """
+        assert self.router is not None  # tools/list answers an empty list before
+        return self.router.nodes(
+            forbidden=False,
+            auth_tags=",".join(auth_tags) if isinstance(auth_tags, list) else auth_tags,
+            channel_channel=self.channel,
+        )
 
     async def dispatch(self, payload: Any, auth_tags: Any = None) -> dict:
         """Validate the envelope, resolve ``method`` on the tree, answer.

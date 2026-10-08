@@ -97,6 +97,10 @@ UI.
   set title, version and description in the application’s `openapi_info` class
   attribute.
 - `GET /_meta/docs` returns `404` when the app was created with `docs="off"`.
+- `GET /_meta/schema_json` describes the routes the caller can execute: the
+  request's channel and the caller's identity filter the schema as they filter
+  execution. A route with an `auth_rule` appears only to a caller whose tags
+  match it; an invalid credential answers `401`.
 - The `_server` app has its own OpenAPI view of the system endpoints at
   `/_server/_meta/schema_json` and `/_server/_meta/docs` — separate from your
   app's.
