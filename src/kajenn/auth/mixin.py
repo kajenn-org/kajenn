@@ -17,11 +17,8 @@
 ``AuthMixin`` is composed BEFORE ``SessionMixin``/``MiddlewareMixin``/
 ``BaseServer`` (``class S(AuthMixin, SessionMixin, MiddlewareMixin,
 BaseServer)``). Its cooperative ``__init__`` peels ``auth=`` (the config dict;
-``None`` builds an ``AuthCore`` with no header backends armed) and ARMS
-``AuthMiddleware`` by injecting ``{"auth": True}`` into the ``middleware`` config
-it forwards along the cooperative chain — the same mechanism ``SessionMixin``
-uses, so composing the mixins arms header auth with no user action while an
-explicit ``middleware={"auth": False}`` still wins.
+``None`` builds an ``AuthCore`` with no header backends armed), ``channels=``
+(the route that authenticates each channel) and ``credential_cache_ttl=``.
 
 It also wires the server's identity stores. ``users=`` and ``tokens=`` each take
 the store DESCRIPTOR the configuration declares — ``store_class`` (``FileUserStore``
@@ -38,21 +35,24 @@ and no bootstrap identity is written. Authentication belongs to the
 applications, and a deployment that needs a first identity declares the
 store class that carries it.
 
-It overrides the §4 contract method ``authenticate(request)`` with the §5.5
-identity precedence: an ``Authorization`` header wins (API-first) — its
-``AuthCore`` verdict is an ``Avatar`` or a raised ``HTTPUnauthorized``; with no
-header the request's session avatar is used. "Nobody" is ``None`` uniformly:
-an anonymous session carries ``avatar is None`` and ``self.session(request)``
-returns ``None`` unchanged when ``SessionMixin`` is absent, so the precedence
-degrades to ``None`` in both cases. In the middleware chain
-``SessionMiddleware`` (order 400) runs OUTSIDE ``AuthMiddleware`` (order 450),
-so the session is already on the scope when the fallback runs.
+It overrides the coroutine ``authenticate(scope)``, which the execution point
+(``RoutedApplication.execute``) and the WSX handshake await: the
+``Authorization`` header, when presented, verified through the channel's
+``authentication_route`` — an ``Avatar`` or a raised ``HTTPUnauthorized`` —
+else the session's root avatar when the scope carries one, else ``None``. ``SessionMiddleware`` (order 400)
+has already put the session on an ``http`` scope when the execution point runs.
 """
 
 from __future__ import annotations
 
+import hashlib
+from time import monotonic
 from typing import Any
 
+from ..exceptions import HTTPException, HTTPUnauthorized
+from ..kbus import KBusCallError, KBusCallFailed
+from ..middleware.base import headers_dict
+from ..session.avatar import Avatar
 from .api_key_store import ApiKeyStore, FileApiKeyStore
 from .core import AuthCore
 from .user_store import FileUserStore, UserStore
@@ -74,17 +74,93 @@ class AuthMixin:
     class that carries it.
     """
 
+    DEFAULT_AUTHENTICATION_ROUTE = "/_server/auth/authenticate"
+
     def __init__(self, **kwargs: Any) -> None:
         auth: dict[str, Any] | None = kwargs.pop("auth", None)
         users = kwargs.pop("users", None)
         tokens = kwargs.pop("tokens", None)
-        middleware: dict[str, Any] = dict(kwargs.get("middleware") or {})
-        middleware.setdefault("auth", True)
-        kwargs["middleware"] = middleware
+        channels: dict[str, dict[str, str]] = kwargs.pop("channels", None) or {}
+        credential_cache_ttl: float = kwargs.pop("credential_cache_ttl", 300.0)
         super().__init__(**kwargs)
         self._user_store = self._build_user_store(users)
         self._api_key_store = self._build_api_key_store(tokens)
         self._auth_core = AuthCore(**(auth or {}), api_key_store=self._api_key_store)
+        self._channels = channels
+        self._credential_cache_ttl = credential_cache_ttl
+        self._credential_cache: dict[tuple[str, str], tuple[float, Avatar]] = {}
+        self._credential_cache_generation = 0
+
+    @property
+    def channels(self) -> dict[str, dict[str, str]]:
+        """The configured channels: ``{name: {"authentication_route": path}}``."""
+        return self._channels
+
+    @property
+    def credential_cache_ttl(self) -> float:
+        """Seconds a verified credential stays cached; ``0`` disables the cache."""
+        return self._credential_cache_ttl
+
+    def authentication_route(self, channel: str) -> str:
+        """The route verifying a credential presented on ``channel``."""
+        configured = self.channels.get(channel)
+        if configured is None:
+            return self.DEFAULT_AUTHENTICATION_ROUTE
+        return configured["authentication_route"]
+
+    async def authenticate_credential(self, credential: str, channel: str) -> Avatar:
+        """Verify ``credential`` through the channel's route; cache the ``Avatar`` by TTL.
+
+        The route answers ``{identity, tags, data}``. A 401 from it, or no
+        application answering it (404), is ``HTTPUnauthorized`` with the
+        ``WWW-Authenticate: Bearer`` challenge; a route that cannot be reached
+        (a lost link, a timeout, an error REPLY without status) or that fails
+        is a 503; any other error status propagates as ``HTTPException``.
+        Failures are not cached, and an answer that arrives after
+        ``forget_credential``/``forget_all_credentials`` ran is not cached
+        either: a key revoked during the verification is refused next time.
+        """
+        key = (hashlib.sha256(credential.encode()).hexdigest(), channel)
+        cached = self._credential_cache.get(key)
+        if cached is not None and cached[0] > monotonic():
+            return cached[1]
+        generation = self._credential_cache_generation
+        challenge = [(b"www-authenticate", b"Bearer")]
+        try:
+            answer = await self.kbus_call(
+                self.authentication_route(channel), {"credential": credential, "channel": channel}
+            )
+        except KBusCallError as error:
+            if error.status == 401:
+                raise HTTPUnauthorized(str(error.error), headers=challenge) from error
+            if error.status == 404:
+                raise HTTPUnauthorized(
+                    f"no authentication route for channel {channel}", headers=challenge
+                ) from error
+            if error.status is None or error.status >= 500:
+                raise HTTPException(503, f"authentication route failed: {error.error}") from error
+            raise HTTPException(error.status, str(error.error)) from error
+        except (KBusCallFailed, TimeoutError) as error:
+            raise HTTPException(503, f"authentication route unreachable: {error}") from error
+        avatar = Avatar(answer["identity"], answer["tags"])
+        for name, value in (answer.get("data") or {}).items():
+            avatar.data[name] = value
+        if self.credential_cache_ttl > 0 and generation == self._credential_cache_generation:
+            self._credential_cache[key] = (monotonic() + self.credential_cache_ttl, avatar)
+        return avatar
+
+    def forget_credential(self, credential: str) -> None:
+        """Drop the cached avatars of ``credential`` for every channel."""
+        digest = hashlib.sha256(credential.encode()).hexdigest()
+        self._credential_cache_generation += 1
+        for key in list(self._credential_cache):  # a snapshot: the loop may be writing
+            if key[0] == digest:
+                self._credential_cache.pop(key, None)
+
+    def forget_all_credentials(self) -> None:
+        """Drop every cached avatar: a revoked or deleted api key is refused at once."""
+        self._credential_cache_generation += 1
+        self._credential_cache.clear()
 
     @property
     def auth_core(self) -> AuthCore:
@@ -137,16 +213,20 @@ class AuthMixin:
             )
         return storage
 
-    def authenticate(self, request: Any) -> Any:
-        """Resolve the request identity: header credentials win, else the session.
+    async def authenticate(self, scope: Any) -> Any:
+        """Resolve the identity of ``scope``: a presented credential first, then the session.
 
-        The ``Authorization`` header is API-first — a valid credential yields an
-        ``Avatar``, an invalid one raises ``HTTPUnauthorized`` (no fallback).
-        Without a header, the session avatar is returned (``None`` when no
-        session capability is composed or the session is anonymous).
+        An ``Authorization`` header is always verified, through the route of the
+        scope's channel (``authenticate_credential``): an invalid one raises
+        ``HTTPUnauthorized`` on any route, a session or not. Without a header
+        the session's root avatar answers when ``scope["session"]`` carries
+        one; otherwise ``None``. A scope without ``kajenn.channel`` is read as
+        the REST face.
         """
-        avatar = self.auth_core.authenticate(request)
-        if avatar is not None:
-            return avatar
-        session = self.session(request)
+        credential = headers_dict(scope).get("authorization")
+        if credential:
+            return await self.authenticate_credential(
+                credential, scope.get("kajenn.channel", "rest")
+            )
+        session = self.session(scope)
         return session.avatar() if session is not None else None

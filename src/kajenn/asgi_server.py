@@ -197,6 +197,7 @@ class AsgiServer(
         for name, value in (
             ("middleware", config.middleware_config()),
             ("auth", config.auth_entries()),
+            ("channels", config.channels()),
             ("plugins", config.plugins_config()),
         ):
             if value is not None:

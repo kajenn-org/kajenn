@@ -61,7 +61,7 @@ CORS handles preflight and response headers. Wellknown raises 404 for its
 reserved paths. Logging records request outcome and duration; its `level`
 selects the emitted severity, and an unknown level falls back to INFO.
 
-Claim anchors: [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#L55), [`AuthMiddleware`](../../../src/kajenn/middleware/authentication.py#L39).
+Claim anchors: [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#L55).
 
 Behavior evidence: [`CORSMiddleware`](../../../src/kajenn/middleware/cors.py#L43), [`LoggingMiddleware`](../../../src/kajenn/middleware/logging.py#L37).
 
@@ -82,7 +82,6 @@ Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#L193), [`get_middlew
 - [src/kajenn/middleware/errors.py](../../../src/kajenn/middleware/errors.py)
 - [src/kajenn/middleware/cors.py](../../../src/kajenn/middleware/cors.py)
 - [src/kajenn/middleware/session.py](../../../src/kajenn/middleware/session.py)
-- [src/kajenn/middleware/authentication.py](../../../src/kajenn/middleware/authentication.py)
 - [src/kajenn/middleware/logging.py](../../../src/kajenn/middleware/logging.py)
 - [src/kajenn/wsx.py](../../../src/kajenn/wsx.py)
 - [tests/core/test_middleware.py](../../../tests/core/test_middleware.py)

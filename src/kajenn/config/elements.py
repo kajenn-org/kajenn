@@ -95,8 +95,8 @@ class AsgiServerGrammar(TaskGrammar):
 
     @element(
         sub_tags=(
-            "site[0:1],server[0:1],middleware[0:1],authentication[0:1],storage[0:1],"
-            "applications[0:1],databases[0:1],plugins[0:1],openapi[0:1]"
+            "site[0:1],server[0:1],middleware[0:1],authentication[0:1],channels[0:1],"
+            "storage[0:1],applications[0:1],databases[0:1],plugins[0:1],openapi[0:1]"
         ),
         node_label="configuration",
     )
@@ -239,13 +239,12 @@ class AsgiServerGrammar(TaskGrammar):
         errors: bool | dict = None,
         logging: bool | dict = None,
         cors: bool | dict = None,
-        auth: bool | dict = None,
         session: bool | dict = None,
         **extra: bool | dict,
     ) -> None:
         """Global middleware switches: one ``{name: bool | dict}`` kwarg per
         middleware. A dict value enables the middleware and becomes its
-        constructor options. The five declared names are the core's own registry
+        constructor options. The four declared names are the core's own registry
         (``middleware.default_registry()``); a middleware registered from
         outside (``middleware_registry=``) is written by its own name and rides
         through ``**extra`` — the signature is OPEN so that the switches have
@@ -256,8 +255,11 @@ class AsgiServerGrammar(TaskGrammar):
         sub_tags="users[0:1],tokens[0:1],credentials[0:1]",
         node_label="authentication",
     )
-    def authentication(self) -> None:
+    def authentication(self, cache_ttl: float = None) -> None:
         """The server's identity surface: the STORES and the header credentials.
+
+        ``cache_ttl`` is the seconds a verified credential stays cached
+        (``credential_cache_ttl`` of the server; ``0`` disables the cache).
 
         ``users`` and ``tokens`` are the store descriptors ``AuthMixin`` peels
         and ``credentials`` the entries ``AuthCore`` verifies. What asks a
@@ -369,6 +371,19 @@ class AsgiServerGrammar(TaskGrammar):
         Omitted entirely, the server builds its default manager: the ``site:``
         and ``home:`` mounts, both on the deployment directory.
         """
+
+    @element(parent_tags="configuration", sub_tags="channel", collection_key="name")
+    def channels(self) -> None:
+        """Collection of channels, each labelled by its ``name`` (``rest``,
+        ``mcp``, ``wsx``, ...): per channel, the route that authenticates a
+        credential presented on it."""
+
+    @element(parent_tags="channels", sub_tags="")
+    def channel(self, name: str = None, authentication_route: str = None) -> None:
+        """One channel: ``name`` (the collection key, the value of
+        ``scope["kajenn.channel"]``) and ``authentication_route``, the path the
+        server calls to verify a credential presented on it (REQUIRED: a channel
+        without it is refused when the server is built)."""
 
     @element(parent_tags="configuration", sub_tags="application", collection_key="code")
     def applications(self, default: str = None) -> None:

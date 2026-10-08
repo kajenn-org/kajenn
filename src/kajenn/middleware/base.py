@@ -18,7 +18,7 @@
 (dual parent-child): ``app`` is the next ASGI callable in the chain, ``server``
 the owning server — never discovered by walking wrappers. Subclasses declare
 ``middleware_order`` (lower = outermost; the shipped ones are errors 100,
-logging 200, cors 300, session 400, auth 450, and the class default is 500) and
+logging 200, cors 300, session 400, and the class default is 500) and
 ``middleware_default`` (their on/off state when the config does not name them).
 
 ``build_chain(config, innermost, server, registry)`` assembles the chain from

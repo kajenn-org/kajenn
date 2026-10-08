@@ -83,6 +83,10 @@ member, including the connections still presenting themselves.
 Besides `id`, `method` and `path`, the bus reserves `format`, `auth`
 (`identity`, `tags`), `channel` and `credential`. Other keys travel untouched.
 
+`auth` is read by the execution point (`RoutedApplication.execute`) as the
+caller's avatar. `channel` becomes `scope["kajenn.channel"]`. `credential` is
+reserved and still unread.
+
 ## Serving a frame: `serve_kbus_frame`
 
 `KBusMixin` adds `kbus_call(path, data)`, `kbus_post(path, data)` and

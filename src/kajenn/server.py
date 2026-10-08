@@ -61,7 +61,7 @@ not guaranteed.
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Iterable
 
 import uvicorn
 
@@ -165,6 +165,7 @@ class BaseServer:
         self._well_known: dict[str, BaseApplication] = {}
         self._databases: dict[str, Any] = {}
         self._uvicorn: UvicornServer | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._pool = WorkPool(self, max_threads=max_threads)
         self._lifespan = Lifespan(self)
         self._registry = RequestRegistry(self)
@@ -294,11 +295,32 @@ class BaseServer:
 
         Apps call ``self.server.run_sync(...)`` for blocking work so it runs
         off the event loop; async handlers simply stay on the loop and never
-        touch the pool.
+        touch the pool. The loop it is called on is the one ``run_on_loop``
+        hands coroutines back to.
         """
+        self._loop = asyncio.get_running_loop()
         return await self.pool.run(fn, *args)
 
-    def authenticate(self, request: Any) -> Any:
+    def run_on_loop(self, coro: Coroutine[Any, Any, Any]) -> Any:
+        """Run ``coro`` on the server loop from a pool thread and return its result.
+
+        The mirror of ``run_sync``: a sync handler that needs a coroutine
+        blocks its pool thread until the loop has run it. Called on the loop
+        thread it would wait on itself forever, so it closes ``coro`` and
+        raises ``RuntimeError``.
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            loop = self._loop
+            if loop is None:
+                coro.close()
+                raise RuntimeError("run_on_loop before the server loop is known: no run_sync ran yet")
+            return asyncio.run_coroutine_threadsafe(coro, loop).result()
+        coro.close()
+        raise RuntimeError("run_on_loop called on the loop thread: await the coroutine instead")
+
+    async def authenticate(self, scope: Any) -> Any:
         """Base answer: nobody (``None``). Auth capabilities override this."""
         return None
 

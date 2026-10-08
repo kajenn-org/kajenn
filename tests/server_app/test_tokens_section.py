@@ -28,7 +28,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from kajenn import ApiKeyStore, AsgiServer, Avatar, BaseApplication
+import pytest
+
+from kajenn import ApiKeyStore, AsgiServer, Avatar, BaseApplication, HTTPUnauthorized
 from kajenn_server_app import ServerApplication
 from kajenn.middleware.base import BaseMiddleware
 from kajenn.types import Message, Scope
@@ -185,6 +187,19 @@ class TestApiKeys:
         sent = await drive(server, f"/_server/tokens/delete?key_id={key_id}", "POST")
         assert payload(sent)["deleted"] is True
         assert payload(await drive(server, "/_server/tokens/list"))["tokens"] == []
+
+    @pytest.mark.parametrize("verb", ["revoke", "delete"])
+    async def test_a_cached_key_is_refused_at_once_after_revoke_or_delete(self, verb: str) -> None:
+        server = make_server()
+        issued = payload(
+            await drive(server, "/_server/tokens/issue", "POST", body={"label": "k"})
+        )
+        credential = "Bearer " + issued["key"]
+        await server.authenticate_credential(credential, "rest")
+        key_id = payload(await drive(server, "/_server/tokens/list"))["tokens"][0]["key_id"]
+        await drive(server, f"/_server/tokens/{verb}?key_id={key_id}", "POST")
+        with pytest.raises(HTTPUnauthorized):
+            await server.authenticate_credential(credential, "rest")
 
 
 class TestCreateJwt:

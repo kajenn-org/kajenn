@@ -38,7 +38,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from .authentication import AuthMiddleware
 from .base import BaseMiddleware, build_chain, headers_dict
 from .cors import CORSMiddleware
 from .errors import ErrorMiddleware
@@ -49,7 +48,6 @@ if TYPE_CHECKING:
     from ..types import ASGIApp, Receive, Scope, Send
 
 __all__ = [
-    "AuthMiddleware",
     "BaseMiddleware",
     "CORSMiddleware",
     "ErrorMiddleware",
@@ -68,7 +66,6 @@ def default_registry() -> dict[str, type[BaseMiddleware]]:
         "errors": ErrorMiddleware,
         "logging": LoggingMiddleware,
         "cors": CORSMiddleware,
-        "auth": AuthMiddleware,
         "session": SessionMiddleware,
     }
 

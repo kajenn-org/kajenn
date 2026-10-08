@@ -30,8 +30,9 @@ with a ``plugins`` section plugs them onto every routed app it hosts. A
 composition whose server lacks the ``PluginMixin`` exposes no ``arm_router``
 and arms nothing — the app degrades to the ``auth`` plug alone.
 
-The ASGI dispatch (``__call__``) is the per-app routing engine: build a
-``Request`` bound to this app, eager-parse it (``init``), resolve the node
+The ASGI dispatch (``__call__``) builds a ``Request`` bound to this app,
+eager-parses it (``init``) and hands it to ``execute``, the single execution
+point every face reaches (REST, MCP, WSX, the KajennBus): resolve the node
 from the request path — already mount-relative, the server demux strips the
 prefix (D3) — with the identity tags of ``scope["auth"]`` as auth filters,
 bind kwargs, execute (async handlers stay on the loop, sync handlers go
@@ -59,7 +60,9 @@ Kwargs binding: ``bind_kwargs`` starts from ``request.handler_kwargs()``
 scalar-parameter handler — when the node's neutral ``params`` block declares
 fields (pydantic plugin) and the handler does not itself absorb ``body_data``
 or ``**kwargs``, the body dict is spread over the declared names through
-``spread_over_params`` (extras dropped). Auth without the middleware: when
+``spread_over_params`` (extras dropped). On the ``mcp`` channel the body is
+the tool's ``arguments`` and is always spread, whatever the handler
+declares. Auth without the middleware: when
 ``scope`` carries no ``auth`` key the resolution runs unfiltered — the public
 router exposes exactly what the auth plugin leaves untagged.
 """
@@ -69,7 +72,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from genro_routes import RoutingClass, is_result_wrapper
 
@@ -112,6 +115,13 @@ class _HandlerArgumentsInvalid(Exception):
     """
 
 
+class _ChallengedUnauthorized(HTTPUnauthorized):
+    """The ``not_authenticated`` 401: no identity, the ``WWW-Authenticate`` challenge."""
+
+    def __init__(self, detail: str | None = None) -> None:
+        super().__init__(detail, headers=[(b"www-authenticate", b"Bearer")])
+
+
 class RoutedApplication(BaseApplication, RoutingClass):
     """Application base serving ``@route`` handlers through the app router.
 
@@ -133,8 +143,12 @@ class RoutedApplication(BaseApplication, RoutingClass):
         "not_found": HTTPNotFound,
         "not_available": HTTPNotFound,
         "not_authorized": HTTPForbidden,
-        "not_authenticated": HTTPUnauthorized,
+        "not_authenticated": _ChallengedUnauthorized,
     }
+
+    # The channel of a request that reaches ``__call__`` without one: a plain
+    # HTTP request, a kbus frame that names none.
+    http_channel: ClassVar[str] = "rest"
 
     def __init__(self, **kwargs: Any) -> None:
         self._armed: bool = False
@@ -195,37 +209,63 @@ class RoutedApplication(BaseApplication, RoutingClass):
         return (*children.get("entries", ()), *children.get("routers", ()))
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Resolve the request in the app router, execute, respond.
-
-        Raises the mapped ``ROUTER_ERRORS`` exception when resolution fails;
-        the server's ``ErrorMiddleware`` answers it. A call that does not fit
-        the handler signature surfaces as ``HTTPBadRequest`` (400); values the
-        handler's pydantic validation rejects surface on this application's
-        ``validation_error_status`` (400 strict, 422 FastAPI). Both keep the
-        original error as ``__cause__``. What the handler body raises is mapped
-        to neither: it propagates as a 500.
+        """Build the request, run it through ``execute``, respond.
 
         A handler that answers with a ``StreamingResponse`` — an SSE stream, a
         long download — speaks the wire itself: it is called with the ASGI
-        triple and nothing is buffered.
+        triple and nothing is buffered. Any other result is answered through
+        ``request.response`` with the resolved node's metadata (a result
+        wrapper's own metadata on top).
+        """
+        scope.setdefault("kajenn.channel", self.http_channel)
+        request = Request(scope, receive, server=self.server, application=self)
+        await request.init()
+        result = await self.execute(request)
+        if isinstance(result, StreamingResponse):
+            await result(scope, receive, send)
+            return
+        node = request.node
+        if is_result_wrapper(result):
+            request.response.set_result(result.value, {**node.metadata, **result.metadata})
+        else:
+            request.response.set_result(result, node.metadata)
+        await request.response(scope, receive, send)
+
+    async def execute(self, request: Request) -> Any:
+        """Resolve ``request.path`` in the app router, run the handler, return its result.
+
+        The single execution point every face reaches (#37): REST through
+        ``__call__``, an MCP ``tools/call`` through the transport, WSX and the
+        KajennBus through ``__call__``. The resolved node is left on
+        ``request.node``. An async handler runs on the loop, a sync one through
+        ``server.run_sync`` with ``route_cleanup`` after it on the same thread.
+        A scope without ``auth`` is authenticated through ``server.authenticate``
+        before resolution: an invalid credential raises ``HTTPUnauthorized`` (401).
+
+        Raises the mapped ``ROUTER_ERRORS`` exception when resolution fails. A
+        call that does not fit the handler signature surfaces as
+        ``HTTPBadRequest`` (400); values the handler's pydantic validation
+        rejects surface on this application's ``validation_error_status`` (400
+        strict, 422 FastAPI). Both keep the original error as ``__cause__``.
+        What the handler body raises is mapped to neither: it propagates.
         """
         server = self.server
         if server is None:
             raise RuntimeError(f"{type(self).__name__} dispatch requires an owning server")
-        request = Request(scope, receive, server=server, application=self)
-        await request.init()
+        if request.scope.get("auth") is None:
+            request.scope["auth"] = await server.authenticate(request.scope)
         errors = {
             **self.ROUTER_ERRORS,
             "signature_error": _HandlerSignatureInvalid,
             "validation_error": _HandlerArgumentsInvalid,
         }
-        node = self.route.node(request.path, errors=errors, **self.auth_filters(scope))
+        node = self.route.node(request.path, errors=errors, **self.auth_filters(request.scope))
+        request.node = node
         call = self.make_callable(node, request)
         try:
             if asyncio.iscoroutinefunction(node):
-                result = await call()
-            else:
-                result = await server.run_sync(call)
+                return await call()
+            return await server.run_sync(call)
         except _HandlerSignatureInvalid as exc:
             detail = exc.__cause__ or exc
             raise HTTPBadRequest(f"Arguments do not fit the handler: {detail}") from exc
@@ -234,27 +274,23 @@ class RoutedApplication(BaseApplication, RoutingClass):
             raise HTTPException(
                 self.validation_error_status, f"Invalid argument values: {detail}"
             ) from exc
-        if isinstance(result, StreamingResponse):
-            await result(scope, receive, send)
-            return
-        if is_result_wrapper(result):
-            request.response.set_result(result.value, {**node.metadata, **result.metadata})
-        else:
-            request.response.set_result(result, node.metadata)
-        await request.response(scope, receive, send)
 
     def auth_filters(self, scope: Scope) -> dict[str, str]:
-        """Auth filters for node resolution, from the scope identity.
+        """Filters for node resolution, from the scope identity and channel.
 
+        ``scope["kajenn.channel"]`` becomes ``channel_channel``, the filter of
+        the ``channel`` plugin (ignored when no router on the path plugs it); a
+        scope handed to ``execute`` without the key resolves on ``http_channel``.
         An ``Avatar`` on ``scope["auth"]`` becomes the comma-separated
         ``auth_tags`` the auth plugin evaluates entry rules against. No
         identity — key absent (middleware off) or ``None`` (anonymous) —
-        passes no filter: the plugin still denies every ruled entry.
+        passes no ``auth_tags``: the plugin still denies every ruled entry.
         """
+        filters = {"channel_channel": scope.get("kajenn.channel", self.http_channel)}
         avatar = scope.get("auth")
-        if avatar is None:
-            return {}
-        return {"auth_tags": ",".join(avatar.tags)}
+        if avatar is not None:
+            filters["auth_tags"] = ",".join(avatar.tags)
+        return filters
 
     def make_callable(self, node: RouterNode, request: Request) -> Callable[[], Any]:
         """Package the node invocation as the zero-arg call the dispatcher runs.
@@ -303,7 +339,9 @@ class RoutedApplication(BaseApplication, RoutingClass):
         so the dict is spread over the fields the handler accepts (from the
         node's neutral ``params`` block — never ``inspect``). The whole
         ``body_data`` is kept when the handler itself declares it, accepts
-        ``**kwargs``, or exposes no signature (no pydantic plugin).
+        ``**kwargs``, or exposes no signature (no pydantic plugin). On the
+        ``mcp`` channel the body is the tool's ``arguments``, i.e. the
+        handler's kwargs: it is always spread, whatever the handler declares.
 
         A handler that declares ``_request`` is given the live ``Request``: a
         login surface and a websocket channel command both need what only the
@@ -311,8 +349,23 @@ class RoutedApplication(BaseApplication, RoutingClass):
         routed application, not to one of them.
         """
         kwargs = request.handler_kwargs()
-        fields = node.params.get("fields") or []
-        if any(f["name"] == "_request" for f in fields):
+        body = kwargs.get("body_data")
+        fields = node.params.get("fields")
+        if isinstance(body, dict) and fields is not None:
+            param_names = {
+                f["name"] for f in fields if f["kind"] not in ("var_positional", "var_keyword")
+            }
+            accepts_kwargs = any(f["kind"] == "var_keyword" for f in fields)
+            keeps_body = "body_data" in param_names or accepts_kwargs
+        else:
+            keeps_body = True
+        if isinstance(body, dict) and (
+            request.scope.get("kajenn.channel") == getattr(self, "mcp_channel", "mcp")
+            or not keeps_body
+        ):
+            del kwargs["body_data"]
+            kwargs.update(self.spread_over_params(node, body))
+        if any(f["name"] == "_request" for f in fields or []):
             # The declarative seam for a handler that needs the request itself
             # — the cookie it carries, the session on it, the server behind it.
             # It is declared UNANNOTATED, so it stays out of the pydantic model
@@ -320,20 +373,6 @@ class RoutedApplication(BaseApplication, RoutingClass):
             # value that arrived on the wire: nobody sends themselves a
             # request. No ambient state: it travels as an ordinary argument.
             kwargs["_request"] = request
-        body = kwargs.get("body_data")
-        if not isinstance(body, dict):
-            return kwargs
-        fields = node.params.get("fields")
-        if fields is None:
-            return kwargs
-        param_names = {
-            f["name"] for f in fields if f["kind"] not in ("var_positional", "var_keyword")
-        }
-        accepts_kwargs = any(f["kind"] == "var_keyword" for f in fields)
-        if "body_data" in param_names or accepts_kwargs:
-            return kwargs
-        del kwargs["body_data"]
-        kwargs.update(self.spread_over_params(node, body))
         return kwargs
 
     def spread_over_params(self, node: RouterNode, data: dict[str, Any]) -> dict[str, Any]:

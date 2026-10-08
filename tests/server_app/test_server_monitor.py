@@ -16,8 +16,8 @@
 
 Requests drive a REAL ``AsgiServer`` at the ASGI level: the ``_server`` app is
 declared like any other, and the monitor lives at ``/_server/monitor/...``. A test
-middleware (order 500, after the real AuthMiddleware) stamps a fixed identity
-on the scope, so the ``SERVER_ADMIN`` gate is exercised with a real avatar.
+middleware (order 500) stamps a fixed identity on the scope, which the
+execution point trusts, so the ``SERVER_ADMIN`` gate is exercised with a real avatar.
 
 What the suite pins:
 
