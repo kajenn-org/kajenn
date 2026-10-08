@@ -1,7 +1,7 @@
 Applications
 ============
 
-The mountable application classes shipped by the core: OpenAPI and MCP. The
+The mountable application classes shipped by the core: OpenAPI, MCP and Telegram. The
 ``_server`` application and its sections live in their own package — see
 :doc:`server-app`.
 
@@ -20,5 +20,12 @@ MCP
    :show-inheritance:
 
 .. automodule:: kajenn.mcp.engine
+   :members:
+   :show-inheritance:
+
+Telegram
+--------
+
+.. automodule:: kajenn.applications.telegram
    :members:
    :show-inheritance:

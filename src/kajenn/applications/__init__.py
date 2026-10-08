@@ -18,16 +18,19 @@ Each application in this package is a ready-to-mount ASGI app for one
 transport dialect. ``OpenApiApplication`` wraps an API surface as REST +
 OpenAPI 3.1 with a Swagger docs page; ``McpApplication`` and
 ``McpOpenApiApplication`` expose a router as MCP tools over stateless
-Streamable HTTP.
+Streamable HTTP. ``TelegramBotApplication`` registers bot routers and receives
+Telegram webhook commands.
 """
 
 from __future__ import annotations
 
 from .mcp import McpApplication, McpOpenApiApplication
 from .openapi import OpenApiApplication
+from .telegram import TelegramBotApplication
 
 __all__ = [
     "McpApplication",
     "McpOpenApiApplication",
     "OpenApiApplication",
+    "TelegramBotApplication",
 ]

@@ -17,6 +17,7 @@ databases
 management
 openapi
 mcp
+telegram
 tasks
 streaming
 websockets
@@ -47,6 +48,7 @@ configuration
 
 - [OpenAPI and Swagger](openapi.md): API schema and interactive documentation.
 - [MCP](mcp.md): expose operations as tools for an agent.
+- [Telegram bots](telegram.md): register bot instances and route webhook commands.
 - [Background tasks](tasks.md): submit work, observe progress and schedule jobs.
 - [Streaming and SSE](streaming.md): incremental responses and event streams.
 - [WebSockets](websockets.md): persistent connections, WSX and raw protocols.

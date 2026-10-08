@@ -55,6 +55,7 @@ never holds a slice of the tree, only an address in it.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any
 
 from genro_builders.builder import element
@@ -247,10 +248,10 @@ class BaseApplication:
         """
         return {"panel": "generic"}
 
-    def on_startup(self) -> None:
+    def on_startup(self) -> Awaitable[None] | None:
         """Lifecycle hook run at server startup. Override as sync or async."""
 
-    def on_shutdown(self) -> None:
+    def on_shutdown(self) -> Awaitable[None] | None:
         """Lifecycle hook run at server shutdown. Override as sync or async."""
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
