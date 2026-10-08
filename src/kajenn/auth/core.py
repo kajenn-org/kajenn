@@ -168,10 +168,18 @@ class AuthCore:
         header = headers_dict(scope).get("authorization")
         if not header:
             return None
+        return self.verify(header)
+
+    def verify(self, credential: str) -> Avatar:
+        """Verify an ``Authorization`` value (``<scheme> <value>``) into an ``Avatar``.
+
+        A malformed or invalid credential raises ``HTTPUnauthorized`` carrying a
+        ``WWW-Authenticate: Bearer`` challenge header.
+        """
         challenge = [(b"www-authenticate", b"Bearer")]
-        if " " not in header:
+        if " " not in credential:
             raise HTTPUnauthorized("Malformed Authorization header", headers=challenge)
-        scheme, credentials = header.split(" ", 1)
+        scheme, credentials = credential.split(" ", 1)
         verify = getattr(self, f"_auth_{scheme.lower()}", self._auth_default)
         result = verify(credentials)
         if result is None:

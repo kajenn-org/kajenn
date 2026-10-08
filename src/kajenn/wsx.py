@@ -266,8 +266,9 @@ class WsxConnection:
         if cookie is not None and cookie not in self.socket.cookies:
             await self.socket.close(1008, f"connection cookie required: {cookie}")
             return False
+        self.socket.scope["kajenn.channel"] = "wsx"
         try:
-            self.avatar = self.server.authenticate(self.socket.scope)
+            self.avatar = await self.server.authenticate(self.socket.scope)
         except HTTPException as refused:
             await self.socket.close(1008, refused.detail or "unauthorized")
             return False
@@ -421,6 +422,7 @@ class WsxConnection:
             + [(b"content-type", b"application/json"), (b"x-tytx-transport", b"json")],
             "auth": self.avatar,
             "session": self.session,
+            "kajenn.channel": "wsx",
         }
         if envelope.page_id is not None:
             scope["genro.page_id"] = envelope.page_id

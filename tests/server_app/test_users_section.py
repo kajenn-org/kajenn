@@ -16,8 +16,8 @@
 
 Requests drive a REAL ``AsgiServer`` at the ASGI level: the ``_server`` app is
 auto-mounted, so the section lives at ``/_server/users/...``. A test middleware
-(order 500, after the real AuthMiddleware) stamps a fixed identity on the scope
-so a SUPERADMIN avatar reaches the ruled routes; the user store is wired with
+(order 500) stamps a fixed identity on the scope, which the execution point
+trusts, so a SUPERADMIN avatar reaches the ruled routes; the user store is wired with
 ``users=``. Every route is ``auth_rule="SUPERADMIN"``: an anonymous request
 answers 401 and a wrong-tag one 403, and a server with no store answers the
 ``{"error": ...}``

@@ -46,7 +46,6 @@ the chain, so error handling can also catch failures from the inner stages.
 | Logging | 200 | Record requests | Opt-in |
 | CORS | 300 | Apply cross-origin policy | Opt-in |
 | Session | 400 | Attach the session | Session capability |
-| Authentication | 450 | Resolve the caller's identity | Authentication capability |
 
 This chain applies to HTTP requests. WebSocket and lifespan events have their
 own paths through the server.

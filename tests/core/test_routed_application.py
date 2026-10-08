@@ -95,9 +95,8 @@ class SubApi(RoutingClass):
 class StampAuthMiddleware(BaseMiddleware):
     """Test middleware: stamps a fixed identity on ``scope["auth"]``.
 
-    Order 500: the AsgiServer composition arms the real ``AuthMiddleware``
-    (450), which resolves the scope identity itself — the stamp must run
-    after it so the fixed identity wins.
+    Order 500, inside the session middleware: the execution point trusts an
+    avatar already on the scope, so the fixed identity wins.
     """
 
     middleware_order = 500

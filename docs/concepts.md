@@ -112,7 +112,7 @@ Key forms you will use across the guides:
 An **avatar** is the caller’s identity and authorization tags.
 A route carrying `auth_rule="admin"` is protected: the caller's avatar must carry
 the matching tag. Protection is **default-deny**: an anonymous caller gets `401`, including when
-no auth middleware is configured; an authenticated caller with insufficient
+no credential is presented; an authenticated caller with insufficient
 tags gets `403`. The [authentication
 guide](guides/authentication.md) covers the credential side.
 

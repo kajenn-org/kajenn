@@ -141,7 +141,7 @@ class ConfigurationHandler(ConfigHandler):
         (the composition's own defaults then apply).
 
         The element's signature is OPEN, so the attributes ARE the switches: the
-        five the grammar declares and any name a registry added from outside, read
+        four the grammar declares and any name a registry added from outside, read
         in bulk with no list to keep in step."""
         node = self.node("middleware")
         if node is None:
@@ -149,7 +149,8 @@ class ConfigurationHandler(ConfigHandler):
         return self.open_attrs(node)
 
     def identity_kwargs(self) -> dict[str, Any]:
-        """The identity STORE kwargs of ``authentication`` (``AuthMixin`` peels them).
+        """The identity STORE kwargs of ``authentication`` and its ``cache_ttl``
+        as ``credential_cache_ttl`` (``AuthMixin`` peels them).
 
         ``users``/``tokens`` are the store descriptors: every attribute the
         section carries — ``mount``/``prefix``, the optional ``store_class`` and
@@ -161,7 +162,31 @@ class ConfigurationHandler(ConfigHandler):
             node = self.node(f"authentication.{tag}")
             if node is not None:
                 kwargs[tag] = self.open_attrs(node)
+        if self.node("authentication") is not None:
+            cache_ttl = self.closed_attrs("authentication", "cache_ttl").get("cache_ttl")
+            if cache_ttl is not None:
+                kwargs["credential_cache_ttl"] = cache_ttl
         return kwargs
+
+    def channels(self) -> dict[str, dict[str, str]] | None:
+        """The ``channels`` collection as ``{name: {"authentication_route": path}}``,
+        or ``None`` when the section is absent.
+
+        A channel without ``authentication_route`` is refused here, so the
+        error surfaces when the server is built.
+        """
+        node = self.node("channels")
+        if node is None:
+            return None
+        channels: dict[str, dict[str, str]] = {}
+        for child in node.value or ():
+            attrs = self.open_attrs(child)
+            name = attrs["name"]
+            route = attrs.get("authentication_route")
+            if not route:
+                raise ValueError(f"channel {name!r} declares no authentication_route")
+            channels[name] = {"authentication_route": route}
+        return channels
 
     def auth_entries(self) -> dict[str, Any] | None:
         """The ``credentials`` children folded into the ``AuthCore`` sections.

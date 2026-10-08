@@ -96,11 +96,13 @@ class RemoteApplication(BaseApplication):
                     if hub.resolve(self.code) is None:
                         raise KBusCallFailed("member not registered", outcome="not_sent")
                     info: dict[str, Any] = {"format": "http"}
+                    scope.setdefault("kajenn.channel", "rest")
+                    if scope.get("auth") is None:
+                        scope["auth"] = await self.server.authenticate(scope)
                     avatar = scope.get("auth")
                     if avatar is not None:
                         info["auth"] = {"identity": avatar.identity, "tags": list(avatar.tags)}
-                    if "kajenn.channel" in scope:
-                        info["channel"] = scope["kajenn.channel"]
+                    info["channel"] = scope["kajenn.channel"]
                     path = "/" + (self.mount or "") + scope["path"] if self.mount else scope["path"]
                     record = HttpRecord().encode_request(
                         {**scope, "path": path, "raw_path": path.encode(), "root_path": ""},

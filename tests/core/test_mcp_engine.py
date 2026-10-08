@@ -191,9 +191,9 @@ class TestToolsCall:
     async def test_custom_async_invoke_callback(self) -> None:
         seen: list[dict] = []
 
-        async def invoke(node: Any, arguments: dict) -> Any:
+        async def invoke(path: str, arguments: dict, auth_tags: Any) -> Any:
             seen.append(arguments)
-            result = node(**arguments)
+            result = engine.router.node(path, channel_channel="mcp")(**arguments)
             if inspect.isawaitable(result):
                 result = await result
             return result

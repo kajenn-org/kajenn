@@ -231,7 +231,7 @@ class TestCredentials:
     def test_basic_user_is_verified_by_the_auth_core(self) -> None:
         server = AsgiServer(config=TwoAppConfig)
         scope: Scope = {"headers": basic_header("admin", "secret")}
-        avatar = server.authenticate(scope)
+        avatar = server.auth_core.authenticate(scope)
         assert avatar is not None
         assert avatar.identity == "admin"
         assert "admin" in avatar.tags
@@ -240,7 +240,7 @@ class TestCredentials:
         server = AsgiServer(config=TwoAppConfig)
         scope: Scope = {"headers": basic_header("admin", "wrong")}
         with pytest.raises(HTTPUnauthorized):
-            server.authenticate(scope)
+            server.auth_core.authenticate(scope)
 
     def test_bearer_token_is_verified_by_its_identity(self) -> None:
         class BearerConfig(AsgiConfigBuilder):
@@ -252,7 +252,7 @@ class TestCredentials:
 
         server = AsgiServer(config=BearerConfig)
         scope: Scope = {"headers": [(b"authorization", b"Bearer sk_live_xyz")]}
-        avatar = server.authenticate(scope)
+        avatar = server.auth_core.authenticate(scope)
         assert avatar is not None
         assert avatar.identity == "svc"
         assert avatar.tags == ["api"]
@@ -590,6 +590,35 @@ class TestIdentitySection:
                 auth = root.configuration().authentication()
                 auth.users(mount="one")
                 auth.users(mount="two")
+
+        with pytest.raises(ValueError):
+            ConfigurationHandler(DoubledConfig)
+
+
+class TestChannelsSection:
+    """``channels`` → the ``channels`` kwarg ``AuthMixin`` peels."""
+
+    def test_the_handler_reads_the_collection(self) -> None:
+        class ChannelsConfig(AsgiConfigBuilder):
+            def main(self, root: Any) -> None:
+                channels = root.configuration().channels()
+                channels.channel(name="mcp", authentication_route="/idp/check")
+                channels.channel(name="rest", authentication_route="/_server/auth/authenticate")
+
+        assert ConfigurationHandler(ChannelsConfig).channels() == {
+            "mcp": {"authentication_route": "/idp/check"},
+            "rest": {"authentication_route": "/_server/auth/authenticate"},
+        }
+
+    def test_no_section_reads_as_none(self) -> None:
+        assert ConfigurationHandler(TwoAppConfig).channels() is None
+
+    def test_a_second_channels_element_is_rejected_by_the_grammar(self) -> None:
+        class DoubledConfig(AsgiConfigBuilder):
+            def main(self, root: Any) -> None:
+                cfg = root.configuration()
+                cfg.channels()
+                cfg.channels()
 
         with pytest.raises(ValueError):
             ConfigurationHandler(DoubledConfig)

@@ -134,6 +134,7 @@ class Request:
         "_tytx_transport",
         "_created_at",
         "response",
+        "node",
     )
 
     def __init__(
@@ -159,6 +160,8 @@ class Request:
         self._tytx_transport: str | None = None
         self._created_at: float = time.time()
         self.response: Response = Response(request=self)
+        # The route node the execution point resolved for this request.
+        self.node: Any = None
 
     async def init(self) -> None:
         """Read headers, cookies, query and body from the scope (once).

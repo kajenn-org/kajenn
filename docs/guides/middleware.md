@@ -27,13 +27,13 @@ out):
 | `logging`   | 200      | off     | request logging                              |
 | `cors`      | 300      | off     | CORS headers                                 |
 | `session`   | 400      | off     | armed automatically by `SessionMixin`        |
-| `auth`      | 450      | off     | armed automatically by `AuthMixin`           |
 
 Only the `http` scope is processed by the chain.
 
-`SessionMixin` and `AuthMixin` arm their stages simply by being composed into
-`AsgiServer`, even without `session_store` or `auth` kwargs. Explicit
-`middleware={"session": False, "auth": False}` disables them.
+`SessionMixin` arms its stage simply by being composed into `AsgiServer`, even
+without a `session_store` kwarg. Explicit `middleware={"session": False}`
+disables it. Authentication is not a middleware: the execution point resolves
+the identity of every request (see [authentication](authentication.md)).
 
 ## Setup — arming a stage
 

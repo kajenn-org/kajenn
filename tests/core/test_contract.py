@@ -148,9 +148,9 @@ class TestServerContract:
         server = BaseServer(applications=[api], default="api")
         assert server.default_application is api
 
-    def test_authenticate_answers_nobody(self):
+    async def test_authenticate_answers_nobody(self):
         server = BaseServer(applications=[BaseApplication(mount="")])
-        assert server.authenticate(None) is None
+        assert await server.authenticate(None) is None
 
     def test_session_answers_none(self):
         server = BaseServer(applications=[BaseApplication(mount="")])

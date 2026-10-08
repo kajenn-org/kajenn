@@ -224,6 +224,10 @@ class TaskScheduler:
             self._running.add(code)
             loop.create_task(self._execute(row, info["callable"]))
 
+    async def _start(self, row: dict[str, Any], task_callable: Any) -> None:
+        """Start ``_execute`` as a task of the running loop and return at once."""
+        asyncio.get_running_loop().create_task(self._execute(row, task_callable))
+
     async def _execute(self, row: dict[str, Any], task_callable: Any) -> None:
         """Run one schedule and settle its outcome (record + JSONL log).
 
@@ -290,7 +294,16 @@ class TaskScheduler:
             return "running"
         self._running.add(code)
         if self._loop is not None and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(self._execute(row, info["callable"]), self._loop)
+            try:
+                try:
+                    asyncio.get_running_loop()
+                except RuntimeError:
+                    self.server.run_on_loop(self._start(row, info["callable"]))
+                else:
+                    self._loop.create_task(self._execute(row, info["callable"]))
+            except Exception:
+                self._running.discard(code)
+                raise
             return "started"
         asyncio.run(self._execute(row, info["callable"]))
         return "done"
