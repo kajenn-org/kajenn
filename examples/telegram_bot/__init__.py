@@ -37,6 +37,7 @@ class DemoBot(RoutingClass):
         self.application = application
         self.code = code
         self.config = config
+        self.poll_events = []
         super().__init__()
 
     @route()
@@ -55,3 +56,10 @@ class DemoBot(RoutingClass):
         if conversation is None:
             return "Reply to a conversation message to continue."
         return f"PR {conversation['context'].get('pr', '?')}: {action or text}"
+
+    @route()
+    async def poll_event(self, event=None, poll=None, text=""):
+        """Record accepted poll events in this example instance."""
+        if event is None:
+            return "Answer a native poll to submit a vote."
+        self.poll_events.append(event["update_id"])

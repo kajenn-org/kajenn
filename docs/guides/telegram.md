@@ -1,6 +1,6 @@
 # Telegram bots
 
-**Version:** 0.3 · **Last updated:** 2026-10-08 · **Status:** 🔴 DA REVISIONARE
+**Version:** 0.4 · **Last updated:** 2026-10-08 · **Status:** 🔴 DA REVISIONARE
 
 `TelegramBotApplication` hosts independently configured `RoutingClass` bot
 instances. Each instance uses a BotFather token. A receiving deployment owns a
@@ -100,6 +100,135 @@ Commands addressed to another bot are ignored. Other text can continue a convers
 Routing's auth plugin remains active: Telegram webhook verification authenticates
 the delivery only. There is no sender-to-avatar resolver in this small example,
 so protected commands cannot be called by Telegram senders.
+
+## Outbound messages and media
+
+`send_message(bot_code, chat_id, text, reply_markup=...)` sends one message.
+`send_text(bot_code, chat_id, text)` splits longer plain text into ordered chunks
+of at most 4096 UTF-16 units and returns the sent messages. It preserves all
+characters and never splits a surrogate pair. A later chunk can fail after earlier
+chunks have already arrived. `send_typing(bot_code, chat_id)` emits one typing
+indication; it does not keep refreshing it in the background.
+
+```python
+await telegram.send_document(
+    "team", mario_id, document_bytes, filename="report.pdf", caption="PR report",
+)
+await telegram.send_media("team", mario_id, "photo", photo_file_id, caption="Preview")
+```
+
+Supported media kinds are `document`, `photo`, `video`, `audio`, `voice` and
+`animation`. Supply a Telegram `file_id`, a URL for Telegram to fetch, or bytes
+with a filename for multipart upload. Local paths are not opened implicitly;
+the caller can read them through its storage service. Uploads are bounded to
+10 MB for photos and 50 MB for the other supported kinds. Captions fit 1024
+UTF-16 units. Telegram still validates media formats and URL-fetch restrictions.
+See [Sending files](https://core.telegram.org/bots/api#sending-files).
+
+## Announcements
+
+```python
+results = await telegram.send_announcement("team", [mario_id, anna_id], "A new release is available")
+# Alternatively return immediately after staging a persistent task:
+task_id = await telegram.queue_announcement("team", [mario_id, anna_id], "Release notes")
+```
+
+Destinations are explicit integer chat IDs. Repeated destinations are removed
+while preserving order. Each result includes the chat ID, delivered message
+objects and a `sent`, `partial`, `failed` or `uncertain` status; failure at one
+recipient does not skip later recipients. Queued announcements keep the result
+in `server.tasks.spool.read_result(task_id)`. The task's success means the batch
+finished processing: inspect individual statuses to determine delivery success.
+A batch interrupted before completion has the task spool's ordinary interruption
+semantics, not automatic per-recipient recovery. Do not replay the whole batch
+blindly after partial delivery.
+
+## Native polls
+
+```python
+sent = await telegram.send_poll(
+    "team", group_chat_id, "When should we release?", ["Today", "Tomorrow"],
+    is_anonymous=False, allows_multiple_answers=False, route="poll_event",
+)
+poll_id = sent["poll"]["id"]
+state = await telegram.get_poll("team", poll_id)
+await telegram.stop_poll("team", poll_id)
+```
+
+Regular polls support 1-12 text options. Telegram `poll` and `poll_answer` updates
+are accepted through the same verified webhook and task spool. Poll totals and
+the latest answer per voter persist under the application registry. Empty
+`option_ids` records a withdrawal. Older updates cannot overwrite newer votes
+or totals. Anonymous polls provide aggregates, not named individual answers.
+
+The optional bot route receives `event` (the original update) and `poll` (the
+persisted snapshot). It executes through the anonymous router; voting does not
+grant bot admission or protected-route access. Unknown poll IDs are ignored.
+Create tracked polls on the receiver so it has the mapping when updates arrive.
+A separate local registry does not automatically share that mapping. Sending a
+poll and saving its mapping are separate operations; a crash between them can
+leave an untracked poll. Quiz-specific features are outside this API.
+
+## One-shot reminders
+
+```python
+from datetime import datetime, timedelta, timezone
+
+reminder = await telegram.schedule_reminder(
+    "team", mario_id, "Please review the PR",
+    when=datetime.now(timezone.utc) + timedelta(hours=2),
+)
+status = await telegram.get_reminder(reminder)
+await telegram.cancel_reminder(reminder)
+```
+
+The timestamp must be in the future and timezone-aware. Reminders use the
+existing `kajenn.tasks` scheduler and survive application restarts. Pending
+reminders overdue after downtime are attempted when the scheduler runs again.
+The usual scheduler tick controls precision. The task manager must be enabled
+and running; a send-only deployment can also schedule reminders.
+
+To bind a reminder to a conversation, also pass `conversation_id` and `user_id`.
+The user/chat must be a participant. A closed, cancelled or expired conversation
+causes the reminder to be marked `skipped`. A sent conversation reminder is itself
+a tracked message, so the user's reply continues that conversation.
+
+Delivery states are `pending`, `sending`, `sent`, `cancelled`, `skipped`, `failed`
+and `uncertain`. Cancellation succeeds only while pending. An interrupted send is
+marked uncertain on its next execution and is not silently resent. HTTP errors
+with an uncertain outcome also retain that status. Rescheduling a failed or
+uncertain reminder is an explicit application decision, after checking delivery.
+
+Schedules contain the text and destination, not the bot token. They use the task
+store's ordinary storage policy (plain JSON in the filesystem example), unlike
+the encrypted bot, conversation and poll registry. Schedule each reminder on
+one installation to avoid duplicate independent schedules.
+
+## Traffic limits and retries
+
+Application grammar options control delivery:
+
+```python
+app.telegram(
+    persistence_route="registry/bots",
+    webhook_url="https://example.com/telegram",
+    retry_attempts=3, retry_delay=1.0, send_interval=0.05,
+)
+```
+
+`retry_attempts` includes the first call and is bounded to 1-10. Retries use an
+exponential delay for connection establishment errors and HTTP 5xx; HTTP 429 waits
+at least the `retry_after` interval Telegram supplies. An exhausted 429 keeps its
+cooldown for the next request. Requests sharing a token are serialized within
+this application. `send_interval` adds a minimum interval between requests; its
+default is zero. Configure it for expected traffic; it is not a guarantee against
+Telegram's per-chat or shared-account limits.
+
+Other 4xx errors are terminal. Read/write transport failures are uncertain and
+are not retried automatically. A 5xx retry can duplicate a send that Telegram had
+already processed. Token-bearing URLs and provider error descriptions are not
+included in raised errors. These rules apply to central and local senders;
+separate processes do not share an in-memory cooldown.
 
 ## Optional administrator admission
 
@@ -260,6 +389,13 @@ retention in the hosting application rather than purging active records blindly.
 Telegram sends/edits and persistence writes are separate operations: a crash
 between them can leave duplicate notifications or an untracked sent message.
 
+Poll records add `get_poll` (`bot_code`, `poll_id`; record or `None`) and
+`save_poll` (complete record; durable upsert). The receiving application serializes
+poll changes within its process. Providers namespace by application, bot and poll
+ID; the example hashes poll IDs for filesystem names and encrypts their records.
+Reminders and announcement tasks reuse the existing task services instead of
+adding registry operations.
+
 The example's `DemoRegistry` writes encrypted JSON through `server.storage` and
 returns 404 on HTTP requests. It requires `GENRO_STORAGE_KEY`; encryption failures
 do not fall back to plaintext. The Telegram application restores registrations
@@ -318,8 +454,8 @@ existing task until a failed receipt write has recovered.
 
 This is a single-process prototype using the task spool's existing lifecycle.
 It does not promise exactly-once replies or automatic recovery of tasks interrupted
-by a crash. Outbound messages are plain text, 1–4096 characters; oversized replies
-fail the task. Automatic retries, splitting, rate-limit queues, typing indicators,
-unregistration, application account linking, media and polls are outside this
-example. Admission grants access to this bot; it does not create application users,
+by a crash. Command-handler replies use one plain-text message and must fit its size limit.
+Use `send_text` explicitly for long text. Unregistration, application account
+linking, personal Telegram sessions and historical group imports remain outside
+this example. Admission grants access to this bot; it does not create application users,
 tokens or router permissions. Failures remain visible in the task spool.

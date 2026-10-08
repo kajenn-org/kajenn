@@ -46,8 +46,9 @@ Message commands, conversation text and inline callbacks are staged before ACK.
 Conversation state and admission decisions use the same persistence route, with
 atomic revision checks; see telegram_conversations for its persistence contract.
 Bot grammars may inherit TelegramBotInstanceGrammar to opt into admin admission.
-Polling, application identity provisioning, media and automatic outbound retries
-are outside this contract.
+Outbound delivery supports bounded retries, text splitting, media, announcements
+and native polls. Reminders reuse kajenn.tasks. Polling and application identity
+provisioning are outside this contract.
 """
 
 from __future__ import annotations
@@ -63,6 +64,7 @@ import re
 import secrets
 import time
 from typing import Any
+from datetime import datetime
 
 import httpx
 from genro_bag import BagResolver
@@ -80,6 +82,7 @@ from ..server import BaseServer
 from ..tasks import TaskManager, new_descriptor
 from ..types import Receive, Scope, Send
 from .telegram_conversations import _Conversations, _TelegramAPIError
+from .telegram_delivery import _Delivery
 
 __all__ = ["TelegramBotApplication", "TelegramBotGrammar", "TelegramBotInstanceGrammar"]
 
@@ -93,7 +96,12 @@ class TelegramBotGrammar(ApplicationGrammar):
 
     @element(sub_tags="", node_label="telegram")
     def telegram(
-        self, persistence_route: str | BagResolver, webhook_url: str | BagResolver | None = None
+        self,
+        persistence_route: str | BagResolver,
+        webhook_url: str | BagResolver | None = None,
+        retry_attempts: int = 3,
+        retry_delay: float = 1.0,
+        send_interval: float = 0.0,
     ) -> None:
         """One persistence route; omit webhook_url for a send-only application."""
 
@@ -157,7 +165,15 @@ class TelegramBotApplication(RoutedApplication):
         self._ingress_lock = asyncio.Lock()
         self._ready = asyncio.Event()
         self._conversations = _Conversations(self)
+        self._delivery = _Delivery(self)
         super().__init__(**kwargs)
+        self.route.add_entry(
+            self.deliver_reminder, metadata={"task": self.delivery.reminder_task_name}
+        )
+
+    @property
+    def delivery(self) -> _Delivery:
+        return self._delivery
 
     @property
     def persistence_route(self) -> str:
@@ -257,24 +273,8 @@ class TelegramBotApplication(RoutedApplication):
         return bot
 
     async def _telegram(self, token: str, method: str, **payload: Any) -> Any:
-        """Call Telegram without including credential-bearing URLs in errors."""
-        try:
-            response = await self.client.post(
-                f"https://api.telegram.org/bot{token}/{method}",
-                json=payload,
-            )
-        except httpx.HTTPError:
-            raise _TelegramAPIError(f"Telegram {method} transport failed") from None
-        if response.status_code == 400 and method == "editMessageText":
-            description = response.json().get("description", "")
-            if description.startswith("Bad Request: message is not modified"):
-                return True
-        if response.status_code != 200:
-            raise _TelegramAPIError(f"Telegram {method} failed (HTTP {response.status_code})")
-        data = response.json()
-        if not data.get("ok"):
-            raise _TelegramAPIError(f"Telegram {method} failed")
-        return data["result"]
+        """Call Telegram with bounded retries and sanitized transport errors."""
+        return await self.delivery.request(token, method, **payload)
 
     async def _activate(self, record: dict[str, Any], bot: RoutingClass, url: str | None) -> None:
         code = record["code"]
@@ -288,7 +288,7 @@ class TelegramBotApplication(RoutedApplication):
             "setWebhook",
             url=f"{url}/{code}",
             secret_token=record["webhook_secret"],
-            allowed_updates=["message", "callback_query"],
+            allowed_updates=["message", "callback_query", "poll", "poll_answer"],
         )
 
     async def activate_bot(self, code: str) -> RoutingClass:
@@ -393,6 +393,22 @@ class TelegramBotApplication(RoutedApplication):
             update = json.loads(await request.read_body())
             if not isinstance(update, dict) or type(update.get("update_id")) is not int:
                 raise ValueError("invalid update")
+            poll = update.get("poll")
+            answer = update.get("poll_answer")
+            if poll is not None and (
+                not isinstance(poll, dict) or not isinstance(poll.get("id"), str)
+            ):
+                raise ValueError("invalid poll")
+            if answer is not None:
+                if not isinstance(answer, dict) or not isinstance(answer.get("poll_id"), str):
+                    raise ValueError("invalid poll answer")
+                voter = answer.get("user") or answer.get("voter_chat")
+                if not isinstance(voter, dict) or type(voter.get("id")) is not int:
+                    raise ValueError("invalid poll voter")
+                if not isinstance(answer.get("option_ids"), list) or any(
+                    type(i) is not int or i < 0 for i in answer["option_ids"]
+                ):
+                    raise ValueError("invalid poll options")
             message = update.get("message", {})
             query = update.get("callback_query")
             if not isinstance(message, dict):
@@ -431,7 +447,7 @@ class TelegramBotApplication(RoutedApplication):
         addressed = (
             not command or not command[2] or command[2].lower() == record["username"].lower()
         )
-        if query is not None or (text and addressed):
+        if poll is not None or answer is not None or query is not None or (text and addressed):
             digest = hashlib.sha256(
                 f"{self.code}:{code}:{update['update_id']}".encode()
             ).hexdigest()
@@ -509,6 +525,9 @@ class TelegramBotApplication(RoutedApplication):
             raise RuntimeError("Telegram webhook reception is disabled")
         await self.ready.wait()
         bot = self.get_bot(bot_code)
+        if update is not None and ("poll" in update or "poll_answer" in update):
+            await self.delivery.receive_poll(bot_code, update)
+            return
         if update is not None and "callback_query" in update:
             await self.conversations.handle_callback(bot_code, update["callback_query"])
             return
@@ -611,3 +630,157 @@ class TelegramBotApplication(RoutedApplication):
             if record["state"] == "open":
                 record["state"] = state
                 await self.conversations.save_record(record)
+
+    async def send_text(self, bot_code: str, chat_id: int, text: str) -> list[Any]:
+        """Send long plain text in ordered chunks, preserving every character."""
+        return [
+            await self.send_message(bot_code, chat_id, part)
+            for part in self.delivery.get_text_parts(text)
+        ]
+
+    async def send_typing(self, bot_code: str, chat_id: int) -> Any:
+        """Emit one typing indication; no background refresh loop is started."""
+        return await self._telegram(
+            self.registrations[bot_code]["token"],
+            "sendChatAction",
+            chat_id=chat_id,
+            action="typing",
+        )
+
+    async def send_media(
+        self,
+        bot_code: str,
+        chat_id: int,
+        kind: str,
+        media: str | bytes,
+        *,
+        filename: str | None = None,
+        caption: str = "",
+    ) -> Any:
+        """Send a document, photo, video, audio, voice or animation by reference or upload."""
+        return await self.delivery.send_media(
+            bot_code, chat_id, kind, media, filename=filename, caption=caption
+        )
+
+    async def send_document(
+        self,
+        bot_code: str,
+        chat_id: int,
+        document: str | bytes,
+        *,
+        filename: str | None = None,
+        caption: str = "",
+    ) -> Any:
+        """Send a file_id, Telegram-fetchable URL or bytes with a filename."""
+        return await self.send_media(
+            bot_code, chat_id, "document", document, filename=filename, caption=caption
+        )
+
+    async def send_announcement(
+        self, bot_code: str, chat_ids: list[int], text: str
+    ) -> list[dict[str, Any]]:
+        """Send once per distinct destination and report complete, partial or failed delivery."""
+        self.get_bot(bot_code)
+        parts = self.delivery.get_text_parts(text)
+        if any(type(chat_id) is not int for chat_id in chat_ids):
+            raise ValueError("announcement destinations must be integer chat IDs")
+        results = []
+        for chat_id in dict.fromkeys(chat_ids):
+            result: dict[str, Any] = {"chat_id": chat_id, "status": "sent", "messages": []}
+            try:
+                for part in parts:
+                    result["messages"].append(await self.send_message(bot_code, chat_id, part))
+            except _TelegramAPIError as exc:
+                result.update(
+                    status="uncertain"
+                    if exc.outcome_uncertain
+                    else "partial"
+                    if result["messages"]
+                    else "failed",
+                    error=str(exc),
+                )
+            results.append(result)
+        return results
+
+    async def queue_announcement(self, bot_code: str, chat_ids: list[int], text: str) -> str:
+        """Stage an announcement in kajenn.tasks; results are kept in the task spool."""
+        self.get_bot(bot_code)
+        self.delivery.get_text_parts(text)
+        if not chat_ids or any(type(c) is not int for c in chat_ids):
+            raise ValueError("announcement requires integer chat IDs")
+        manager = self.delivery.manager
+        mount = self.mount
+        if mount is None:
+            raise RuntimeError("Telegram application requires a resolved mount")
+        task_id = f"telegram-announcement-{secrets.token_hex(12)}"
+        descriptor = new_descriptor(
+            task_id, owner=f"telegram:{bot_code}", mount=mount, node_path="deliver_announcement"
+        )
+        params = {"bot_code": bot_code, "chat_ids": chat_ids, "text": text}
+        await self._require_server().run_sync(lambda: manager.spool.create(descriptor, params))
+        return task_id
+
+    @route()
+    async def deliver_announcement(
+        self, bot_code: str, chat_ids: list[int], text: str
+    ) -> list[dict[str, Any]]:
+        """Task entry point for an announcement, available on send-only deployments too."""
+        await self.ready.wait()
+        return await self.send_announcement(bot_code, chat_ids, text)
+
+    async def send_poll(
+        self,
+        bot_code: str,
+        chat_id: int,
+        question: str,
+        options: list[str],
+        *,
+        is_anonymous: bool = True,
+        allows_multiple_answers: bool = False,
+        route: str | None = None,
+    ) -> Any:
+        """Send and track a native regular poll; optionally route result events to the bot."""
+        return await self.delivery.send_poll(
+            bot_code,
+            chat_id,
+            question,
+            options,
+            is_anonymous=is_anonymous,
+            allows_multiple_answers=allows_multiple_answers,
+            route=route,
+        )
+
+    async def get_poll(self, bot_code: str, poll_id: str) -> dict[str, Any]:
+        """Read persisted poll totals and the latest received answer per voter."""
+        return await self.delivery.get_poll(bot_code, poll_id)
+
+    async def stop_poll(self, bot_code: str, poll_id: str) -> Any:
+        """Close a tracked native poll and save its final totals."""
+        return await self.delivery.stop_poll(bot_code, poll_id)
+
+    async def schedule_reminder(
+        self,
+        bot_code: str,
+        chat_id: int,
+        text: str,
+        *,
+        when: datetime,
+        conversation_id: str | None = None,
+        user_id: int | None = None,
+    ) -> str:
+        """Persist a one-shot reminder, optionally bound to an open conversation participant."""
+        return await self.delivery.schedule_reminder(
+            bot_code, chat_id, text, when=when, conversation_id=conversation_id, user_id=user_id
+        )
+
+    async def get_reminder(self, code: str) -> dict[str, Any]:
+        """Read this application's reminder schedule and delivery state."""
+        return await self.delivery.get_reminder(code)
+
+    async def cancel_reminder(self, code: str) -> bool:
+        """Cancel a pending reminder; False means it has already left pending state."""
+        return await self.delivery.cancel_reminder(code)
+
+    async def deliver_reminder(self, code: str) -> None:
+        """Scheduler entry point, dynamically registered with an application-specific task name."""
+        await self.delivery.deliver_reminder(code)

@@ -52,6 +52,10 @@ from ..exceptions import HTTPForbidden, HTTPNotFound, HTTPUnauthorized
 class _TelegramAPIError(RuntimeError):
     """A sanitized Telegram transport or API error."""
 
+    def __init__(self, message: str, *, outcome_uncertain: bool = False) -> None:
+        super().__init__(message)
+        self.outcome_uncertain = outcome_uncertain
+
 
 class _Conversations:
     """Conversation operations owned by one Telegram application."""

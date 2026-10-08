@@ -15,6 +15,7 @@
 """A webhook bot with an application-owned encrypted filesystem registry."""
 
 import json
+import hashlib
 import threading
 
 from genro_bag.resolvers import EnvResolver
@@ -53,6 +54,14 @@ class DemoRegistry(RoutedApplication):
         if operation in ("list_conversations", "get_conversation", "save_conversation"):
             with self.conversation_lock:
                 return self._persist_conversation(directory, operation, record)
+        if operation in ("get_poll", "save_poll"):
+            key = hashlib.sha256(record["poll_id"].encode()).hexdigest()
+            node = directory.child(f"polls/{record['bot_code']}/{key}.json")
+            with self.conversation_lock:
+                if operation == "get_poll":
+                    return json.loads(node.read_text()) if node.exists() else None
+                node.write_text(json.dumps(record), encrypted=True)
+                return None
         receipts = directory.child("receipts")
         if operation == "prune_receipts":
             if receipts.is_dir():

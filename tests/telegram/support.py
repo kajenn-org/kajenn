@@ -41,6 +41,7 @@ class Registry(RoutedApplication):
         self.records = {}
         self.receipts = {}
         self.conversations = {}
+        self.polls = {}
         self.fail = False
         super().__init__(**kwargs)
 
@@ -87,6 +88,13 @@ class Registry(RoutedApplication):
             saved["revision"] += 1
             self.conversations[key] = saved
             return copy.deepcopy(saved)
+        if operation == "get_poll":
+            return copy.deepcopy(
+                self.polls.get((application, record["bot_code"], record["poll_id"]))
+            )
+        if operation == "save_poll":
+            self.polls[(application, record["bot_code"], record["poll_id"])] = copy.deepcopy(record)
+            return None
         raise ValueError(operation)
 
 
@@ -104,6 +112,19 @@ class TelegramAPI:
         if method == "getMe":
             token_id = request.url.path.split("/")[1].split(":")[0][3:]
             result = {"id": int(token_id), "is_bot": True, "username": f"bot{token_id}"}
+        elif method == "sendPoll":
+            result = {
+                "message_id": 900,
+                "poll": {
+                    "id": "poll-1",
+                    "is_closed": False,
+                    "question": payload["question"],
+                    "options": payload["options"],
+                    "total_voter_count": 0,
+                },
+            }
+        elif method == "stopPoll":
+            result = {"id": "poll-1", "is_closed": True, "total_voter_count": 1}
         elif method == "sendMessage":
             message_id = len(self.messages) + 1
             self.messages[message_id] = payload
