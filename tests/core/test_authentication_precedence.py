@@ -32,10 +32,12 @@ from typing import Any
 
 import pytest
 
-from genro_routes import route
+from genro_routes import RoutingClass, route
 
 from kajenn import AsgiServer, Avatar, BaseApplication, McpOpenApiApplication, RoutedApplication
-from kajenn.exceptions import HTTPException, HTTPNotFound, HTTPUnauthorized
+from kajenn.exceptions import HTTPException, HTTPForbidden, HTTPNotFound, HTTPUnauthorized
+from kajenn.mcp.engine import McpEngine
+from kajenn.mcp.jsonrpc import McpError
 from kajenn.types import Message, Scope
 from kajenn_server_app import ServerApplication
 
@@ -292,3 +294,54 @@ class TestTheRequestSeam:
         body = json.dumps({"_request": "forged"}).encode()
         status, _, data = await drive(server, "/api/echo_request", method="POST", body=body)
         assert (status, data) == (200, {"is_request": True})
+
+
+class TestCoverageOfTheCorrections:
+    async def test_engine_level_mapping_of_handler_exceptions(self) -> None:
+        class Tools(RoutingClass):
+            @route()
+            def missing(self) -> None:
+                raise HTTPNotFound("record 42 not found")
+
+            @route()
+            def mine(self) -> None:
+                raise HTTPForbidden("mine")
+
+        engine = McpEngine(Tools().route, channel="mcp")
+
+        async def call(name: str) -> McpError:
+            with pytest.raises(McpError) as refused:
+                await engine.dispatch(
+                    {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name}}
+                )
+            return refused.value
+
+        assert (await call("missing")).code == -32603
+        assert "record 42" in (await call("missing")).message
+        assert (await call("mine")).code == -32000
+        assert (await call("ghost")).code == -32601
+
+    async def test_an_unreachable_route_is_503(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        server = api_server()
+
+        async def lost(*args: Any, **kwargs: Any) -> Any:
+            raise TimeoutError("no reply")
+
+        monkeypatch.setattr(server, "kbus_call", lost)
+        with pytest.raises(HTTPException) as failed:
+            await server.authenticate_credential("Bearer x", "rest")
+        assert failed.value.status == 503
+
+    async def test_another_refusal_status_of_the_route_propagates(self) -> None:
+        class Picky(RoutedApplication):
+            @route()
+            def check(self, credential: str = "", channel: str = "") -> dict[str, Any]:
+                raise HTTPForbidden("not from here")
+
+        server = api_server(
+            applications=[ServerApplication, (BaseApplication, {"mount": ""}), (Picky, {"code": "idp"})],
+            channels={"mcp": {"authentication_route": "/idp/check"}},
+        )
+        with pytest.raises(HTTPException) as refused:
+            await server.authenticate_credential("Bearer x", "mcp")
+        assert refused.value.status == 403
