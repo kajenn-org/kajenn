@@ -21,7 +21,7 @@ answers; the engine is read for its configuration (``router``, ``channel``,
 protocol signature ``(params, auth_tags)``.
 
 - ``list`` walks ``router.nodes(forbidden=False, channel_channel=...)`` so
-  only the entries reachable on the engine's channel are advertised. Tool
+  only the entries reachable on the engine's channel by the caller are advertised. Tool
   names join the router path with ``tool_separator`` (default ``"."``, a
   character illegal in Python identifiers, so ``sub.ping`` <-> ``sub/ping``
   round-trips losslessly). Descriptors read ONLY the neutral blocks cached by
@@ -97,12 +97,15 @@ class McpTools(RoutingClass):
         """Enumerate the tools visible on this channel.
 
         ``forbidden=False`` excludes entries the channel does not expose, so
-        the tool list carries only what is reachable on this channel.
+        the tool list carries only what this identity can reach on this channel.
         """
         router = self.engine.router
         if router is None:
             return {"tools": []}
-        nodes = router.nodes(forbidden=False, channel_channel=self.engine.channel)
+        nodes = router.nodes(
+            forbidden=False, channel_channel=self.engine.channel,
+            auth_tags=",".join(auth_tags) if isinstance(auth_tags, list) else auth_tags,
+        )
         tools: list[dict] = []
         self._collect_tools(nodes, "", tools)
         return {"tools": tools}

@@ -113,6 +113,18 @@ class TestInitialize:
 
 
 class TestToolsList:
+    @pytest.mark.parametrize("auth_tags", ["admin", ["admin", "user"]])
+    async def test_matching_roles_discover_protected_tools(self, engine, auth_tags):
+        result = await engine.dispatch({"method": "tools/list"}, auth_tags=auth_tags)
+        names = {tool["name"] for tool in result["tools"]}
+        assert names == {"add", "greet", "secret", "sub.ping"}
+
+    @pytest.mark.parametrize("auth_tags", [None, [], ["user"]])
+    async def test_other_roles_cannot_discover_protected_tools(self, engine, auth_tags):
+        result = await engine.dispatch({"method": "tools/list"}, auth_tags=auth_tags)
+        names = {tool["name"] for tool in result["tools"]}
+        assert names == {"add", "greet", "sub.ping"}
+
     async def test_lists_only_the_mcp_channel_tools(self, engine: McpEngine) -> None:
         result = await engine.dispatch({"method": "tools/list"})
         names = {tool["name"] for tool in result["tools"]}
