@@ -24,14 +24,16 @@ its db connection after every tool.
 
 from __future__ import annotations
 
+import inspect
 import json
 from typing import Any
 
 
-from genro_routes import route
+from genro_routes import RoutingClass, route
 
 from kajenn import AsgiServer, BaseApplication, McpOpenApiApplication, RoutedApplication
 from kajenn.request import Request
+from kajenn.mcp.engine import McpEngine
 from kajenn.types import Message, Scope
 
 
@@ -131,7 +133,6 @@ class TestTheExecutionPoint:
     def test_execute_exists_and_is_a_coroutine_function(self) -> None:
         # wf:contract: RoutedApplication.execute(request) is the single execution point,
         # wf:contract: async, resolving the route and running the handler.
-        import inspect
 
         assert inspect.iscoroutinefunction(RoutedApplication.execute)
 
@@ -238,9 +239,7 @@ class TestTheEngineContract:
     def test_invoke_receives_the_tool_path(self) -> None:
         # wf:contract: McpEngine.invoke is called as invoke(path, arguments, auth_tags);
         # wf:contract: the default invoke resolves the path on the engine's router.
-        import inspect
 
-        from kajenn.mcp.engine import McpEngine
 
         params = list(inspect.signature(McpEngine._default_invoke).parameters)
         assert params == ["self", "path", "arguments", "auth_tags"]
@@ -248,9 +247,7 @@ class TestTheEngineContract:
     async def test_the_default_invoke_resolves_on_the_router(self) -> None:
         # wf:contract: an engine without an application still answers tools/call by
         # wf:contract: resolving the path on its router with the engine's channel.
-        from genro_routes import RoutingClass
 
-        from kajenn.mcp.engine import McpEngine
 
         class Calc(RoutingClass):
             @route()

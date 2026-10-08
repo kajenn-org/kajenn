@@ -31,6 +31,7 @@ import pytest
 from genro_routes import route
 
 from kajenn import AsgiServer, AuthCore, Avatar, BaseApplication, RoutedApplication
+from kajenn.config import AsgiConfigBuilder
 from kajenn.exceptions import HTTPUnauthorized
 from kajenn.kbus import KBusCallError
 from kajenn_server_app import ServerApplication
@@ -196,7 +197,6 @@ class TestAuthenticateCredential:
     def test_cache_ttl_comes_from_the_grammar(self) -> None:
         # wf:contract: configuration.authentication(cache_ttl=<seconds>) reaches the server
         # wf:contract: as credential_cache_ttl; the default is 300.
-        from kajenn.config import AsgiConfigBuilder
 
         class Recipe(AsgiConfigBuilder):
             def main(self, root: Any) -> None:

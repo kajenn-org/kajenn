@@ -33,6 +33,7 @@ from genro_routes import route
 from kajenn import AsgiServer, BaseApplication, McpOpenApiApplication, RoutedApplication
 from kajenn.config import AsgiConfigBuilder
 from kajenn.types import Message, Scope
+from kajenn.wsx import WsxConnection, WsxEnvelope
 
 
 class Faces(McpOpenApiApplication):
@@ -112,7 +113,6 @@ class TestTheScopeKey:
         # wf:contract: WsxConnection._request_scope sets kajenn.channel = "wsx" on the
         # wf:contract: synthetic scope of every message, and the handshake scope carries
         # wf:contract: the same key before authentication.
-        from kajenn.wsx import WsxConnection, WsxEnvelope
 
         seen: dict[str, Any] = {}
 

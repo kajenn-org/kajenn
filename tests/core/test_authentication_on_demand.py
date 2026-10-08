@@ -35,6 +35,7 @@ import kajenn
 from kajenn import AsgiServer, Avatar, BaseApplication, BaseServer, McpOpenApiApplication
 from kajenn.middleware import default_registry
 from kajenn.types import Message, Scope
+from kajenn.wsx import WsxConnection, WsxEnvelope
 from kajenn_server_app import ServerApplication
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
@@ -257,7 +258,6 @@ class TestWsx:
         # wf:contract: the websocket handshake awaits server.authenticate with
         # wf:contract: scope["kajenn.channel"] == "wsx"; an invalid Authorization header
         # wf:contract: closes 1008, a valid one gives every message the avatar.
-        from kajenn.wsx import WsxConnection, WsxEnvelope
 
         seen: list[str] = []
 
