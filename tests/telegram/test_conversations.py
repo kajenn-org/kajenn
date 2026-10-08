@@ -378,3 +378,27 @@ async def test_already_applied_edit_counts_as_success(setup):
         )
         with pytest.raises(RuntimeError, match="sendMessage"):
             await app.send_message("alpha", 42, "hello")
+
+
+async def test_resolution_persists_every_admin_copy_and_is_idempotent(setup):
+    server, app, api = setup
+    await register(app)
+    record = await app.conversations.create_record(
+        "alpha",
+        [{"user_id": 100, "chat_id": 100}, {"user_id": 200, "chat_id": 200}],
+        "",
+        {"user_id": 42, "name": "Requester", "admins": [100, 200]},
+        kind="admission",
+    )
+    for admin in (100, 200):
+        await app.conversations.send_record_message(
+            record, admin, "Approval", {"Approve": "approve"}
+        )
+    record.update(state="approved", decision={"name": "Admin", "user_id": 100})
+    await app.conversations.save_record(record)
+    await app.conversations.sync_resolution(record)
+    saved = await app.get_conversation("alpha", record["id"])
+    assert all(message["resolution"] for message in saved["messages"])
+    count = len(api.calls)
+    await app.conversations.sync_resolution(saved)
+    assert len(api.calls) == count

@@ -276,7 +276,8 @@ class _Conversations:
             return
         text = f"{record['state'].capitalize()} by {decision['name']} ({decision['user_id']})"
         token = self.application.registrations[record["bot_code"]]["token"]
-        for message in record["messages"]:
+        for index in range(len(record["messages"])):
+            message = record["messages"][index]
             if not message["actions"] or message["resolution"] == text:
                 continue
             try:

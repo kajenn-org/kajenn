@@ -58,7 +58,6 @@ import copy
 import hashlib
 import hmac
 import importlib
-import inspect
 import json
 import re
 import secrets
@@ -240,7 +239,8 @@ class TelegramBotApplication(RoutedApplication):
         return server
 
     async def _call(self, node: Any, **kwargs: Any) -> Any:
-        if inspect.iscoroutinefunction(node):
+        # RouterNode uses the asyncio coroutine marker on Python 3.11.
+        if asyncio.iscoroutinefunction(node):
             return await node(**kwargs)
         return await self._require_server().run_sync(lambda: node(**kwargs))
 
