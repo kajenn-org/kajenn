@@ -289,7 +289,11 @@ One line each; the deep dives live in their own guides.
 - **`authentication`** — the whole identity surface in one section:
   the `users`/`tokens` stores, the `login` lockout policy, the
   `oidc` providers and the header `credentials`. The grammar of each is in
-  [Authentication](authentication.md).
+  [Authentication](authentication.md). `cache_ttl` sets the seconds a
+  verified credential stays cached.
+- **`channels`** — one `channel(name, authentication_route)` per face
+  (`rest`, `mcp`, `wsx`, ...): the route verifying a credential presented on
+  it. A channel not listed uses `/_server/auth/authenticate`.
 - **`storage`** — the mount point of [genro-storage](https://pypi.org/project/genro-storage/)'s
   own grammar: `storage_key` plus one child per mount, written in genro-storage's
   words (see [The storage section](#the-storage-section)).

@@ -276,3 +276,36 @@ class TestLifespanLifecycle:
         await server({"type": "lifespan"}, receive, send)
         assert sch_seen_running.is_set()
         assert server.tasks.scheduler._loop_task is None      # stopped at shutdown
+
+
+class TestRunNowFromAPoolThread:
+    """run_now called off the loop goes through server.run_on_loop."""
+
+    async def test_run_now_from_the_pool_starts_the_task(self, server: AsgiServer) -> None:
+        sch = scheduler(server)
+        sch.start()
+        try:
+            sch.sync_defaults(sch.scan(), now=0.0)
+            assert await server.run_sync(sch.run_now, "cleanup") == "started"
+            await settle(lambda: "cleanup" in RUN_MARKS)
+        finally:
+            await sch.stop()
+
+    async def test_a_failed_start_releases_the_schedule(
+        self, server: AsgiServer, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sch = scheduler(server)
+        sch.start()
+        try:
+            sch.sync_defaults(sch.scan(), now=0.0)
+
+            def broken(coro: object) -> None:
+                coro.close()  # type: ignore[attr-defined]
+                raise RuntimeError("no loop")
+
+            monkeypatch.setattr(server, "run_on_loop", broken)
+            with pytest.raises(RuntimeError):
+                await server.run_sync(sch.run_now, "cleanup")
+            assert "cleanup" not in sch._running
+        finally:
+            await sch.stop()

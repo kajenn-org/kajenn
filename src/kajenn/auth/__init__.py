@@ -17,8 +17,8 @@
 ``AuthCore`` verifies basic/bearer/jwt credentials; ``AuthMixin`` composes the
 capability onto a server and applies the §5.5 identity precedence over sessions;
 ``UserStore`` and ``ApiKeyStore`` are the local identity and api-key registries
-with their filesystem backends. ``AuthMiddleware`` — the chain entry point armed
-by the mixin — lives in ``middleware/authentication.py``.
+with their filesystem backends. The identity is resolved by the execution point
+(``RoutedApplication.execute``), which awaits ``server.authenticate(scope)``.
 
 The package authenticates by header credentials and by the session avatar, and
 never asks a human for a user and a password: an interactive login surface is

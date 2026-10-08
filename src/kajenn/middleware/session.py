@@ -31,9 +31,8 @@ carries a ``Set-Cookie``. Login never changes the session id: a handler
 attaches the avatar to the existing session in place
 (``request.session.attach_avatar``), so the cookie the client already holds
 stays valid and no login-time cookie exists — handlers stay pure and never
-set cookies themselves. Armed by ``SessionMixin``; order 400 (OUTSIDE
-``AuthMiddleware`` at 450, so the session is on the scope before the §5.5
-fallback runs), default OFF. The chain only carries ``http`` scopes, so no
+set cookies themselves. Armed by ``SessionMixin``; order 400 (the session is on the scope
+before the execution point resolves the identity), default OFF. The chain only carries ``http`` scopes, so no
 scope filtering happens here.
 """
 

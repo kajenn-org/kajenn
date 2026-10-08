@@ -18,13 +18,16 @@ Two ready-to-mount apps expose a genro-routes router as MCP tools over JSON-RPC
 2.0. Both delegate the HTTP shell to a :class:`McpTransport` — the helper that
 owns everything the transport-agnostic :class:`McpEngine` does not:
 method/header/Origin gating, the JSON-RPC envelope, the 202-for-notifications
-rule, and the sync/async invoke callback (async handlers stay on the loop, sync
-handlers go through the server pool via ``run_sync``). The transport holds its
-owning application as ``self.application`` (dual-parent) and reaches its
-``spread_over_params`` and ``server`` through it.
+rule, and the invoke callback: a ``tools/call`` becomes a ``Request`` on the
+tool's path, run through the application's ``execute`` — the execution point
+REST uses, so a tool sees its ``_request`` and a sync tool runs
+``route_cleanup``. The transport holds its owning application as
+``self.application`` (dual-parent) and reaches its ``execute`` and ``server``
+through it.
 
 - :class:`McpApplication` — the whole app is one MCP endpoint. It holds an
-  engine over an EXTERNAL router (``routing_class=`` or ``module=``); every
+  engine over an EXTERNAL router (``routing_class=`` or ``module=``), attached
+  under ``api_name`` of its own router so ``execute`` resolves it; every
   request is a JSON-RPC message. Without a router ``initialize`` still answers
   and ``tools/list`` is empty.
 - :class:`McpOpenApiApplication` — one router, two faces: it inherits the whole
@@ -55,7 +58,8 @@ is no durable event log. A server composed without tasks answers GET with 405.
 
 from __future__ import annotations
 
-import asyncio
+import contextvars
+import json
 import secrets
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -68,7 +72,7 @@ from ..sse import SseStream
 from .openapi import OpenApiApplication
 
 if TYPE_CHECKING:
-    from genro_routes import Router, RouterNode, RoutingClass
+    from genro_routes import Router, RoutingClass
 
     from ..types import Receive, Scope, Send
 
@@ -82,7 +86,9 @@ class McpTransport:
     202-for-notifications) and the sync/async invoke callback, driving an
     :class:`McpEngine` built over a router the host application supplies. The
     host is held as ``self.application`` (dual-parent): the transport reads its
-    ``spread_over_params`` and ``server`` through it.
+    ``execute`` and ``server`` through it. ``tool_root`` is the path of the
+    engine's router inside the host's router (``""`` when it is the host's
+    own).
     """
 
     def __init__(
@@ -94,10 +100,15 @@ class McpTransport:
         tool_separator: str,
         channel: str,
         allowed_origins: list[str] | None,
+        tool_root: str = "",
     ) -> None:
         self.application = application
         self.channel = channel
         self.allowed_origins = allowed_origins
+        self.tool_root = tool_root
+        # The MCP POST request a tools/call belongs to, per task: the engine's
+        # invoke protocol carries no request, the tool's Request is built on it.
+        self.mcp_request: contextvars.ContextVar[Request] = contextvars.ContextVar("mcp_request")
         self._name = name
         self._version = version
         self._tool_separator = tool_separator
@@ -134,22 +145,40 @@ class McpTransport:
         if name not in {plugin.name for plugin in router.iter_plugins()}:
             router.plug(name, **options)
 
-    def _invoke_tool(self, node: RouterNode, arguments: dict) -> Any:
-        """Run a resolved tool node, adapting arguments and picking the vehicle.
+    async def _invoke_tool(self, path: str, arguments: dict, auth_tags: Any) -> Any:
+        """Run a tool through the application's ``execute``, as a request of its own.
 
-        MCP ``arguments`` is the equivalent of a JSON body: fit it to the
-        handler's declared parameters through the same ``spread_over_params``
-        REST uses (extras dropped) — MCP wraps the API, it does not bypass it.
-        An async handler stays on the loop; a sync handler goes through the
-        server pool. Either way the returned awaitable is awaited by the engine.
+        The tool's scope is the MCP POST scope on the tool's path: a POST whose
+        JSON body is ``arguments`` — the equivalent of a REST body, spread over
+        the handler's parameters by ``bind_kwargs`` — carrying the original
+        headers and the identity the POST came with (``scope["auth"]``).
+        ``auth_tags`` is not read: the identity is on the scope.
         """
         app = self.application
-        kwargs = app.spread_over_params(node, arguments)
-        if asyncio.iscoroutinefunction(node):
-            return node(**kwargs)
-        server = app.server
-        assert server is not None  # a request is in flight, so the app is owned
-        return server.run_sync(lambda: node(**kwargs))
+        mcp_scope = self.mcp_request.get().scope
+        tool_path = "/" + "/".join(part for part in (self.tool_root, path) if part)
+        headers = [
+            (name, value)
+            for name, value in mcp_scope.get("headers", [])
+            if name not in (b"content-type", b"content-length")
+        ]
+        scope = {
+            **mcp_scope,
+            "path": tool_path,
+            "raw_path": tool_path.encode(),
+            "method": "POST",
+            "headers": [(b"content-type", b"application/json"), *headers],
+            "query_string": b"",
+            "kajenn.channel": self.channel,
+        }
+        body = json.dumps(arguments).encode()
+
+        async def receive() -> dict[str, Any]:
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request = Request(scope, receive, server=app.server, application=app)
+        await request.init()
+        return await app.execute(request)
 
     async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Answer one MCP request over the Streamable HTTP transport.
@@ -160,6 +189,7 @@ class McpTransport:
         answers HTTP 202 with an empty body), anything else answers 405.
         """
         app = self.application
+        scope["kajenn.channel"] = self.channel
         request = Request(scope, receive, server=app.server, application=app)
         await request.init()
         origin = request.headers.get("origin")
@@ -168,6 +198,10 @@ class McpTransport:
         version = request.headers.get("mcp-protocol-version")
         if version is not None and version not in McpEngine.SUPPORTED_VERSIONS:
             raise HTTPBadRequest(f"Unsupported MCP-Protocol-Version: {version}")
+        # Authenticated after the gates: a refused Origin or version is answered
+        # without spending a credential verification.
+        if scope.get("auth") is None:
+            scope["auth"] = await app.server.authenticate(scope)
         if request.method == "GET":
             await self.open_stream(request, scope, receive, send)
             return
@@ -182,6 +216,7 @@ class McpTransport:
             return
         jsonrpc_id = envelope.get("id") if isinstance(envelope, dict) else None
         assert self._engine is not None  # built at construction
+        self.mcp_request.set(request)
         try:
             result = await self._engine.dispatch(envelope, request.auth_tags)
         except McpError as exc:
@@ -289,6 +324,7 @@ class McpApplication(RoutedApplication):
     mcp_version: ClassVar[str] = "1.0.0"
     tool_separator: ClassVar[str] = "."
     mcp_channel: ClassVar[str] = "mcp"
+    api_name: ClassVar[str] = "api"
 
     def __init__(self, **kwargs: Any) -> None:
         cls = type(self)
@@ -306,6 +342,7 @@ class McpApplication(RoutedApplication):
             tool_separator=separator,
             channel=cls.mcp_channel,
             allowed_origins=allowed_origins,
+            tool_root=cls.api_name,
         )
         self._transport.build_engine(self._resolve_router(routing_class, module))
 
@@ -317,10 +354,18 @@ class McpApplication(RoutedApplication):
     def _resolve_router(
         self, routing_class: RoutingClass | None, module: str | None
     ) -> Router | None:
-        """Resolve the external router from a ``routing_class`` or a ``module`` path."""
+        """Resolve the external router and attach it under ``api_name``.
+
+        The class comes from ``routing_class`` or a ``module`` path; attached as
+        an eager branch of the app router, it is what ``execute`` resolves a
+        tool's path on.
+        """
         if routing_class is None and module:
             routing_class = self._import_routing_class(module)
-        return routing_class.route if routing_class is not None else None
+        if routing_class is None:
+            return None
+        self.route.add_branches({"name": self.api_name, "instance": routing_class})
+        return routing_class.route
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Every request is an MCP JSON-RPC message on the single endpoint."""
@@ -343,6 +388,7 @@ class McpOpenApiApplication(OpenApiApplication):
     tool_separator: ClassVar[str] = "."
     mcp_channel: ClassVar[str] = "mcp"
     rest_channel: ClassVar[str] = "rest"
+    http_channel: ClassVar[str] = rest_channel
 
     def __init__(self, **kwargs: Any) -> None:
         cls = type(self)
@@ -363,6 +409,7 @@ class McpOpenApiApplication(OpenApiApplication):
             tool_separator=separator,
             channel=cls.mcp_channel,
             allowed_origins=allowed_origins,
+            tool_root=self.api_name if mounted else "",
         )
         if mounted:
             self._transport.build_engine(self._mounted_router)
@@ -380,18 +427,6 @@ class McpOpenApiApplication(OpenApiApplication):
     def mcp_name_segment(self) -> str:
         """Path segment under which the MCP JSON-RPC face is served."""
         return self._mcp_segment
-
-    def auth_filters(self, scope: Scope) -> dict[str, str]:
-        """Node-resolution filters: the base auth tags plus the REST channel.
-
-        The API router carries the ``channel`` plugin (a method is an MCP tool
-        only on channel ``"mcp"``), so the REST face must resolve on the REST
-        channel; the MCP face passes ``"mcp"`` through the engine. The filter is
-        harmless when no router on the path plugs ``channel`` (it is ignored).
-        """
-        filters = super().auth_filters(scope)
-        filters["channel_channel"] = self.rest_channel
-        return filters
 
     def schema_filters(self) -> dict[str, Any]:
         """Build the OpenAPI schema over the REST channel (the channel plugin is armed)."""

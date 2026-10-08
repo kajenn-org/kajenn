@@ -963,3 +963,30 @@ applications declared with `spawner=` through their spawner. A `kbus_call` to
 an in-process application goes straight to `serve_kbus_frame`: no `LocalKBus`
 is attached for in-process applications. `RemoteConnection` and the remote runner
 are retired. D33 and D-SA are untouched.
+
+### Ratified 2026-10-08 (the single execution point and authentication on demand)
+
+**#37 closed.** Every face and transport reaches one execution point,
+`RoutedApplication.execute`: authentication on demand (a presented credential
+is verified first; the session answers only without one) → resolution with the
+identity found → `make_callable` → handler → `route_cleanup`. REST, MCP (`tools/call`), WSX and
+the KajennBus all go through it; the sync handler and its `route_cleanup` run
+on the same pool thread.
+
+**Vocabulary: channel ≠ transport.** The channel is the face a request arrives
+on (`rest`, `mcp`, `wsx`, ...), carried as `scope["kajenn.channel"]`. The
+transport is how the bytes travel (HTTP, WebSocket, uds, kbus).
+
+**D33 amended.** "Which application authenticates for which path" is answered
+by `server.channels().channel(name, authentication_route)`; a channel not
+configured uses `/_server/auth/authenticate`. A credential presented is always
+verified and an invalid one is always 401; absence is not an error.
+`AuthMiddleware` is retired. `AuthCore` stays as the server's base
+authentication behind the `_server` route. A verified credential is cached by
+TTL (`authentication(cache_ttl=...)`, `0` disables it) and is evicted by
+`forget_credential`; revoking or deleting an api key empties the cache.
+`server.authenticate(scope)` is `async`.
+
+**What stays open.** For 0.5.0: the session at first write, the login mixin and
+the enrichment per branch. For klink: `info.credential` stays reserved and
+unread by the bus.

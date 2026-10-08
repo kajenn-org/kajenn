@@ -52,11 +52,12 @@ from typing import TYPE_CHECKING, Any
 
 from genro_routes import RoutingClass, route
 
+from ..routed_application import RoutedApplication
 from .jsonrpc import JSONRPC_INVALID_REQUEST, JSONRPC_METHOD_NOT_FOUND, McpError
-from .tools import McpTools
+from .tools import McpTools, _ToolArgumentsInvalid
 
 if TYPE_CHECKING:
-    from genro_routes import Router, RouterNode
+    from genro_routes import Router
 
 __all__ = ["McpDispatcher", "McpEngine"]
 
@@ -110,11 +111,13 @@ class McpEngine:
         name / version: server identity returned by ``initialize``.
         tool_separator: joins router/method segments into a flat tool name.
         channel: channel to filter entries on (visibility per channel).
-        invoke: callback ``(node, arguments) -> result`` running a resolved
-            node; ``tools/call`` awaits an awaitable result. Host applications
-            pass their own to interpose parameter adaptation (e.g.
-            ``spread_over_params``) and pool dispatch for sync handlers; the
-            default calls the node directly.
+        invoke: callback ``(path, arguments, auth_tags) -> result`` resolving
+            the tool path and running it; ``tools/call`` awaits an awaitable
+            result. A resolution failure raises the core HTTP exception of its
+            code (``HTTPNotFound``, ``HTTPUnauthorized``, ``HTTPForbidden``).
+            Host applications pass their own to run the call through their
+            execution point; the default resolves on ``router`` and calls the
+            node directly.
     """
 
     SUPPORTED_VERSIONS: tuple[str, ...] = ("2025-11-25", "2025-06-18", "2025-03-26")
@@ -127,7 +130,7 @@ class McpEngine:
         version: str = "1.0.0",
         tool_separator: str = ".",
         channel: str = "mcp",
-        invoke: Callable[[Any, dict], Any] | None = None,
+        invoke: Callable[[str, dict, Any], Any] | None = None,
     ) -> None:
         self.router = router
         self.name = name
@@ -137,8 +140,21 @@ class McpEngine:
         self.invoke = invoke or self._default_invoke
         self.mcp_dispatcher = McpDispatcher(self)
 
-    def _default_invoke(self, node: RouterNode, arguments: dict) -> Any:
-        """Raw invocation, no parameter adaptation; ``tools/call`` awaits it."""
+    def _default_invoke(self, path: str, arguments: dict, auth_tags: Any) -> Any:
+        """Resolve ``path`` on the router and call the node raw; ``tools/call`` awaits it.
+
+        Resolution runs on the engine's channel with ``auth_tags`` as the auth
+        filter; a failing code raises the core HTTP exception mapped to it
+        (``RoutedApplication.ROUTER_ERRORS``), bad arguments raise the tools'
+        marker. No parameter adaptation.
+        """
+        assert self.router is not None  # tools/call answers -32603 before invoking
+        node = self.router.node(
+            path,
+            errors={**RoutedApplication.ROUTER_ERRORS, "validation_error": _ToolArgumentsInvalid},
+            auth_tags=",".join(auth_tags) if isinstance(auth_tags, list) else auth_tags,
+            channel_channel=self.channel,
+        )
         return node(**arguments)
 
     async def dispatch(self, payload: Any, auth_tags: Any = None) -> dict:

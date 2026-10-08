@@ -23,17 +23,20 @@ e.g. ``/_server/auth/oidc:google/start``). A route-less method — the password
 one — is recorded in the registry but never attached: zero-route nodes never
 enter the routing tree (Invariant 10).
 
-The section is a thin router node: it holds no routes of its own, it only
-carries the routed method children and keeps the ordered registry the login
-surface reads to build ``login_methods``. Routing is dispatch; the registry
-is this dict.
+The section carries the routed method children, keeps the ordered registry
+the login surface reads to build ``login_methods``, and owns two public
+routes: ``authenticate`` (the default ``authentication_route`` of every
+channel, backed by ``AuthCore.verify``) and ``forget_credential`` (evicts a
+cached credential). Routing is dispatch; the registry is this dict.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from genro_routes import RoutingClass
+from genro_routes import RoutingClass, route
+
+from kajenn.exceptions import HTTPForbidden
 
 if TYPE_CHECKING:
     from ..auth_method import AuthMethod
@@ -100,3 +103,42 @@ class AuthSection(RoutingClass):
     def descriptors(self) -> list[dict[str, Any]]:
         """The descriptor of every registered method, in registration order."""
         return [method.descriptor() for method in self.methods.values()]
+
+    @staticmethod
+    def _bus_only(request: Any) -> None:
+        """Refuse a caller that did not come through the KajennBus (403).
+
+        The two routes below serve ``server.authenticate_credential`` and the
+        applications that call them with ``kbus_call``; over HTTP they would
+        let anyone verify a credential or evict a cache entry.
+        """
+        if request is None or not request.scope.get("kajenn.kbus"):
+            raise HTTPForbidden("this route serves the KajennBus only")
+
+    @route(media_type="application/json", openapi_method="post")
+    def authenticate(
+        self, credential: str = "", channel: str = "", _request=None
+    ) -> dict[str, Any]:
+        """Verify ``credential`` with the server's ``AuthCore``.
+
+        Returns ``{identity, tags, data}``; an invalid credential raises
+        ``HTTPUnauthorized`` (status 401 for a bus caller). Reachable through
+        the bus only: an HTTP caller gets 403.
+
+        Note:
+            Route: POST /_server/auth/authenticate
+        """
+        self._bus_only(_request)
+        avatar = self.server.auth_core.verify(credential)
+        return {"identity": avatar.identity, "tags": avatar.tags, "data": {}}
+
+    @route(media_type="application/json", openapi_method="post")
+    def forget_credential(self, credential: str = "", _request=None) -> dict[str, Any]:
+        """Drop the cached avatars of ``credential``. Bus only, like ``authenticate``.
+
+        Note:
+            Route: POST /_server/auth/forget_credential
+        """
+        self._bus_only(_request)
+        self.server.forget_credential(credential)
+        return {"status": "ok"}

@@ -30,21 +30,21 @@ protocol signature ``(params, auth_tags)``.
   schema assembled from ``params.fields``), ``outputSchema`` from
   ``result.schema`` (``response_schema``). Nothing is derived from the
   callable and pydantic is never imported here.
-- ``call`` resolves the tool through ``router.node(path, ...)`` and reads the
-  ``node.error`` STRING CODE (the stable genro-routes contract — resolution
-  never raises): ``not_found``/``not_available`` -> -32601,
-  ``not_authorized``/``not_authenticated`` -> -32000, any other code ->
-  -32603. Execution is delegated to the engine's ``invoke`` callback so a host
-  app can interpose parameter adaptation and pool dispatch; the default calls
-  the node directly and an awaitable result is awaited here (async handlers),
-  nothing more. Input-validation failures are TOOL EXECUTION errors —
+- ``call`` turns the tool name into its router path and hands it to the
+  engine's ``invoke`` callback, which resolves and runs it — a host
+  application through its execution point, the default on the engine's
+  router — and an awaitable result is awaited here. The core HTTP exceptions
+  a resolution raises map to JSON-RPC errors in one place: ``HTTPNotFound``
+  -> -32601, ``HTTPUnauthorized``/``HTTPForbidden`` -> -32000. Input-validation
+  failures are TOOL EXECUTION errors —
   ``{"isError": true, "content": [...]}`` results, not JSON-RPC protocol
   errors (SEP-1303, enables model self-correction). Validation runs INSIDE
   genro-routes (the pydantic plugin validates at call time; nothing is
   re-validated here). Every bad-argument error — a
   ``pydantic.ValidationError`` or an unbindable-argument ``TypeError`` alike —
-  is channelled through the node's ``errors={"validation_error": ...}`` seam
-  to a local marker, so this module needs no pydantic import; the bare
+  arrives as an ``HTTPBadRequest``, an ``HTTPException`` on a validation
+  status (the execution point) or a local marker (the default invoke), so
+  this module needs no pydantic import; the bare
   ``TypeError`` catch covers an async handler body raising at await time
   (a sync body's TypeError is already folded into the marker upstream). Both
   become ``isError`` results. A dict result is returned BOTH as
@@ -61,6 +61,8 @@ from typing import TYPE_CHECKING, Any
 
 from genro_routes import RoutingClass, route
 
+from ..application import ERROR_CODES
+from ..exceptions import HTTPException, HTTPForbidden, HTTPNotFound, HTTPUnauthorized
 from .jsonrpc import JSONRPC_INTERNAL_ERROR, JSONRPC_METHOD_NOT_FOUND, JSONRPC_NOT_AUTHORIZED, McpError
 
 if TYPE_CHECKING:
@@ -165,43 +167,48 @@ class McpTools(RoutingClass):
 
     @route()
     async def call(self, params: dict, auth_tags: Any = None) -> dict:
-        """Resolve a tool name to its router node, invoke it, wrap the result.
+        """Hand the tool's path to the engine's ``invoke``, wrap the result.
 
-        Bad tool arguments come back as ``isError`` results — genro-routes
-        folds validation failures AND unbindable arguments into the
-        ``validation_error`` mapping, while the ``TypeError`` catch covers an
-        async handler body raising at await time; resolution failures read
-        ``node.error`` and raise :class:`McpError`.
+        Bad tool arguments come back as ``isError`` results — a 400 or the
+        application's validation status from the execution point, the marker
+        from the default invoke, and a ``TypeError`` an async handler body
+        raises at await time; resolution failures raise :class:`McpError`.
 
         Raises:
             McpError: no router configured (-32603), unknown/unavailable tool
-                (-32601), not authorized/authenticated (-32000), any other
-                resolution code (-32603).
+                (-32601), not authorized/authenticated (-32000).
         """
-        router = self.engine.router
-        if router is None:
+        if self.engine.router is None:
             raise McpError(JSONRPC_INTERNAL_ERROR, "No router configured")
         name = params.get("name", "")
         arguments = params.get("arguments") or {}
         # Reverse of _collect_tools: separator between segments -> path separator.
         path = name.replace(self.engine.tool_separator, "/")
-        node = router.node(
+        # Resolution is judged on the tree before the call, with the caller's
+        # tags and the engine's channel: an unknown or off-channel tool is "not
+        # found", a ruled one the caller may not use is "not authorized". An
+        # HTTPNotFound raised later therefore comes from the handler's body and
+        # is reported as the tool's own failure, not as a missing tool.
+        probe = self.engine.router.node(
             path,
-            errors={"validation_error": _ToolArgumentsInvalid},
             auth_tags=",".join(auth_tags) if isinstance(auth_tags, list) else auth_tags,
             channel_channel=self.engine.channel,
         )
-        if node.error in ("not_found", "not_available"):
+        if probe.error in ("not_found", "not_available"):
             raise McpError(JSONRPC_METHOD_NOT_FOUND, f"Tool not found: {name}")
-        if node.error in ("not_authorized", "not_authenticated"):
+        if probe.error in ("not_authenticated", "not_authorized"):
             raise McpError(JSONRPC_NOT_AUTHORIZED, "Not authorized")
-        if node.error:
-            raise McpError(JSONRPC_INTERNAL_ERROR, f"Router error: {node.error}")
         try:
-            result = self.engine.invoke(node, arguments)
+            result = self.engine.invoke(path, arguments, auth_tags)
             if inspect.isawaitable(result):
                 result = await result
-        except (_ToolArgumentsInvalid, TypeError) as exc:
+        except HTTPNotFound as exc:
+            raise McpError(JSONRPC_INTERNAL_ERROR, str(exc.detail or exc)) from exc
+        except (HTTPUnauthorized, HTTPForbidden) as exc:
+            raise McpError(JSONRPC_NOT_AUTHORIZED, "Not authorized") from exc
+        except (HTTPException, _ToolArgumentsInvalid, TypeError) as exc:
+            if isinstance(exc, HTTPException) and exc.status not in ERROR_CODES.values():
+                raise
             detail = exc.__cause__ or exc
             return {
                 "isError": True,

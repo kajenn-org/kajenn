@@ -14,12 +14,15 @@ routes with `auth_rule`.
 
 ## Setup
 
-Auth is a mixin capability of `AsgiServer`; its middleware is active by default.
-The `auth` keyword configures header credential backends. Without them, session
-identity can still be resolved.
+Auth is a mixin capability of `AsgiServer`. The execution point resolves the
+identity of every request: the session's avatar, else the `Authorization`
+header verified through `/_server/auth/authenticate`, so the server declares
+`ServerApplication`. The `auth` keyword configures header credential backends.
+Without them, session identity can still be resolved.
 
 ```python
 from kajenn import AsgiServer, RoutedApplication
+from kajenn_server_app import ServerApplication
 from genro_routes import route
 
 AUTH = {
@@ -41,7 +44,7 @@ class App(RoutedApplication):
         return {"classified": True}
 
 
-server = AsgiServer(applications=[App], auth=AUTH)
+server = AsgiServer(applications=[ServerApplication, App], auth=AUTH)
 server.serve(host="127.0.0.1", port=8000)
 ```
 
@@ -61,6 +64,48 @@ Notes on the config shape:
 - **The server creates no user.** There is no bootstrap password: a deployment
   that needs a first identity declares the store class that carries it, and the
   login surface belongs to the application.
+
+## Authentication on demand
+
+`RoutedApplication.execute` is the one execution point of REST, MCP, WSX and
+the KajennBus. For each request it authenticates first, then resolves the route
+with the identity it found:
+
+- A credential in the `Authorization` header, when presented, verified through
+  the `authentication_route` of the request's channel
+  (`scope["kajenn.channel"]`). It is always verified, session or not.
+- Else the session's avatar, when the request has one.
+- No credential is not an error: the route's `auth_rule` decides, and a ruled
+  route answers a bare `401` with `WWW-Authenticate: Bearer`.
+- An invalid credential is always `401`.
+
+Until `_server` is mounted automatically (a later release), a server that
+verifies header credentials must declare `ServerApplication`: without it and
+without a configured `authentication_route`, every presented credential is
+refused with `401`.
+
+MCP `arguments` are the handler's keyword arguments, never a body: a handler
+declaring `body_data` receives an argument named `body_data`, not the whole
+arguments dict. REST keeps the JSON body whole as `body_data`.
+
+The route answers `{identity, tags, data}` or `401`. Without configuration every
+channel uses `/_server/auth/authenticate`, backed by `AuthCore`. A recipe
+assigns a route per channel with `channels()`:
+
+```python
+cfg.channels().channel(name="mcp", authentication_route="/sourcerer/auth/verify")
+```
+
+`ServerApplication` exposes two routes, reachable through the KajennBus only (an HTTP caller gets `403`):
+
+- `POST /_server/auth/authenticate` — verifies a credential for a channel.
+- `POST /_server/auth/forget_credential` — evicts a credential from the cache.
+
+A verified credential is cached for `authentication(cache_ttl=...)` seconds
+(`0` disables the cache). Revoking or deleting an api key empties the cache.
+
+`server.authenticate(scope)` is now `async`. A caller awaits it; a pool thread
+uses `server.run_on_loop(server.authenticate(scope))`.
 
 ## Minimal snippet
 
