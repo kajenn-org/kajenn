@@ -49,8 +49,10 @@ import hashlib
 from time import monotonic
 from typing import Any
 
+import kbus
+
 from ..exceptions import HTTPException, HTTPUnauthorized
-from ..kbus import KBusCallError, KBusCallFailed
+from ..kbus import KBusCallError
 from ..middleware.base import headers_dict
 from ..session.avatar import Avatar
 from .api_key_store import ApiKeyStore, FileApiKeyStore
@@ -140,7 +142,7 @@ class AuthMixin:
             if error.status is None or error.status >= 500:
                 raise HTTPException(503, f"authentication route failed: {error.error}") from error
             raise HTTPException(error.status, str(error.error)) from error
-        except (KBusCallFailed, TimeoutError) as error:
+        except (kbus.Error, TimeoutError) as error:
             raise HTTPException(503, f"authentication route unreachable: {error}") from error
         avatar = Avatar(answer["identity"], answer["tags"])
         for name, value in (answer.get("data") or {}).items():

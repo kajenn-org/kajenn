@@ -20,7 +20,6 @@ import importlib
 import pytest
 
 import kajenn
-from kajenn import KBusMixin
 
 
 def test_kbus_package_exports_the_renamed_names():
@@ -76,8 +75,3 @@ def test_control_payload_moved():
     assert hasattr(control, "ControlPayload")
 
 
-def test_communication_mixin_exposes_kbus_attributes():
-    assert isinstance(KBusMixin.parent_kbus, property)
-    assert isinstance(KBusMixin.children_kbus, property)
-    assert not hasattr(KBusMixin, "parent_channel")
-    assert not hasattr(KBusMixin, "children_channel")

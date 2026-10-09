@@ -4,9 +4,12 @@
 """The mount of an application that runs in another process.
 
 ``RemoteApplication`` is built by the server for every application declared
-with ``spawner=``: it forwards each buffered http or WSK request as a CALL
-carrying an ``HttpRecord`` to the hub member named after the application code,
-and answers 503 while that member is not registered.
+with ``spawner=``: it opens one kbus stream per http or WSK request, with an
+``HttpRecord`` of the request as the opening message, to the member named
+after the application code, writes the answer as its messages arrive, and
+answers 503 while that process has not joined. When the real class defines
+``serve_websocket``, a websocket on the mount opens one stream as well, and
+every ASGI websocket event crosses it as one message, in both directions.
 
 The kwargs of the declaration are split in two: ``PROXY_OPTIONS`` belong to
 this mount, every other kwarg belongs to the real application, built in the
@@ -18,22 +21,58 @@ import asyncio
 import json
 from typing import Any
 
+import kbus
+
 from .application import BaseApplication
+from .spawner import cancel_and_wait
 from .asgi_endpoint import BufferedAsgiEndpoint
 from .http_record import HttpRecord
-from .kbus import CALL_METHOD, Frame, KBusCallFailed
 from .response import Response
-from .transport_limits import FrameTooLarge, HttpBodyTooLarge, http_max_body_size
+from .transport_limits import HttpBodyTooLarge, http_max_body_size
 
-__all__ = ["PROXY_OPTIONS", "RemoteApplication"]
+__all__ = ["PROXY_OPTIONS", "RemoteApplication", "websocket_event", "websocket_message"]
 
 #: The kwargs of an application declaration that belong to its proxy mount:
 #: the spawned process builds the real application without them.
 PROXY_OPTIONS = frozenset({"spawner", "request_timeout", "max_calls"})
 
 
+def websocket_message(event: dict[str, Any]) -> kbus.Message:
+    """One ASGI websocket event as one stream message.
+
+    ``meta`` carries every key of the event but ``text`` and ``bytes``, with
+    ``headers`` as ``[name, value]`` latin-1 text pairs; a text event has the
+    UTF-8 text as payload and ``meta["text"] = True``, a bytes event the bytes
+    and ``meta["bytes"] = True``.
+    """
+    meta = {key: value for key, value in event.items() if key not in ("text", "bytes")}
+    if "headers" in meta:
+        meta["headers"] = [[name.decode("latin-1"), value.decode("latin-1")]
+                           for name, value in meta["headers"]]
+    if event.get("text") is not None:
+        meta["text"] = True
+        return kbus.Message(meta, event["text"].encode())
+    if event.get("bytes") is not None:
+        meta["bytes"] = True
+        return kbus.Message(meta, event["bytes"])
+    return kbus.Message(meta)
+
+
+def websocket_event(message: kbus.Message) -> dict[str, Any]:
+    """The ASGI websocket event ``websocket_message`` turned into ``message``."""
+    event = {key: value for key, value in message.meta.items() if key not in ("text", "bytes")}
+    if "headers" in event:
+        event["headers"] = [(name.encode("latin-1"), value.encode("latin-1"))
+                            for name, value in event["headers"]]
+    if message.meta.get("text"):
+        event["text"] = message.payload.decode()
+    elif message.meta.get("bytes"):
+        event["bytes"] = message.payload
+    return event
+
+
 class RemoteApplication(BaseApplication):
-    """Forward one mounted application to the hub member named after its code."""
+    """Forward one mounted application to the member named after its code."""
 
     #: Read by ``WsxConnection``: the answers this mount hands back were
     #: already adapted at the endpoint that produced them, so they travel on
@@ -61,12 +100,17 @@ class RemoteApplication(BaseApplication):
         self.request_timeout = request_timeout
         self.max_calls = max_calls
         self._slots = asyncio.Semaphore(max_calls)
+        if hasattr(app_class, "serve_websocket"):
+            self.serve_websocket = self._forward_websocket
 
     async def __call__(self, scope, receive, send) -> None:
-        """Forward one buffered request to the member and write its answer.
+        """Forward one request to the member and write its answer as it streams.
 
-        A body over the policy ceiling answers 413, a member that failed
-        answers 502, a member that is not registered or too slow answers 503.
+        A body over the policy ceiling or the kbus frame limit answers 413, an
+        error reply answers 502, a process that has not joined, a lost link, a
+        process that dies before its first message or a first message slower
+        than ``request_timeout`` answers 503. Once the
+        answer started, a failure ends it without its terminal body.
         A client that disconnects while the body is being read ends the call
         silently.
 
@@ -74,56 +118,165 @@ class RemoteApplication(BaseApplication):
             ValueError: the scope is not ``http``.
         """
         if scope["type"] != "http":
-            raise ValueError("remote applications support buffered HTTP/WSK only")
-        local_response = True
+            raise ValueError("a remote application forwards http scopes; websockets go "
+                             "through serve_websocket")
         try:
-            async with self._slots:
-                async with asyncio.timeout(self.request_timeout):
-                    body = bytearray()
-                    while True:
-                        message = await receive()
-                        if message["type"] == "http.disconnect":
-                            return
-                        chunk = message.get("body", b"")
-                        if len(body) + len(chunk) > http_max_body_size():
-                            await self._send_local_response(
-                                413, "Request too large", scope, receive, send)
-                            return
-                        body.extend(chunk)
-                        if not message.get("more_body", False):
-                            break
-                    hub = self.server.children_kbus
-                    if hub.resolve(self.code) is None:
-                        raise KBusCallFailed("member not registered", outcome="not_sent")
-                    info: dict[str, Any] = {"format": "http"}
-                    scope.setdefault("kajenn.channel", "rest")
-                    if scope.get("auth") is None:
-                        scope["auth"] = await self.server.authenticate(scope)
-                    avatar = scope.get("auth")
-                    if avatar is not None:
-                        info["auth"] = {"identity": avatar.identity, "tags": list(avatar.tags)}
-                    info["channel"] = scope["kajenn.channel"]
-                    path = "/" + (self.mount or "") + scope["path"] if self.mount else scope["path"]
-                    record = HttpRecord().encode_request(
-                        {**scope, "path": path, "raw_path": path.encode(), "root_path": ""},
-                        bytes(body))
-                    reply = await hub.call_frame(self.code, Frame(
-                        method=CALL_METHOD, path=path, info=info, payload=record))
-                    if "error" in reply.info:
-                        status, text = 502, "Remote application failed"
-                    else:
-                        result = HttpRecord().decode_response(reply.payload)
-                        local_response = False
-                        response = Response(content=result["body"], status_code=result["status"],
-                                            headers=result["headers"])
-        except (FrameTooLarge, HttpBodyTooLarge):
-            status, text = 413, "Request too large"
-        except (KBusCallFailed, TimeoutError):
-            status, text = 503, "Remote application unavailable"
-        if local_response:
-            await self._send_local_response(status, text, scope, receive, send)
+            await self._forward(scope, receive, send)
             return
-        await response(scope, receive, send)
+        except (kbus.FrameTooLarge, HttpBodyTooLarge):
+            status, text = 413, "Request too large"
+        except (kbus.NoSuchMember, kbus.LinkLost, TimeoutError):
+            status, text = 503, "Remote application unavailable"
+        except kbus.Error:
+            status, text = 502, "Remote application failed"
+        await self._send_local_response(status, text, scope, receive, send)
+
+    async def _forward(self, scope, receive, send) -> None:
+        """Open a stream to the member with the request and relay its answer.
+
+        The ``max_calls`` slot and ``request_timeout`` bound the wait for the
+        first message only, never the length of the answer.
+        """
+        await self._slots.acquire()
+        held = True
+        try:
+            async with asyncio.timeout(self.request_timeout) as deadline:
+                body = bytearray()
+                while True:
+                    message = await receive()
+                    if message["type"] == "http.disconnect":
+                        return
+                    chunk = message.get("body", b"")
+                    if len(body) + len(chunk) > http_max_body_size():
+                        await self._send_local_response(
+                            413, "Request too large", scope, receive, send)
+                        return
+                    body.extend(chunk)
+                    if not message.get("more_body", False):
+                        break
+                meta: dict[str, Any] = {"format": "http"}
+                scope.setdefault("kajenn.channel", "rest")
+                if scope.get("auth") is None:
+                    scope["auth"] = await self.server.authenticate(scope)
+                avatar = scope.get("auth")
+                if avatar is not None:
+                    meta["auth"] = {"identity": avatar.identity, "tags": list(avatar.tags)}
+                meta["channel"] = scope["kajenn.channel"]
+                meta["path"] = self.forwarded_path(scope)
+                record = HttpRecord().encode_request(
+                    {**scope, "path": meta["path"], "raw_path": meta["path"].encode(),
+                     "root_path": ""},
+                    bytes(body))
+                started = False
+                try:
+                    async with self.server.open_external(
+                            self.code, kbus.Message(meta, record)) as stream:
+                        try:
+                            head = await anext(stream, None)
+                        except kbus.Aborted as aborted:
+                            raise kbus.LinkLost(aborted.reason) from aborted
+                        if head is None:
+                            raise kbus.LinkLost("the answer ended before it started")
+                        deadline.reschedule(None)
+                        self._slots.release()
+                        held = False
+                        started = True
+                        await self._relay(head, stream, scope, receive, send)
+                except kbus.Error:
+                    if not started:
+                        raise
+        finally:
+            if held:
+                self._slots.release()
+
+    def forwarded_path(self, scope) -> str:
+        """The path of ``scope`` as the process sees it: the mount put back in front."""
+        return "/" + self.mount + scope["path"] if self.mount else scope["path"]
+
+    async def _relay(self, head, stream, scope, receive, send) -> None:
+        """Write the answer: the start from ``head``, then one body per message.
+
+        Each message carries the ``more_body`` its application sent, so a
+        buffered answer stays one closing body and a chunked one stays chunked.
+        The client leaving aborts the stream, except on a ``WSK`` scope, whose
+        ``receive`` never reports it; a stream that fails ends the answer
+        without its terminal body.
+        """
+        await send({"type": "http.response.start", "status": head.meta["status"],
+                    "headers": [(name.encode("latin-1"), value.encode("latin-1"))
+                                for name, value in head.meta["headers"]]})
+
+        async def forward() -> None:
+            async for chunk in stream:
+                await send({"type": "http.response.body", "body": chunk.payload,
+                            "more_body": chunk.meta["more_body"]})
+
+        async def client_left() -> None:
+            while (await receive())["type"] != "http.disconnect":
+                pass
+
+        forwarding = asyncio.create_task(forward())
+        waiting = {forwarding}
+        if scope.get("method") != "WSK":
+            leaving = asyncio.create_task(client_left())
+            waiting.add(leaving)
+        await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+        if not forwarding.done():
+            forwarding.cancel()
+            return
+        for task in waiting - {forwarding}:
+            task.cancel()
+        failure = forwarding.exception()
+        if isinstance(failure, kbus.Error):
+            return
+        if failure is not None:
+            raise failure
+        await stream.close()
+
+    async def _forward_websocket(self, scope, receive, send) -> None:
+        """Carry one websocket to the member: every event, both directions.
+
+        The stream opens with a websocket scope record; the client's events
+        cross it until the client disconnects, then this direction closes. The
+        application's events reach the client until the process closes its
+        direction. A process that has not joined, dies or fails closes the
+        client's socket with code 1011.
+        """
+        path = self.forwarded_path(scope)
+        record = HttpRecord().encode_websocket(
+            {**scope, "path": path, "raw_path": path.encode(), "root_path": ""})
+        client_open = True
+        application_closed = False
+
+        async def to_application(stream) -> None:
+            nonlocal client_open
+            while True:
+                event = await receive()
+                try:
+                    await stream.send(websocket_message(event))
+                except kbus.Error:
+                    return
+                if event["type"] == "websocket.disconnect":
+                    client_open = False
+                    await stream.close()
+                    return
+
+        try:
+            async with self.server.open_external(self.code, kbus.Message(
+                    {"format": "websocket", "path": path}, record)) as stream:
+                forwarding = asyncio.create_task(to_application(stream))
+                try:
+                    async for message in stream:
+                        event = websocket_event(message)
+                        await send(event)
+                        if event["type"] == "websocket.close":
+                            application_closed = True
+                    await stream.close()
+                finally:
+                    await cancel_and_wait(forwarding)
+        except kbus.Error:
+            if client_open and not application_closed:
+                await send({"type": "websocket.close", "code": 1011})
 
     async def _send_local_response(self, status, text, scope, receive, send) -> None:
         """Write an answer this mount built itself, as a JSON string.

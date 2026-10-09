@@ -20,7 +20,8 @@ interpreted; the metadata is checked to be a JSON tree of finite numbers,
 string keys and no duplicate key, so what one peer wrote is what the other
 reads. ``encode_request``/``decode_request`` carry an ASGI http scope reduced
 to its transportable fields; ``encode_response``/``decode_response`` carry a
-status, text headers and a body.
+status, text headers and a body; ``encode_websocket``/``decode_websocket``
+carry an ASGI websocket scope and no body.
 """
 
 import json
@@ -181,6 +182,56 @@ class HttpRecord:
         scope = self._decode_scope(encoded_scope)
         scope["type"] = "http"
         return scope, body
+
+    def encode_websocket(self, scope: Mapping[str, Any]) -> bytes:
+        """One websocket scope record: the transportable scope fields, no body.
+
+        The fields of ``_REQUEST_FIELDS`` but ``method`` travel as in
+        ``encode_request``; ``subprotocols`` travels as a list of strings.
+
+        Raises:
+            TypeError: ``scope`` is not a mapping, or a field it carries is of
+                the wrong type.
+            ValueError: the scope declares a type other than ``websocket``, or
+                a field holds a value the wire cannot carry.
+        """
+        if not isinstance(scope, Mapping):
+            raise TypeError("scope must be a mapping")
+        if "type" in scope and scope["type"] != "websocket":
+            raise ValueError("websocket scope type must be websocket")
+        fields = self._REQUEST_FIELDS - {"method"}
+        normalized = self._encode_scope({key: scope[key] for key in fields if key in scope})
+        subprotocols = list(scope.get("subprotocols", []))
+        if not all(isinstance(name, str) for name in subprotocols):
+            raise TypeError("scope subprotocols must be strings")
+        normalized["subprotocols"] = subprotocols
+        return self.encode({"record_type": "websocket", "scope": normalized}, b"")
+
+    def decode_websocket(self, payload: bytes) -> dict[str, Any]:
+        """The ASGI websocket scope of one websocket scope record.
+
+        The scope comes back with ``type`` set to ``websocket``.
+
+        Raises:
+            ValueError: the envelope is not a websocket envelope, its scope is
+                not an object, or it names a field the record does not carry.
+        """
+        metadata, _ = self.decode(payload)
+        if set(metadata) != {"record_type", "scope"} or metadata.get("record_type") != "websocket":
+            raise ValueError("invalid websocket metadata envelope")
+        encoded_scope = metadata.get("scope")
+        if not isinstance(encoded_scope, dict):
+            raise ValueError("websocket scope metadata must be an object")
+        subprotocols = encoded_scope.pop("subprotocols", [])
+        if not set(encoded_scope).issubset(self._REQUEST_FIELDS - {"method"}):
+            raise ValueError("websocket metadata contains unknown fields")
+        if not (isinstance(subprotocols, list)
+                and all(isinstance(name, str) for name in subprotocols)):
+            raise ValueError("scope subprotocols must be a list of strings")
+        scope = self._decode_scope(encoded_scope)
+        scope["type"] = "websocket"
+        scope["subprotocols"] = subprotocols
+        return scope
 
     def encode_response(self, response: dict[str, Any]) -> bytes:
         """One response record from ``{"status", "headers", "body"}``.
