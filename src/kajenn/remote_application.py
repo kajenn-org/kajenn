@@ -171,10 +171,7 @@ class RemoteApplication(BaseApplication):
                 try:
                     async with self.server.open_external(
                             self.code, kbus.Message(meta, record)) as stream:
-                        try:
-                            head = await anext(stream, None)
-                        except kbus.Aborted as aborted:
-                            raise kbus.LinkLost(aborted.reason) from aborted
+                        head = await anext(stream, None)
                         if head is None:
                             raise kbus.LinkLost("the answer ended before it started")
                         deadline.reschedule(None)
@@ -182,6 +179,9 @@ class RemoteApplication(BaseApplication):
                         held = False
                         started = True
                         await self._relay(head, stream, scope, receive, send)
+                except kbus.Aborted as aborted:
+                    if not started:
+                        raise kbus.LinkLost(aborted.reason) from aborted
                 except kbus.Error:
                     if not started:
                         raise
@@ -272,8 +272,11 @@ class RemoteApplication(BaseApplication):
                         if event["type"] == "websocket.close":
                             application_closed = True
                     await stream.close()
-                finally:
-                    await cancel_and_wait(forwarding)
+                except BaseException:
+                    forwarding.cancel()
+                    await asyncio.gather(forwarding, return_exceptions=True)
+                    raise
+                await cancel_and_wait(forwarding)
         except kbus.Error:
             if client_open and not application_closed:
                 await send({"type": "websocket.close", "code": 1011})

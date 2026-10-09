@@ -80,6 +80,18 @@ async def test_a_process_dying_before_its_answer_starts_answers_503(tmp_path):
     assert status == 503
 
 
+async def test_a_process_killed_before_accepting_the_request_answers_503(tmp_path):
+    async with running(write_recipe(tmp_path)) as server:
+        state = await answering(server)
+        os.kill(state["pid"], signal.SIGSTOP)
+        pending = asyncio.create_task(request(server, "/billing/total", query=b"order=2"))
+        await asyncio.sleep(0.5)
+        os.kill(state["pid"], signal.SIGKILL)
+        status, _ = await asyncio.wait_for(pending, 10)
+        await answering(server, other_than=state["pid"])
+    assert status == 503
+
+
 async def test_a_post_from_the_process_runs_a_route_of_the_server(tmp_path):
     async with running(write_recipe(tmp_path)) as server:
         assert await request(server, "/billing/post_note") == (200, {"posted": True})
