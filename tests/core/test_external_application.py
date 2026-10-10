@@ -38,6 +38,7 @@ from typing import Any
 
 import kbus
 import pytest
+import trustme
 
 from kajenn import AsgiServer, Avatar
 from kajenn.asgi_endpoint import BufferedAsgiEndpoint
@@ -383,16 +384,29 @@ async def test_a_body_over_the_frame_limit_answers_413(tmp_path):
     assert after == (200, {"total": 2})
 
 
-@pytest.mark.parametrize("kind", ["unix", "ws"])
+def tls_files(directory: str) -> str:
+    """A throwaway authority and a certificate for 127.0.0.1, written in ``directory``;
+    the ``server.kbus`` arguments that use them."""
+    authority = trustme.CA()
+    authority.issue_cert("127.0.0.1").private_key_and_cert_chain_pem.write_to_path(
+        f"{directory}/kbus.pem")
+    authority.cert_pem.write_to_path(f"{directory}/ca.pem")
+    return (f'certfile="{directory}/kbus.pem", keyfile="{directory}/kbus.pem", '
+            f'cafile="{directory}/ca.pem"')
+
+
+@pytest.mark.parametrize("kind", ["unix", "wss"])
 async def test_the_configured_address_carries_the_application(tmp_path, kind):
     # wf:contract: server.kbus(address="unix://<path>") and server.kbus(address=
-    # wf:contract: "ws://127.0.0.1:<port>/kbus") both carry the spawned application:
-    # wf:contract: GET /billing/total answers through it.
+    # wf:contract: "wss://127.0.0.1:<port>/kbus", certfile, keyfile, cafile) both carry the
+    # wf:contract: spawned application: GET /billing/total answers through it.
     directory = short_dir()
     try:
-        address = (f"unix://{directory}/kbus.sock" if kind == "unix"
-                   else f"ws://127.0.0.1:{free_port()}/kbus")
-        config = write_recipe(tmp_path, kbus_options=f'address="{address}"')
+        if kind == "unix":
+            options = f'address="unix://{directory}/kbus.sock"'
+        else:
+            options = f'address="wss://127.0.0.1:{free_port()}/kbus", ' + tls_files(directory)
+        config = write_recipe(tmp_path, kbus_options=options)
         async with running(config) as server:
             assert await request(server, "/billing/total", query=b"order=4") == (
                 200, {"total": 8})
@@ -400,12 +414,22 @@ async def test_the_configured_address_carries_the_application(tmp_path, kind):
         shutil.rmtree(directory, ignore_errors=True)
 
 
-@pytest.mark.parametrize("old", ["uds:/tmp/kbus.sock", "tcp:127.0.0.1:9000"])
+@pytest.mark.parametrize("old", ["uds:/tmp/kbus.sock", "tcp:127.0.0.1:9000",
+                                 "ws://127.0.0.1:9000/kbus"])
 def test_the_old_address_forms_are_a_boot_error(tmp_path, old):
-    # wf:contract: an address in the retired forms uds:<path> / tcp:<host>:<port> is
-    # wf:contract: refused when the server is built, with a ValueError naming unix://.
-    with pytest.raises(ValueError, match="unix://"):
+    # wf:contract: an address in the retired forms uds:<path> / tcp:<host>:<port>, and a
+    # wf:contract: plain ws:// one, is refused when the server is built, with a ValueError
+    # wf:contract: naming unix:// and wss://.
+    with pytest.raises(ValueError, match="unix://.*wss://"):
         AsgiServer(config=write_recipe(tmp_path, kbus_options=f'address="{old}"'))
+
+
+def test_a_wss_address_without_its_certificate_is_a_boot_error(tmp_path):
+    # wf:contract: server.kbus(address="wss://...") without certfile and keyfile is
+    # wf:contract: refused when the server is built.
+    with pytest.raises(ValueError, match="certfile and keyfile"):
+        AsgiServer(config=write_recipe(
+            tmp_path, kbus_options='address="wss://127.0.0.1:9000/kbus"'))
 
 
 async def test_a_wsx_message_reaches_the_spawned_application(tmp_path):

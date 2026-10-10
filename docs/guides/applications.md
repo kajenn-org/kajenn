@@ -74,6 +74,7 @@ process from the same configuration that serves only that application, and its
 routes stay reachable through `server.kbus_call(path, data)`. The process
 connects back to the server over the kbus library; `server.kbus(address=...)`
 chooses where the server listens — `unix://<path>` or
-`ws://<host>:<port>/<path>`, a private unix socket when omitted — and its
+`wss://<host>:<port>/<path>` with `certfile`, `keyfile` and optionally
+`cafile`, a private unix socket when omitted; plain `ws://` is refused — and its
 limits `max_frame`, `max_meta`, `max_route`, `max_pending`, `stream_window` and
 `write_buffer` bound what travels. See [the KajennBus protocol](../design/kbus-protocol.md).

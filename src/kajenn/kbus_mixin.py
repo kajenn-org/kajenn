@@ -43,6 +43,7 @@ import os
 import secrets
 import shutil
 import signal
+import ssl
 import tempfile
 from typing import TYPE_CHECKING, Any
 
@@ -181,7 +182,9 @@ class KBusMixin:
             await send(message)
 
         try:
-            self._kbus_address = await dispatcher.listen(self._kbus_listen_address())
+            address = self._kbus_listen_address()
+            self._kbus_address = await dispatcher.listen(
+                address, ssl=self._kbus_server_ssl() if address.startswith("wss://") else None)
             member = kbus.Member(SERVER_MEMBER, secret=secrets.token_hex(32),
                                  handler=self.serve_kbus_call)
             dispatcher.secrets[SERVER_MEMBER] = member.secret
@@ -198,6 +201,12 @@ class KBusMixin:
             await super().__call__(scope, receive, stopping_send)
         finally:
             await self._stop_children()
+
+    def _kbus_server_ssl(self) -> ssl.SSLContext:
+        """The TLS context of a ``wss://`` dispatcher: ``certfile`` and ``keyfile``."""
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(self.kbus_options["certfile"], self.kbus_options["keyfile"])
+        return context
 
     def _kbus_listen_address(self) -> str:
         """The ``server.kbus`` address, or a unix socket in a fresh 0700 directory."""
@@ -319,7 +328,8 @@ class KBusMixin:
         member = kbus.Member(code, secret=token, handler=self.serve_kbus_call,
                              limits=self.kbus_options.get("limits"))
         try:
-            await member.connect(f"{scheme}://{location}")
+            await member.connect(f"{scheme}://{location}", ssl=ssl.create_default_context(
+                cafile=self.kbus_options.get("cafile")) if scheme == "wss" else None)
             self._kbus_member = member
             await member.call(f"{SERVER_MEMBER}.joined", kbus.Message({
                 "well_known": list(self.applications[code].well_known_names),

@@ -17,8 +17,10 @@ In the lifespan of a server that declares an external application, before any
 application hook runs, `KBusMixin`:
 
 - builds one `kbus.Dispatcher` with the limits of `server.kbus` and listens on
-  its address: `unix://<path>` or `ws://<host>:<port>/<path>`, or, when none is
-  configured, a unix socket in a fresh private directory (mode 0700);
+  its address: `unix://<path>` or `wss://<host>:<port>/<path>`, or, when none is
+  configured, a unix socket in a fresh private directory (mode 0700). A
+  `wss://` dispatcher presents `certfile`/`keyfile`; plain `ws://` is refused,
+  so a token never crosses a network in clear;
 - connects one in-process member named `server`, admitted with a random secret.
   Every forwarded request (`member.open("<code>", message)`) and every call
   towards an external application goes out through it, and its handler serves
@@ -36,7 +38,9 @@ spawner receives ONE URL and puts it in the environment variable
 `KAJENN_KBUS_PARENT`:
 
 - `unix://<code>:<token>@<socket path>`
-- `ws://<code>:<token>@<host>:<port>/<path>`
+- `wss://<code>:<token>@<host>:<port>/<path>` — the process verifies the
+  dispatcher's certificate with `server.kbus(cafile=...)` when given (it loads
+  the same configuration), with the system's authorities otherwise
 
 The command line is `<python> -m kajenn serve <source> --role application:<code>`
 and nothing more: the token never appears among the arguments. The process
@@ -172,11 +176,12 @@ implement; `SubprocessSpawner` is the `"subprocess"` one.
 
 ## Limits
 
-`server.kbus(address, max_frame, max_meta, max_route, max_pending,
-stream_window, write_buffer)`: the six limits build the dispatcher's
-`kbus.Limits`, and the role process uses the same ones. An omitted limit keeps
-the kbus default. An address in any other form than `unix://` or `ws://` is a
-boot error.
+`server.kbus(address, certfile, keyfile, cafile, max_frame, max_meta,
+max_route, max_pending, stream_window, write_buffer)`: the six limits build the
+dispatcher's `kbus.Limits`, and the role process uses the same ones. An omitted
+limit keeps the kbus default. An address in any other form than `unix://` or
+`wss://`, `ws://` included, is a boot error, and so is a `wss://` address
+without `certfile` and `keyfile`.
 
 ## The HTTP record
 
