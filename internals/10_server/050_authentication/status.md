@@ -19,7 +19,7 @@ Bootstrap admin configuration upserts that account at boot. Password login and
 OIDC methods live on `ServerApplication` and attach an avatar in place. OIDC
 configuration requires a declared `external_url` at server construction.
 
-Claim anchors: [`AuthCore`](../../../src/kajenn/auth/core.py#L79), [`AuthMixin`](../../../src/kajenn/auth/mixin.py#L67), [`authenticate`](../../../src/kajenn/auth/mixin.py#L151), [`authenticate`](../../../src/kajenn/auth/core.py#L160), [`ServerApplication`](../../../src/kajenn_server_app/server_app.py#L111).
+Claim anchors: [`AuthCore`](../../../src/kajenn/auth/core.py#L79), [`AuthMixin`](../../../src/kajenn/auth/mixin.py#L67), [`authenticate`](../../../src/kajenn/auth/mixin.py#L151), [`authenticate`](../../../src/kajenn/auth/core.py#L160), [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#L111).
 
 ## Authorization and hosted-site identity
 
@@ -34,13 +34,13 @@ implemented. It remains a distinct target.
 
 Claim anchors: [`RoutedApplication`](../../../src/kajenn/routed_application.py#L111).
 
-Behavior evidence: [`MonitorSection`](../../../src/kajenn_server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../src/kajenn_server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../src/kajenn_server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../src/kajenn_server_app/server_sections/tasks_section.py#L60).
+Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../src/kajenn/server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../src/kajenn/server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#L60).
 
 ## Source and test evidence
 
 - [src/kajenn/auth/core.py](../../../src/kajenn/auth/core.py)
 - [src/kajenn/auth/mixin.py](../../../src/kajenn/auth/mixin.py)
-- [src/kajenn_server_app/server_app.py](../../../src/kajenn_server_app/server_app.py)
+- [src/kajenn/server_app/server_app.py](../../../src/kajenn/server_app/server_app.py)
 - [src/kajenn/routed_application.py](../../../src/kajenn/routed_application.py)
 - [tests/core/test_auth.py](../../../tests/core/test_auth.py)
 - [tests/server_app/test_login_flow.py](../../../tests/server_app/test_login_flow.py)

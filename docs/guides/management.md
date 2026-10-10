@@ -2,8 +2,8 @@
 
 Prerequisites: [sessions](sessions.md), [authentication](authentication.md) and
 [storage encryption](storage.md#optional-encryption).
-The optional ServerApplication provides JSON endpoints for login, users, tokens,
-tasks and monitoring. It is not a ready-made graphical console.
+ServerApplication, mounted by every server under `/_server`, provides JSON
+endpoints for login, users, tokens, tasks and monitoring. It is not a ready-made graphical console.
 
 ## Start an isolated local demo
 
@@ -19,7 +19,7 @@ export DEMO_STORAGE_KEY="$(python -c 'from cryptography.fernet import Fernet; pr
 import os
 from genro_routes import route
 from kajenn import AsgiServer, RoutedApplication
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 
 
 class Members(RoutedApplication):

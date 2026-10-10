@@ -71,4 +71,24 @@ The raw WebSocket seam owns its handshake and Origin/auth checks. Read
 To host an application in **another process**, declare it with `spawner=` on
 its own `application` element (`spawner="subprocess"`): the server starts a
 process from the same configuration that serves only that application, and its
-routes stay reachable through `server.kbus_call(path, data)`. See [the KajennBus protocol](../design/kbus-protocol.md).
+routes stay reachable through `server.kbus_call(path, data)`. The process
+connects back to the server over the kbus library; `server.kbus(address=...)`
+chooses where the server listens — `unix://<path>` or
+`wss://<host>:<port>/<path>` with `certfile`, `keyfile` and optionally
+`cafile`, a private unix socket when omitted; plain `ws://` is refused — and its
+limits `max_frame`, `max_meta`, `max_route`, `max_pending`, `stream_window` and
+`write_buffer` bound what travels. See [the KajennBus protocol](../design/kbus-protocol.md).
+
+The mount in the server is a transparent wire: the application receives a
+request exactly as it would in the server's process — method, path, query
+string, headers, channel, identity, the `kajenn.kbus` flag of a bus call, the
+`genro.page_id` and `genro.reply_path` of a WSX message — and the caller gets
+the same status, headers and body. An exception the application raises before
+answering is raised again in the server, whose middleware answers it. The mount
+forwards every request header, the `Authorization` header included, and never
+verifies a credential; the channel the request carries travels with it. The
+process verifies the credential through the server's authentication route for
+that channel, reached over the bus. A session lives in the server: the proxy
+forwards its identity, and only when the request carries no `Authorization`
+header. In the process `scope["session"]` is `None`: a handler reads the
+identity, not the session object.

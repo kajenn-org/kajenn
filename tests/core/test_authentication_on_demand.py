@@ -36,7 +36,7 @@ from kajenn import AsgiServer, Avatar, BaseApplication, BaseServer, McpOpenApiAp
 from kajenn.middleware import default_registry
 from kajenn.types import Message, Scope
 from kajenn.wsx import WsxConnection, WsxEnvelope
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
 

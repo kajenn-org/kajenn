@@ -45,7 +45,7 @@ Its cooperative ``__init__`` peels the kwargs ``BaseServer`` does not accept —
 ``site_name``/``site_home``/``host``/``port``/``external_url`` — and forwards
 everything else (``applications``, ``auth``, ``session_store``/``session_ttl``,
 ``middleware``/``middleware_registry``, ``plugins``/``plugin_registry``,
-``storage``/``storage_key``, ``parent``) down the D16 chain. The peeled
+``storage``/``storage_key``, ``role``, ``kbus``) down the D16 chain. The peeled
 ``host``/``port`` become the defaults of ``serve``, so a configured server
 serves on its configured address unless the caller overrides it.
 
@@ -61,11 +61,14 @@ build a value the provider then rejects. Missing it with a provider
 configured is a boot error (``_check_oidc_external_url``), not an opaque
 provider error at the first login.
 
-No application is registered behind the caller's back: a server application
-is declared like any other, by ``app_class`` and code, and the core imports
-none of it. A server that declares none exposes nothing under its path. The
-configured databases are registered at the end of ``__init__``, over the live
-server.
+The management application ``_server`` (``ServerApplication``) exists in every
+server: when no application of code ``_server`` reached the merged kwargs,
+``__init__`` appends one with its defaults, on the kwargs road and on the
+configuration road alike. The configuration only customises it
+(``application(code="_server", ...)``: login policy, OIDC, a subclass). The
+process of a ``role`` hosts its application alone and mounts none: its
+``/_server/...`` calls go to the parent. The configured databases are
+registered at the end of ``__init__``, over the live server.
 """
 
 from __future__ import annotations
@@ -90,6 +93,7 @@ from .middleware import MiddlewareMixin
 from .plugin_mixin import PluginMixin
 from .remote_application import PROXY_OPTIONS, RemoteApplication
 from .server import BaseServer
+from .server_app.server_app import ServerApplication
 from .session import SessionMixin
 from .site_home import SiteHome
 from .storage_mixin import StorageMixin
@@ -129,6 +133,8 @@ class AsgiServer(
             kwargs["kbus_source"] = str(config)
         self._config = self._build_config(config, kwargs)
         kwargs = {**self._configured_kwargs(self.config, role), **kwargs}
+        if role is None and not any(app.code == "_server" for app in kwargs["applications"]):
+            kwargs["applications"] = [*kwargs["applications"], ServerApplication()]
         self._site_name: str | None = kwargs.pop("site_name", None)
         site_home = kwargs.pop("site_home", None)
         self._site_home = SiteHome(site_home) if site_home is not None else None

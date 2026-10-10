@@ -20,10 +20,10 @@ Historical monitor/workbench branches, full pre-refactoring panel parity and
 Prometheus export are not established by this implementation. The local MkDocs
 internals reader is a separate developer documentation tool.
 
-Claim anchors: [`MonitorSection`](../../../../src/kajenn_server_app/server_sections/monitor_section.py#L74), [`app_snapshot`](../../../../src/kajenn/application.py#L170), [`app_panel`](../../../../src/kajenn/application.py#L180), [`BaseApplication`](../../../../src/kajenn/application.py#L86).
+Claim anchors: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`app_snapshot`](../../../../src/kajenn/application.py#L170), [`app_panel`](../../../../src/kajenn/application.py#L180), [`BaseApplication`](../../../../src/kajenn/application.py#L86).
 
 ## Source and test evidence
 
-- [src/kajenn_server_app/server_sections/monitor_section.py](../../../../src/kajenn_server_app/server_sections/monitor_section.py)
+- [src/kajenn/server_app/server_sections/monitor_section.py](../../../../src/kajenn/server_app/server_sections/monitor_section.py)
 - [src/kajenn/application.py](../../../../src/kajenn/application.py)
 - [tests/server_app/test_server_monitor.py](../../../../tests/server_app/test_server_monitor.py)

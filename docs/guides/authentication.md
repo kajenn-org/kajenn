@@ -22,7 +22,7 @@ Without them, session identity can still be resolved.
 
 ```python
 from kajenn import AsgiServer, RoutedApplication
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 from genro_routes import route
 
 AUTH = {
@@ -79,10 +79,10 @@ with the identity it found:
   route answers a bare `401` with `WWW-Authenticate: Bearer`.
 - An invalid credential is always `401`.
 
-Until `_server` is mounted automatically (a later release), a server that
-verifies header credentials must declare `ServerApplication`: without it and
-without a configured `authentication_route`, every presented credential is
-refused with `401`.
+`_server` is always there: every server mounts `ServerApplication`, so a
+header credential is verified through `/_server/auth/authenticate` without
+declaring anything. A channel whose configured `authentication_route` nobody
+serves refuses every presented credential with `401`.
 
 MCP `arguments` are the handler's keyword arguments, never a body: a handler
 declaring `body_data` receives an argument named `body_data`, not the whole
@@ -151,9 +151,9 @@ Password login checks a configured **UserStore**, then attaches the verified
 identity to the session. Follow the [management walkthrough](management.md) to
 create a user, log in with a cookie jar, and log out.
 
-`ServerApplication` (from `kajenn_server_app`, declared like any other
-application with the code `_server`) exposes a login flow for session-based
-clients. Nothing mounts it for you:
+`ServerApplication` (from `kajenn.server_app`, mounted by every server under
+the code `_server`) exposes a login flow for session-based clients. The
+configuration customises it and never declares it:
 
 - `POST /_server/login` with body `{"identity", "password"}` → `200` with
   `{identity, tags, session_id}` on success.
@@ -183,7 +183,7 @@ OIDC providers are the app's own `oidc=` kwarg, and the server must know its
 own **public base address** — `external_url`:
 
 ```python
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 
 PROVIDER = {
     "issuer": "https://accounts.example.com",
@@ -213,16 +213,13 @@ words are the package's own grammar, mounted on its `application` element:
 
 ```python
 from kajenn.config import AsgiConfigBuilder
-from kajenn_server_app import ServerApplication
 from genro_bag.resolvers import EnvResolver
 
 class ServerConfiguration(AsgiConfigBuilder):
     def main(self, root):
         cfg = root.configuration()
         cfg.server(host="127.0.0.1", port=8000, external_url="https://shop.example.com")
-        server_app = cfg.applications().application(
-            code="_server", app_class=ServerApplication
-        )
+        server_app = cfg.applications().application(code="_server")
         server_app.login(max_attempts=3, backoff=10)
         server_app.oidc().provider(
             code="google",
@@ -277,4 +274,4 @@ $ curl -H "Authorization: Bearer sk_live_xyz" http://127.0.0.1:8000/public
   `FileApiKeyStore`, `UserStore`, `FileUserStore` — import from `kajenn`. The
   login methods are **not** core: `ServerApplication`, `AuthMethod`,
   `PasswordMethod`, `OidcMethod` and the sections import from
-  `kajenn_server_app`.
+  `kajenn.server_app`.

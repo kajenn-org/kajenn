@@ -16,7 +16,7 @@
 # have - runs the whole suite, never nothing.
 #
 # Which suite, per changed path, the union over the range deciding:
-#   src/kajenn_server_app/, tests/server_app/     -> tests/server_app
+#   src/kajenn/server_app/, tests/server_app/     -> tests/server_app
 #   src/kajenn/, tests/core/                      -> tests/core
 #   pyproject.toml, hooks/, any .py outside those -> the whole suite
 #   anything else (docs, README, ...)             -> nothing
@@ -69,7 +69,7 @@ else
     while read -r path; do
         [ -z "$path" ] && continue
         case "$path" in
-            src/kajenn_server_app/*|tests/server_app/*) want_server_app=1 ;;
+            src/kajenn/server_app/*|tests/server_app/*) want_server_app=1 ;;
             src/kajenn/*|tests/core/*) want_core=1 ;;
             pyproject.toml|hooks/*|*.py) want_all=1 ;;
         esac

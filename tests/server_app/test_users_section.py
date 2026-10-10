@@ -30,7 +30,7 @@ import json
 from typing import Any
 
 from kajenn import AsgiServer, Avatar, BaseApplication, UserStore
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 from kajenn.middleware.base import BaseMiddleware
 from kajenn.types import Message, Scope
 

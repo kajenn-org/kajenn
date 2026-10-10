@@ -18,9 +18,9 @@ The monitor declares `SERVER_ADMIN`; users, tokens and tasks declare
 `SUPERADMIN`. The login surface is public. `_request` injection comes from the common
 `RoutedApplication.bind_kwargs`, not a private server-app override.
 
-Claim anchors: [`AsgiServer`](../../../src/kajenn/asgi_server.py#L90), [`ServerApplication`](../../../src/kajenn_server_app/server_app.py#L111), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L111), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L272).
+Claim anchors: [`AsgiServer`](../../../src/kajenn/asgi_server.py#L90), [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#L111), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L111), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L272).
 
-Behavior evidence: [`MonitorSection`](../../../src/kajenn_server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../src/kajenn_server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../src/kajenn_server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../src/kajenn_server_app/server_sections/tasks_section.py#L60).
+Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../src/kajenn/server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../src/kajenn/server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#L60).
 
 ## Attached sections and unfinished administration
 
@@ -34,12 +34,12 @@ Per-section configurable tags, a plugin configuration page, general dynamic
 application installation and monitor/workbench proposals are not delivered by
 the current section list.
 
-Behavior evidence: [`attach_section`](../../../src/kajenn_server_app/server_app.py#L269), [`sections`](../../../src/kajenn_server_app/server_app.py#L260).
+Behavior evidence: [`attach_section`](../../../src/kajenn/server_app/server_app.py#L269), [`sections`](../../../src/kajenn/server_app/server_app.py#L260).
 
 ## Source and test evidence
 
 - [src/kajenn/asgi_server.py](../../../src/kajenn/asgi_server.py)
-- [src/kajenn_server_app/server_app.py](../../../src/kajenn_server_app/server_app.py)
+- [src/kajenn/server_app/server_app.py](../../../src/kajenn/server_app/server_app.py)
 - [src/kajenn/routed_application.py](../../../src/kajenn/routed_application.py)
 - [tests/server_app/test_server_application.py](../../../tests/server_app/test_server_application.py)
 - [tests/server_app/test_server_monitor.py](../../../tests/server_app/test_server_monitor.py)

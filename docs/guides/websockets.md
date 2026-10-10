@@ -102,6 +102,11 @@ its protocol, and cleanup; the WSX gate and registry are not used. The server's
 not-running admission gate still applies before delegation. See the adapter in
 [Mounting applications](applications.md).
 
+The raw seam works the same for an application declared with `spawner=`: its
+`serve_websocket` runs in the spawned process, every event of the socket
+crosses the kbus in both directions, and either side may close. A process that
+dies while a socket is open closes it with code 1011.
+
 ## Page channels and server push
 
 The core offers one seam for addressing a single page later: a client sends

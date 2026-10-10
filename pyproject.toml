@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kajenn"
-version = "0.4.1"
+version = "0.4.5"
 description = "ASGI server with sessions, authentication, websocket channels, tasks, MCP, storage and a base server application included"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,6 +38,7 @@ dependencies = [
     "genro-toolbox>=0.17.0",
     "genro-tytx>=0.16.1",
     "genro-routes>=0.30.1",
+    "kajenn-kbus>=0.1.1",
     "genro-storage[encryption]>=0.8.1",
     "pyjwt>=2.0",
     "cryptography>=42.0",
@@ -47,6 +48,8 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
+    # tests/core/test_external_application.py: a throwaway certificate authority for wss://.
+    "trustme>=1.1",
     "pytest>=7.0",
     "pytest-cov>=4.0",
     # `[tool.coverage.run] patch = ["subprocess"]` (below) needs coverage 7.10.
@@ -88,7 +91,6 @@ Repository = "https://github.com/kajenn-org/kajenn"
 [tool.hatch.build.targets.wheel]
 packages = [
     "src/kajenn",
-    "src/kajenn_server_app",
 ]
 exclude = ["**/tests/"]
 
@@ -97,7 +99,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --cov=kajenn --cov=kajenn_server_app --cov-report=term-missing"
+addopts = "-v --cov=kajenn --cov-report=term-missing"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
@@ -179,7 +181,7 @@ disable_error_code = ["misc", "attr-defined"]
 # dynamic-mixin category as AuthMixin above: the attributes exist on every
 # runtime composition but not on the static base.
 [[tool.mypy.overrides]]
-module = "kajenn_server_app.server_app"
+module = "kajenn.server_app.server_app"
 disable_error_code = ["attr-defined", "union-attr"]
 
 # LocalTaskExecutor reaches server.storage (supplied by StorageMixin) and
@@ -224,5 +226,5 @@ disable_error_code = ["attr-defined"]
 # (present only when TaskMixin is composed and a request is in flight) — the
 # same dynamic-composition category as server_app.
 [[tool.mypy.overrides]]
-module = "kajenn_server_app.server_sections.tasks_section"
+module = "kajenn.server_app.server_sections.tasks_section"
 disable_error_code = ["union-attr", "no-any-return"]

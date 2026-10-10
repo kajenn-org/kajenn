@@ -40,7 +40,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from kajenn import AsgiServer, BaseApplication
-from kajenn_server_app import OidcMethod, ServerApplication
+from kajenn.server_app import OidcMethod, ServerApplication
 from kajenn.types import Message, Scope
 
 DISCOVERY_DOC = {

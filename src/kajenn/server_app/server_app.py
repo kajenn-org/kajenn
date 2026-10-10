@@ -15,10 +15,9 @@
 """ServerApplication: the ``_server`` system application.
 
 ``ServerApplication`` carries the system surface a server exposes under
-``/_server``. It is declared in the configuration like any other application,
-with ``app_class`` from this package and the code ``_server``: a server that
-declares none exposes no ``/_server/...`` and the core imports nothing of this
-package. The demux finds it through the ordinary mount table — there is no
+``/_server``. Every server mounts it under the code ``_server`` (the role
+process of an external application excepted); the configuration customises it
+with ``application(code="_server", ...)`` and never declares it. The demux finds it through the ordinary mount table — there is no
 dedicated demux logic.
 
 It extends ``OpenApiApplication`` (REST + OpenAPI), so ``/_server/_meta/``

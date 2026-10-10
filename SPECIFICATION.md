@@ -935,8 +935,8 @@ governs every design in this repository, the technical dossier included.
 **D33 — The `_server` app is declared, not automatic; the core never asks for
 user and password (supersedes the "automatic, not configured" half of D4).**
 Ratified 2026-09-12, release 0.46.1. The management application lives in its
-own top-level package of the distribution, `kajenn_server_app`, and the
-core imports nothing from it: it is declared in the configuration like any
+own top-level package of the distribution (since moved into the core, see
+below), and the core imports nothing from it: it is declared in the configuration like any
 other application (code `_server`), with its own grammar elements `login`,
 `oidc`, `provider` under the `application` element. The core authenticates by
 header credentials and session avatar only; the interactive methods (password,
@@ -945,7 +945,7 @@ as genropy does. The fixed 401 → `/_server/...` redirect leaves the core: a 40
 is bare, with `WWW-Authenticate`. Which application authenticates for which
 path, and how shared users link by a unique code, is a later decision
 (issue #83). The table row of `_server` above and the D4 mention in the wave
-record are read through this decision. Register:
+record are read through this decision. Amended by the block ratified 2026-10-10 below. Register:
 `temp/decisioni_serverapp_identita_2026-09-12.md` (D-SA-1..11).
 
 ### Ratified 2026-10-07 (the KajennBus as the instance's internal communication)
@@ -990,3 +990,29 @@ TTL (`authentication(cache_ttl=...)`, `0` disables it) and is evicted by
 **What stays open.** For 0.5.0: the session at first write, the login mixin and
 the enrichment per branch. For klink: `info.credential` stays reserved and
 unread by the bus.
+
+### Ratified 2026-10-10 (the management application is always present)
+
+**D33 amended.** `_server` is no longer "declared, not automatic": it exists in
+every server. The configuration customises it with
+`application(code="_server", ...)` — `login`, `oidc`, a subclass of
+`ServerApplication` — and never declares it; `app_class` may be omitted for
+that code. The rest of D33 holds: the core asks for no user and password, and
+the login words stay under `application`. The package is `kajenn.server_app`,
+inside the core; the former top-level package has no alias.
+
+**D-SA-10 superseded.** The management application is no longer "never
+registered behind the caller": `AsgiServer` mounts `ServerApplication()` itself
+when no application has code `_server`. A role process mounts none, so its
+`/_server/...` calls go to the parent.
+
+**RemoteApplication is a transparent wire.** An application receives a request
+identically in-process and in an external process: the same method, path,
+query string, headers, `kajenn.channel`, avatar, `kajenn.kbus` and WSX fields;
+the caller gets the same status, headers and body. The channel is the one of
+the interface the person entered from and travels with the call. The parent
+never verifies a credential: the `Authorization` header travels in the record
+and the child verifies it through the parent's authentication route over the
+KajennBus; `info.auth` carries only the parent's session identity (or an
+identity already on the scope). The "no `_server` → 401" case is gone: a
+channel route pointing at a missing path remains the only 404 branch.

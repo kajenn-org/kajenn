@@ -370,7 +370,7 @@ class TestConfigureWritesTheCardAndTheHome:
         server = ServerLauncher(
             cli.parser().parse_args(["serve", "shop"]), cli.registry
         ).build_server()
-        assert server.applications == {}
+        assert set(server.applications) == {"_server"}
 
     def test_the_questions_propose_what_the_options_would_have_given(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

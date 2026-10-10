@@ -23,7 +23,6 @@ handler does to its arguments reaches the caller.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
@@ -31,7 +30,7 @@ from genro_routes import route
 
 import kajenn
 from kajenn import AsgiServer, KBusMixin, RoutedApplication
-from kajenn.kbus import CALL_METHOD, REPLY_METHOD, Frame, KBusCallError
+from kajenn.kbus import KBusCallError
 from kajenn.session.avatar import Avatar
 
 
@@ -133,17 +132,3 @@ async def test_a_post_runs_the_route_and_returns_nothing(server):
     assert billing(server).notes == ["hi"]
 
 
-async def test_one_frame_in_one_frame_out(server):
-    frame = Frame(
-        method=CALL_METHOD,
-        path="/billing/total",
-        info={"format": "json"},
-        payload=json.dumps({"order": 5}).encode(),
-    )
-    reply = await server.serve_kbus_frame(frame)
-    assert reply.method == REPLY_METHOD
-    assert reply.id == frame.id
-    assert reply.path == frame.path
-    assert reply.info["status"] == 200
-    assert reply.info["format"] == "json"
-    assert json.loads(reply.payload) == {"total": 10}

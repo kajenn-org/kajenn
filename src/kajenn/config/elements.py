@@ -197,15 +197,35 @@ class AsgiServerGrammar(TaskGrammar):
     def kbus(
         self,
         address: str | BagResolver = None,
-        secret: str | BagResolver = None,
+        certfile: str | BagResolver = None,
+        keyfile: str | BagResolver = None,
+        cafile: str | BagResolver = None,
+        max_frame: int | BagResolver = None,
+        max_meta: int | BagResolver = None,
+        max_route: int | BagResolver = None,
+        max_pending: int | BagResolver = None,
+        stream_window: int | BagResolver = None,
+        write_buffer: int | BagResolver = None,
     ) -> None:
-        """The KajennBus hub the server starts for its external applications.
+        """The kbus dispatcher the server starts for its external applications.
 
-        ``address`` is ``uds:<path>`` or ``tcp:<ip>:<port>``; without it the
-        hub binds a uds socket in a private directory. ``secret`` is required
-        on a non-loopback tcp address — a boot error otherwise — and every
-        process registering there must present it; on uds and loopback none is
-        checked.
+        ``address`` is ``unix://<path>`` or ``wss://<host>:<port>/<path>``;
+        without it the dispatcher listens on a unix socket in a private
+        directory. Any other form, ``ws://`` included, is a boot error: a token
+        never crosses a network in clear. Every spawned process is admitted
+        with its own name and a token minted for that spawn.
+
+        ``wss://`` needs ``certfile`` and ``keyfile``, the certificate the
+        dispatcher presents; the spawned process verifies it with ``cafile``
+        when given, with the system's certificate authorities otherwise.
+
+        The six limits build the dispatcher's ``kbus.Limits``; an omitted one
+        keeps the kbus default: ``max_frame`` (bytes of one payload),
+        ``max_meta`` (bytes of one metadata object), ``max_route`` (bytes of a
+        route), ``max_pending`` (calls in flight on one connection),
+        ``stream_window`` (messages a stream may send ahead of its reader) and
+        ``write_buffer`` (bytes buffered before a writer waits). A request
+        whose body does not fit ``max_frame`` answers 413.
         """
 
     @element(parent_tags="server", sub_tags="")

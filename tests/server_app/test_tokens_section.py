@@ -31,7 +31,7 @@ from typing import Any
 import pytest
 
 from kajenn import ApiKeyStore, AsgiServer, Avatar, BaseApplication, HTTPUnauthorized
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 from kajenn.middleware.base import BaseMiddleware
 from kajenn.types import Message, Scope
 
