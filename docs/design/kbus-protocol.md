@@ -72,6 +72,8 @@ A message carries the request in `meta` and the body in the payload:
 | `path` | the route's path |
 | `auth` | `{"identity", "tags"}` of the caller's avatar, when there is one |
 | `channel` | becomes `scope["kajenn.channel"]` |
+| `kbus` | `true` on a forwarded request that reached the server as a bus call; becomes `scope["kajenn.kbus"]` |
+| `genro` | `{"page_id", "reply_path"}`, the keys present on the forwarded scope; each becomes `scope["genro.<key>"]` |
 
 `auth` is read by the execution point (`RoutedApplication.execute`) as the
 caller's avatar. The key `credential` is reserved and still unread. Other keys
@@ -142,8 +144,13 @@ rebuilt from `auth`, no session and `"kajenn.kbus": True`.
 
 A route answers `kbus_call` the same way whether its application runs in the
 server's process or in a spawned one. A failing handler answers 500 with
-`"<Type>: <message>"` in the json format, and through `ErrorMiddleware` on an
-answer stream; `kbus_call` raises `KBusCallError` for a status of 400 or more.
+`"<Type>: <message>"` in the json format; `kbus_call` raises `KBusCallError`
+for a status of 400 or more. On an answer stream, an exception raised before
+the answer started travels back as one message `{"failure"}` and is raised
+again in the server (see the HTTP record); an exception other than an
+`HTTPException` arrives there as an `ExternalFailure` carrying the original
+`"<Type>: <message>"`, so a `kbus_call` or a WSX message answers the same text
+as in the server's process, and only the spawned process logs its traceback.
 
 In a role process, a `kbus_call` to a path outside its own application goes to
 the `server` member, which serves it through the demux exactly like an
@@ -199,6 +206,29 @@ it presents one complete request message and buffers the whole response,
 bounded on both sides by `max_body_size`, and by default refuses a chunked or
 event-stream answer instead of buffering it. It holds no state of its own, so routing and
 whatever persists across calls stay outside the application call.
+
+`RemoteApplication`, the server's mount of an external application, is a
+transparent wire: the application receives a request exactly as it would in
+the server's process — method, path, query string, headers, channel, avatar,
+`kajenn.kbus`, `genro.page_id` and `genro.reply_path` — and the caller gets the
+same status, headers and body, a streamed answer chunk by chunk. The mount
+forwards every header of the request, the `Authorization` header included, and
+never verifies a credential. The channel the request already carries travels as
+`meta.channel`; the proxy sets no default. The process verifies the forwarded
+`Authorization` header through `authenticate_credential`, which reaches the
+server's authentication route for that channel over the bus. `meta.auth` on a
+proxied request is the server's session identity (or an avatar a middleware put
+on the server's scope); a header never becomes `meta.auth`. `meta.kbus` is set
+only when the server's scope carries `kajenn.kbus`, and `meta.genro` only when
+it carries `genro.page_id` or `genro.reply_path`.
+
+An exception the application raises before its answer starts does not become a
+response in the process: the first message of the answer is
+`{"failure": {"status", "detail", "headers"}}` for an `HTTPException` (plus
+`location` for a `Redirect`), `{"failure": {"detail"}}` for any other
+exception, and the mount raises it again, so the server's middleware answers it
+as it answers an application of its own. `scope["session"]` stays `None` in the
+process: the session store lives in the server.
 
 ## The body ceiling
 

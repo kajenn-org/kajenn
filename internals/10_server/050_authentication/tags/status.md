@@ -21,12 +21,12 @@ shipped recipe option.
 
 Claim anchors: [`RoutedApplication`](../../../../src/kajenn/routed_application.py#L111), [`auth_filters`](../../../../src/kajenn/routed_application.py#L220), [`Avatar`](../../../../src/kajenn/session/avatar.py#L31), [`tags`](../../../../src/kajenn/session/avatar.py#L48).
 
-Behavior evidence: [`MonitorSection`](../../../../src/kajenn_server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../../src/kajenn_server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../../src/kajenn_server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../../src/kajenn_server_app/server_sections/tasks_section.py#L60).
+Behavior evidence: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../../src/kajenn/server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../../src/kajenn/server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../../src/kajenn/server_app/server_sections/tasks_section.py#L60).
 
 ## Source and test evidence
 
 - [src/kajenn/routed_application.py](../../../../src/kajenn/routed_application.py)
 - [src/kajenn/session/avatar.py](../../../../src/kajenn/session/avatar.py)
-- [src/kajenn_server_app/server_sections/monitor_section.py](../../../../src/kajenn_server_app/server_sections/monitor_section.py)
+- [src/kajenn/server_app/server_sections/monitor_section.py](../../../../src/kajenn/server_app/server_sections/monitor_section.py)
 - [tests/core/test_routed_application.py](../../../../tests/core/test_routed_application.py)
 - [tests/server_app/test_server_monitor.py](../../../../tests/server_app/test_server_monitor.py)

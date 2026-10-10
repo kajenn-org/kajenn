@@ -160,7 +160,7 @@ class TestSelfConfiguringServer:
         server = AsgiServer(config=TwoAppConfig)
         assert isinstance(server.root_application, ShopApp)
         assert server.root_application.mount == ""
-        assert set(server.applications) == {"shop", "api"}
+        assert set(server.applications) == {"shop", "api", "_server"}
         assert isinstance(server.applications["api"], ApiApp)
 
     def test_a_server_composed_in_code_has_one_too(self) -> None:
@@ -201,7 +201,7 @@ class TestSelfConfiguringServer:
         )
         server = AsgiServer(config=module)
         assert server.config_port == 8123
-        assert server.applications == {}
+        assert set(server.applications) == {"_server"}
 
 
 class TestDemux:
@@ -438,7 +438,7 @@ class TestSkippedSections:
 
         server = AsgiServer(config=OrchestrationConfig)
         assert isinstance(server.root_application, ShopApp)
-        assert set(server.applications) == {"shop"}
+        assert set(server.applications) == {"shop", "_server"}
         assert server.config("openapi.title") == "Demo"
 
 
@@ -453,7 +453,7 @@ class TestSingleAppNoDefault:
                 )
 
         server = AsgiServer(config=OneAppConfig)
-        assert set(server.applications) == {"only"}
+        assert set(server.applications) == {"only", "_server"}
         assert server.root_application is None
         assert isinstance(server.application_at("only"), ShopApp)
 

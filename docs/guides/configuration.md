@@ -299,7 +299,12 @@ One line each; the deep dives live in their own guides.
   words (see [The storage section](#the-storage-section)).
 - **`applications`** — the app collection keyed by `code` (an identifier:
   letters, digits, underscore, not empty; the grammar refuses anything else), with the optional
-  `default` naming who `/` redirects to.
+  `default` naming who `/` redirects to. `application(code="_server", ...)`
+  customises the management application every server mounts — its `login`
+  policy, its `oidc` providers, or a `ServerApplication` subclass as
+  `app_class` — and never declares it: a recipe naming no `_server` still has
+  one. Without `app_class` it means `ServerApplication`; a class that does not
+  subclass it is a `ValueError` at boot.
 - **`databases`** — one descriptor per database: `db_class` and its connection
   kwargs; the core never imports a driver.
 - **`plugins`** — the router plugins armed on every routed app.

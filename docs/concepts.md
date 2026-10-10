@@ -77,9 +77,9 @@ method and the body survive the hop.
 ### The `_server` app
 
 The management surface — login, monitoring, OpenAPI of system endpoints, task
-management — is `ServerApplication`, and it is declared like any other
-application, with the code `_server`. A server that does not declare it does not
-have it. Its endpoints live under `/_server/...` and never leak into your own
+management — is `ServerApplication`, and every server mounts it under the code
+`_server`. The configuration customises it (`application(code="_server", ...)`)
+and never declares it. Its endpoints live under `/_server/...` and never leak into your own
 app's route tree.
 
 ## Routing with genro-routes

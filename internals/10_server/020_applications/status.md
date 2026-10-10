@@ -84,7 +84,7 @@ Applications can receive WSX messages as synthetic HTTP scopes with method
 The HTTP middleware does not run per WSX message.
 
 `OpenApiApplication`, `McpApplication` and `McpOpenApiApplication` ship in
-`kajenn`; `ServerApplication` ships in `kajenn_server_app`. An application that
+`kajenn`; `ServerApplication` ships in `kajenn.server_app`. An application that
 brings its own vocabulary arrives from its own distribution and is mounted by
 class reference, so the core ships no list of the applications that exist.
 Dynamic movability/removal/failure declarations remain design distance.

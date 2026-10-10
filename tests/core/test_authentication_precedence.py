@@ -35,11 +35,11 @@ import pytest
 from genro_routes import RoutingClass, route
 
 from kajenn import AsgiServer, Avatar, BaseApplication, McpOpenApiApplication, RoutedApplication
-from kajenn.exceptions import HTTPException, HTTPForbidden, HTTPNotFound, HTTPUnauthorized
+from kajenn.exceptions import HTTPException, HTTPForbidden, HTTPNotFound
 from kajenn.mcp.engine import McpEngine
 from kajenn.mcp.jsonrpc import McpError
 from kajenn.types import Message, Scope
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
 
@@ -187,12 +187,6 @@ class TestTheCacheAndTheRoute:
         finally:
             stop.set()
             thread.join()
-
-    async def test_no_route_is_401_with_the_challenge(self) -> None:
-        server = AsgiServer(applications=[(BaseApplication, {"code": "site"})], auth=BEARER)
-        with pytest.raises(HTTPUnauthorized) as refused:
-            await server.authenticate_credential("Bearer sk_live_xyz", "rest")
-        assert (b"www-authenticate", b"Bearer") in refused.value.headers
 
     async def test_a_failing_route_is_503(self) -> None:
         class Broken(RoutedApplication):

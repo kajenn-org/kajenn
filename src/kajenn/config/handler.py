@@ -61,6 +61,8 @@ from typing import Any
 import kbus
 from genro_builders.contrib.config import ConfigHandler
 
+from ..server_app.server_app import ServerApplication
+
 __all__ = ["ConfigError", "ConfigurationHandler"]
 
 #: The ``server.kbus`` attributes of a ``wss://`` dispatcher: its certificate and key,
@@ -292,6 +294,10 @@ class ConfigurationHandler(ConfigHandler):
         owns their resolution. The mounted subtree is NOT passed: an application
         reads its own configuration back through the handler
         (``applications.<code>.<path>``), it never receives a slice of the tree.
+
+        The ``_server`` entry customises the management application, so its
+        ``app_class`` must be ``ServerApplication`` or a subclass: any other
+        class is a ``ValueError`` naming it.
         """
         node = self.node("applications")
         if node is None:
@@ -299,7 +305,12 @@ class ConfigurationHandler(ConfigHandler):
         entries: list[tuple[type, dict[str, Any]]] = []
         for child in node.value or ():
             kwargs = self.open_attrs(child)
-            entries.append((kwargs.pop("app_class"), kwargs))
+            app_class = kwargs.pop("app_class")
+            if kwargs.get("code") == "_server" and not issubclass(app_class, ServerApplication):
+                raise ValueError(
+                    f"application '_server' must be a ServerApplication, got {app_class.__name__}"
+                )
+            entries.append((app_class, kwargs))
         return entries, self("applications.default", default=None)
 
     def databases(self) -> list[dict[str, Any]]:

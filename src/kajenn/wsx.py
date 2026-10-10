@@ -74,7 +74,7 @@ from typing import Any
 from genro_tytx import to_tytx
 
 from .application import BaseApplication
-from .exceptions import HTTPException, WebSocketDisconnect
+from .exceptions import ExternalFailure, HTTPException, WebSocketDisconnect, failure_text
 from .wsx_payload import SerializedWsxPayload, WsxResponseEncoder
 from .middleware.session import SessionMiddleware
 from .types import Receive, Scope, Send
@@ -387,8 +387,9 @@ class WsxConnection:
         except HTTPException as refused:
             return refused.status, refused.detail
         except Exception as failure:
-            self._logger.exception("Websocket: message %s failed", envelope.path)
-            return 500, f"{type(failure).__name__}: {failure}"
+            if not isinstance(failure, ExternalFailure):
+                self._logger.exception("Websocket: message %s failed", envelope.path)
+            return 500, failure_text(failure)
         try:
             status, data = self._answer_of(
                 collected, endpoint=not getattr(app, "forwards_payloads", False)

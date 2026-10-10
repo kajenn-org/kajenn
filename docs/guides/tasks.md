@@ -124,9 +124,9 @@ skipped.
 
 ## Managing tasks over HTTP
 
-`ServerApplication` (from `kajenn_server_app`) exposes the task backbone under
-`/_server/tasks/...` — but only on a server that declares it in `applications=`
-or on the `applications` section. Every one of these endpoints carries
+`ServerApplication` (from `kajenn.server_app`) exposes the task backbone under
+`/_server/tasks/...` on every server: the server mounts it under the code
+`_server`. Every one of these endpoints carries
 `auth_rule="SUPERADMIN"`, so an anonymous request receives 401 and an identity
 without that tag receives 403. Authenticate with an appropriately authorized
 credential:

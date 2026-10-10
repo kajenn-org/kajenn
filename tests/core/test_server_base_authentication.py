@@ -34,7 +34,7 @@ from kajenn import AsgiServer, AuthCore, Avatar, BaseApplication, RoutedApplicat
 from kajenn.config import AsgiConfigBuilder
 from kajenn.exceptions import HTTPUnauthorized
 from kajenn.kbus import KBusCallError
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "api"}}}
 
@@ -186,13 +186,6 @@ class TestAuthenticateCredential:
         await server.authenticate_credential("Bearer good", "mcp")
         await server.authenticate_credential("Bearer good", "mcp")
         assert len(idp(server).calls) == 2
-
-    async def test_no_route_at_all_is_401(self) -> None:
-        # wf:contract: a server without _server and without a channel route cannot
-        # wf:contract: verify any credential: authenticate_credential raises 401.
-        server = AsgiServer(applications=[(BaseApplication, {"code": "site"})], auth=BEARER)
-        with pytest.raises(HTTPUnauthorized):
-            await server.authenticate_credential("Bearer sk_live_xyz", "rest")
 
     def test_cache_ttl_comes_from_the_grammar(self) -> None:
         # wf:contract: configuration.authentication(cache_ttl=<seconds>) reaches the server

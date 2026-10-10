@@ -33,7 +33,7 @@ from genro_routes import route
 from tests.storage_support import site_mounts
 
 from kajenn import AsgiServer, Avatar, RoutedApplication
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 from kajenn.middleware.base import BaseMiddleware
 from kajenn.tasks import new_descriptor
 from kajenn.types import Message, Scope

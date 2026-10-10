@@ -16,7 +16,7 @@
 
 Cut out of ``tests/core/test_config.py`` when the server application became a
 package of its own: the core suite must load no module of
-``kajenn_server_app``, and this recipe names its class.
+``kajenn.server_app``, and this recipe names its class.
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ import pytest
 from genro_bag.resolvers import EnvResolver
 
 from kajenn import AsgiConfigBuilder, AsgiServer, ConfigurationHandler
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 
 from tests.core.test_config import ApiApp, ShopApp, TwoAppConfig
 

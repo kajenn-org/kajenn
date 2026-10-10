@@ -299,13 +299,14 @@ corresponding capabilities.
 
 ## The management application
 
-The optional server application exposes login, users, tokens, tasks and
+The server application exposes login, users, tokens, tasks and
 monitoring under `/_server/`. Its OpenAPI schema lives at
 `/_server/_meta/schema_json`.
 
-It must be declared in the application list or recipe, with code `_server`.
-Nothing mounts it implicitly: a server without that declaration exposes no
-management application. Importing the core does not load the management package.
+It is always present: the server mounts it with code `_server` when the
+configuration names none, and the configuration may only customise it
+(`login`, `oidc`, a subclass). A role process mounts none and sends `/_server/`
+calls to its parent.
 
 ## Source map
 
@@ -323,7 +324,7 @@ and file paths are kept here so the explanations above can focus on behaviour.
 | WebSocket | [WSX connection](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx.py), [transport](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/websocket.py), [payload](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx_payload.py) |
 | Applications in other processes | [KajennBus](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/kbus), [KBusMixin](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/kbus_mixin.py), [spawner](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/kbus/spawner.py), [HTTP record](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/http_record.py) |
 | Tasks | [Capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/tasks/mixin.py), [manager and collaborators](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/tasks) |
-| Applications | [Base contract](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/application.py), [protocol views](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/applications), [management application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn_server_app/server_app.py) |
+| Applications | [Base contract](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/application.py), [protocol views](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/applications), [management application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/server_app/server_app.py) |
 
 ## Where to go next
 

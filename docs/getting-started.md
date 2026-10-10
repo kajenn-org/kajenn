@@ -46,8 +46,8 @@ revision; use release-specific documentation when installing a release.
 Run the examples from a writable directory: default storage uses the working
 directory.
 
-The `kajenn` distribution supplies both import packages: the core `kajenn` and
-the base server application `kajenn_server_app`. The hello-world below uses only
+The `kajenn` distribution supplies the core `kajenn` and, as its subpackage,
+the base server application `kajenn.server_app`. The hello-world below uses only
 the core.
 
 ## Hello world
@@ -210,7 +210,7 @@ answers `404` under `/_server/`, because it declared no such application. To
 have it, declare it like any other:
 
 ```python
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 
 server = AsgiServer(applications=[ServerApplication, Hello])
 ```

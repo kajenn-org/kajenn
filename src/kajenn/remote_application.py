@@ -11,6 +11,14 @@ answers 503 while that process has not joined. When the real class defines
 ``serve_websocket``, a websocket on the mount opens one stream as well, and
 every ASGI websocket event crosses it as one message, in both directions.
 
+The mount is a transparent wire: the application receives a request as it
+would in this process. Every header travels in the record and the child
+authenticates on its own face, through the parent's authentication route over
+the bus. Only the identity this process holds — a session avatar, an avatar
+stamped on the scope — travels as ``meta["auth"]``; the scope's channel, its
+``kajenn.kbus`` flag and its ``genro.page_id``/``genro.reply_path`` travel as
+``meta["channel"]``, ``meta["kbus"]`` and ``meta["genro"]``.
+
 The kwargs of the declaration are split in two: ``PROXY_OPTIONS`` belong to
 this mount, every other kwarg belongs to the real application, built in the
 spawned process. The mount resolves ``code`` and ``mount`` as the real class
@@ -26,11 +34,14 @@ import kbus
 from .application import BaseApplication
 from .spawner import cancel_and_wait
 from .asgi_endpoint import BufferedAsgiEndpoint
+from .exceptions import ExternalFailure, HTTPException, Redirect, failure_text
 from .http_record import HttpRecord
+from .middleware.base import headers_dict
 from .response import Response
 from .transport_limits import HttpBodyTooLarge, http_max_body_size
 
-__all__ = ["PROXY_OPTIONS", "RemoteApplication", "websocket_event", "websocket_message"]
+__all__ = ["PROXY_OPTIONS", "RemoteApplication", "failure_message", "raised_failure",
+           "websocket_event", "websocket_message"]
 
 #: The kwargs of an application declaration that belong to its proxy mount:
 #: the spawned process builds the real application without them.
@@ -69,6 +80,39 @@ def websocket_event(message: kbus.Message) -> dict[str, Any]:
     elif message.meta.get("bytes"):
         event["bytes"] = message.payload
     return event
+
+
+def failure_message(failure: Exception) -> kbus.Message:
+    """An exception raised before the answer started, as one stream message.
+
+    ``meta["failure"]`` carries the ``status``, ``detail`` and ``headers`` of
+    an ``HTTPException`` (plus ``location`` for a ``Redirect``), or for any
+    other exception only its ``"<type>: <message>"`` as ``detail``.
+    """
+    if not isinstance(failure, HTTPException):
+        return kbus.Message({"failure": {"detail": failure_text(failure)}})
+    record: dict[str, Any] = {
+        "status": failure.status, "detail": failure.detail,
+        "headers": [[name.decode("latin-1"), value.decode("latin-1")]
+                    for name, value in failure.headers]}
+    if isinstance(failure, Redirect):
+        record["location"] = failure.location
+    return kbus.Message({"failure": record})
+
+
+def raised_failure(record: dict[str, Any]) -> Exception:
+    """The exception ``failure_message`` turned into ``record``.
+
+    Anything but an ``HTTPException`` comes back as an ``ExternalFailure``
+    carrying its ``"<type>: <message>"``.
+    """
+    if "status" not in record:
+        return ExternalFailure(record["detail"])
+    headers = [(name.encode("latin-1"), value.encode("latin-1"))
+               for name, value in record["headers"]]
+    if "location" in record:
+        return Redirect(record["location"], record["status"], headers)
+    return HTTPException(record["status"], record["detail"], headers)
 
 
 class RemoteApplication(BaseApplication):
@@ -112,7 +156,9 @@ class RemoteApplication(BaseApplication):
         than ``request_timeout`` answers 503. Once the
         answer started, a failure ends it without its terminal body.
         A client that disconnects while the body is being read ends the call
-        silently.
+        silently. An exception the application raised before its answer
+        started is raised again here, so the middleware of this process answers
+        it as it answers an application of its own.
 
         Raises:
             ValueError: the scope is not ``http``.
@@ -155,13 +201,17 @@ class RemoteApplication(BaseApplication):
                     if not message.get("more_body", False):
                         break
                 meta: dict[str, Any] = {"format": "http"}
-                scope.setdefault("kajenn.channel", "rest")
-                if scope.get("auth") is None:
-                    scope["auth"] = await self.server.authenticate(scope)
-                avatar = scope.get("auth")
+                avatar = self._trusted_avatar(scope)
                 if avatar is not None:
                     meta["auth"] = {"identity": avatar.identity, "tags": list(avatar.tags)}
-                meta["channel"] = scope["kajenn.channel"]
+                if "kajenn.channel" in scope:
+                    meta["channel"] = scope["kajenn.channel"]
+                if "kajenn.kbus" in scope:
+                    meta["kbus"] = True
+                genro = {key: scope[f"genro.{key}"] for key in ("page_id", "reply_path")
+                         if f"genro.{key}" in scope}
+                if genro:
+                    meta["genro"] = genro
                 meta["path"] = self.forwarded_path(scope)
                 record = HttpRecord().encode_request(
                     {**scope, "path": meta["path"], "raw_path": meta["path"].encode(),
@@ -174,6 +224,8 @@ class RemoteApplication(BaseApplication):
                         head = await anext(stream, None)
                         if head is None:
                             raise kbus.LinkLost("the answer ended before it started")
+                        if "failure" in head.meta:
+                            raise raised_failure(head.meta["failure"])
                         deadline.reschedule(None)
                         self._slots.release()
                         held = False
@@ -280,6 +332,22 @@ class RemoteApplication(BaseApplication):
         except kbus.Error:
             if client_open and not application_closed:
                 await send({"type": "websocket.close", "code": 1011})
+
+    def _trusted_avatar(self, scope) -> Any:
+        """The identity this process vouches for, or ``None``.
+
+        An avatar already on the scope (a stamping middleware) or, without an
+        ``Authorization`` header, the root avatar of the session: the session
+        store lives here and the child cannot read it. A header is never
+        verified here: it travels in the record and the child verifies it on
+        its own face.
+        """
+        if scope.get("auth") is not None:
+            return scope["auth"]
+        if headers_dict(scope).get("authorization"):
+            return None
+        session = self.server.session(scope)
+        return session.avatar() if session is not None else None
 
     async def _send_local_response(self, status, text, scope, receive, send) -> None:
         """Write an answer this mount built itself, as a JSON string.

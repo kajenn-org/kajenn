@@ -91,7 +91,6 @@ Repository = "https://github.com/kajenn-org/kajenn"
 [tool.hatch.build.targets.wheel]
 packages = [
     "src/kajenn",
-    "src/kajenn_server_app",
 ]
 exclude = ["**/tests/"]
 
@@ -100,7 +99,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --cov=kajenn --cov=kajenn_server_app --cov-report=term-missing"
+addopts = "-v --cov=kajenn --cov-report=term-missing"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
@@ -182,7 +181,7 @@ disable_error_code = ["misc", "attr-defined"]
 # dynamic-mixin category as AuthMixin above: the attributes exist on every
 # runtime composition but not on the static base.
 [[tool.mypy.overrides]]
-module = "kajenn_server_app.server_app"
+module = "kajenn.server_app.server_app"
 disable_error_code = ["attr-defined", "union-attr"]
 
 # LocalTaskExecutor reaches server.storage (supplied by StorageMixin) and
@@ -227,5 +226,5 @@ disable_error_code = ["attr-defined"]
 # (present only when TaskMixin is composed and a request is in flight) — the
 # same dynamic-composition category as server_app.
 [[tool.mypy.overrides]]
-module = "kajenn_server_app.server_sections.tasks_section"
+module = "kajenn.server_app.server_sections.tasks_section"
 disable_error_code = ["union-attr", "no-any-return"]
