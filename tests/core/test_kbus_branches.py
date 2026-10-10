@@ -34,7 +34,6 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-import signal
 import tempfile
 from typing import Any
 
@@ -42,8 +41,6 @@ import pytest
 from genro_routes import route
 
 from kajenn import AsgiServer, RoutedApplication
-from kajenn.asgi_endpoint import BufferedAsgiEndpoint
-from kajenn.http_record import HttpRecord
 from kajenn.kbus import (
     CALL_METHOD,
     EVENT_METHOD,
@@ -51,7 +48,6 @@ from kajenn.kbus import (
     Frame,
     KBusCallError,
     KBusCallFailed,
-    KBusClient,
     KBusConnector,
     KBusHub,
     KBusMember,
@@ -60,12 +56,10 @@ from kajenn.kbus import (
 from kajenn.kbus.address import KBusAddress
 from kajenn.kbus.callback import cancel_and_wait
 from kajenn.kbus.client import KBusEnd
-from kajenn.kbus.spawner import KBusSpawner, SubprocessSpawner
 from kajenn.lifespan import FatalBootError
 from kajenn.remote_application import RemoteApplication
 
-from .test_kbus_external_application import get, no_process, running  # noqa: F401
-from .test_kbus_final_touch import Failing, write_recipe
+from .test_kbus_final_touch import Failing
 
 
 async def wait_until(predicate, timeout: float = 10.0) -> None:
@@ -496,75 +490,6 @@ async def test_a_hub_stopped_while_the_welcome_is_written_drops_the_member():
 # -- kbus/spawner.py ---------------------------------------------------------------------
 
 
-async def test_the_spawner_interface_leaves_every_step_to_a_backend():
-    spawner = KBusSpawner("config.py", "uds:/hub.sock")
-    with pytest.raises(NotImplementedError):
-        await spawner.ensure("application:x", token="t", environment={})
-    with pytest.raises(NotImplementedError):
-        await spawner.stop("application:x")
-    with pytest.raises(NotImplementedError):
-        spawner.joined("application:x")
-    with pytest.raises(NotImplementedError):
-        spawner.relaunch("application:x", mint=lambda: "t", environment={})
-
-
-async def test_ensure_keeps_a_process_still_running_and_relaunch_ignores_another_pid(tmp_path):
-    spawner = SubprocessSpawner(str(tmp_path / "missing.py"), "uds:/nonexistent/hub.sock")
-    role = "application:x"
-    await spawner.ensure(role, token="t", environment={})
-    try:
-        process = spawner.processes[role]
-        await spawner.ensure(role, token="t2", environment={})
-        assert spawner.processes[role] is process
-        spawner.relaunch(role, mint=lambda: "t3", environment={}, pid=-1)
-        assert role not in spawner.relaunches
-    finally:
-        await spawner.stop(role)
-
-
-async def test_a_member_that_stayed_registered_resets_the_backoff(tmp_path):
-    spawner = SubprocessSpawner(str(tmp_path / "missing.py"), "uds:/nonexistent/hub.sock")
-    spawner.RELAUNCH_INTERVAL = 0.01
-    spawner.RELAUNCH_RESET = 0.0
-    role = "application:x"
-    await spawner.ensure(role, token="t", environment={})
-    try:
-        first = spawner.processes[role]
-        spawner.backoff[role] = spawner.RELAUNCH_CEILING
-        spawner.joined(role)
-        spawner.relaunch(role, mint=lambda: "t2", environment={})
-        await spawner.relaunches[role]
-        assert spawner.processes[role] is not first
-        assert spawner.backoff[role] == 0.02
-    finally:
-        await spawner.stop(role)
-
-
-SLOW_SHUTDOWN = '''
-
-class SlowShutdown(Billing):
-    async def on_shutdown(self):
-        await asyncio.sleep(30)
-
-'''
-
-
-async def test_a_process_past_the_shutdown_timeout_is_killed(tmp_path):
-    config = write_recipe(tmp_path, classes=SLOW_SHUTDOWN, billing="SlowShutdown")
-    hub = KBusHub()
-    await hub.start()
-    spawner = SubprocessSpawner(config, hub.address, shutdown_timeout=0.5)
-    role = "application:billing"
-    try:
-        await spawner.ensure(role, token="t", environment={})
-        process = spawner.processes[role]
-        await wait_until(lambda: hub.resolve("billing") is not None, timeout=30)
-        await spawner.stop(role)
-    finally:
-        await hub.stop()
-    assert process.returncode == -signal.SIGKILL
-
-
 # -- kbus_mixin.py -----------------------------------------------------------------------
 
 
@@ -577,30 +502,6 @@ async def test_an_external_application_without_a_configuration_source_does_not_s
         await server({"type": "lifespan", "asgi": {"version": "3.0"}}, inbox.get, outbox.put)
 
 
-async def test_a_role_whose_startup_fails_does_not_run():
-    server = AsgiServer(applications=[(FatalStartup, {"code": "billing"})],
-                        role="application:billing", parent="uds:/nonexistent/hub.sock")
-    with pytest.raises(RuntimeError, match="role application:billing failed to start"):
-        await server.run_role()
-    assert not server.parent_kbus.connected
-
-
-async def test_a_role_call_refused_by_the_parent_raises_without_status():
-    hub = KBusHub()
-    await hub.start()
-    server = AsgiServer(applications=[(Echo, {"code": "billing"})],
-                        role="application:billing", parent=hub.address)
-    await server.parent_kbus.connect()
-    try:
-        with pytest.raises(KBusCallError) as refused:
-            await server.kbus_call("/elsewhere/x", {"x": 1})
-    finally:
-        await server.parent_kbus.close()
-        await hub.stop()
-    assert refused.value.status is None
-    assert "serves no calls" in refused.value.error
-
-
 async def test_a_call_whose_handler_fails_answers_500():
     server = AsgiServer(applications=[(Failing, {"code": "failing"})])
     with pytest.raises(KBusCallError) as failed:
@@ -608,57 +509,6 @@ async def test_a_call_whose_handler_fails_answers_500():
     assert (failed.value.status, failed.value.error) == (500, "LookupError: gone")
 
 
-async def test_an_http_frame_to_no_application_answers_404():
-    server = AsgiServer()
-    reply = await server.serve_kbus_frame(Frame(
-        method=CALL_METHOD, path="/nowhere/x", info={"format": "http"},
-        payload=HttpRecord().encode_request(http_scope("/nowhere/x"), b"")))
-    assert reply.info["status"] == 404
-    assert HttpRecord().decode_response(reply.payload)["status"] == 404
-
-
-async def test_an_http_event_frame_runs_and_answers_nothing():
-    server = AsgiServer(applications=[(Echo, {"code": "echo"})])
-    frame = Frame(method=EVENT_METHOD, path="/echo/ping", info={"format": "http"},
-                  payload=HttpRecord().encode_request(http_scope("/echo/ping"), b""))
-    assert await server.serve_kbus_frame(frame) is None
-
-
 # -- remote_application.py ---------------------------------------------------------------
 
 
-async def member_of(server: AsgiServer, on_call) -> KBusClient:
-    """A member registered as ``billing`` with the token the server minted."""
-    member = KBusClient(server.children_kbus.address, "billing", on_call=on_call,
-                        presentation={"role": "application:billing",
-                                      "token": server._kbus_tokens["billing"]})
-    await member.connect()
-    return member
-
-
-@pytest.mark.usefixtures("no_process")
-async def test_a_member_that_fails_the_call_answers_502(tmp_path):
-    def on_call(frame: Frame) -> Frame:
-        raise LookupError("broken member")
-
-    async with running(write_recipe(tmp_path), wait_member=False) as server:
-        member = await member_of(server, on_call)
-        try:
-            status, body = await get(server, "/billing/total", b"order=2")
-        finally:
-            await member.close()
-    assert (status, body) == (502, "Remote application failed")
-
-
-@pytest.mark.usefixtures("no_process")
-async def test_a_request_too_large_for_the_bus_frame_answers_413(tmp_path, monkeypatch):
-    monkeypatch.setenv("KAJENN_FRAME_MAX_BYTES", "4096")
-    monkeypatch.setenv("KAJENN_HTTP_MAX_BODY_BYTES", "65536")
-    async with running(write_recipe(tmp_path), wait_member=False) as server:
-        member = await member_of(server, lambda frame: None)
-        try:
-            result = await BufferedAsgiEndpoint(server).serve(
-                http_scope("/billing/total", "POST"), b"x" * 8000)
-        finally:
-            await member.close()
-    assert result["status"] == 413

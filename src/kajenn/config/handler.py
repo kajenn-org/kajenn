@@ -58,11 +58,17 @@ from __future__ import annotations
 
 from typing import Any
 
+import kbus
 from genro_builders.contrib.config import ConfigHandler
 
-from ..kbus.address import KBusAddress
-
 __all__ = ["ConfigError", "ConfigurationHandler"]
+
+#: The ``server.kbus`` attributes of a ``wss://`` dispatcher: its certificate and key,
+#: and the authority the spawned processes verify it with.
+KBUS_TLS = ("certfile", "keyfile", "cafile")
+
+#: The ``server.kbus`` attributes that build the dispatcher's ``kbus.Limits``.
+KBUS_LIMITS = ("max_frame", "max_meta", "max_route", "max_pending", "stream_window", "write_buffer")
 
 
 class ConfigError(Exception):
@@ -88,8 +94,11 @@ class ConfigurationHandler(ConfigHandler):
         and, when it names a ``store_class``, the ``session_store`` the server is
         handed — the class is instantiated HERE, with the section's remaining
         attributes, ``tasks`` becomes the ``tasks``
-        tuning dict, ``websocket`` the websocket options and ``kbus`` the hub
-        options (a non-loopback address without a secret is refused): all are
+        tuning dict, ``websocket`` the websocket options and ``kbus`` the
+        dispatcher options — ``address``, ``certfile``/``keyfile``/``cafile`` and
+        the ``kbus.Limits`` its six limits build; an address that is not
+        ``unix://`` or ``wss://``, or a ``wss://`` one without certificate and
+        key, is refused: all are
         server-domain (sessions, the task backbone and the sockets live on the
         server), so their values lift to the kwargs the owning mixins peel
         while the config keeps them under ``server`` where they belong. The
@@ -124,12 +133,16 @@ class ConfigurationHandler(ConfigHandler):
                 websocket["origins"] = [part.strip() for part in str(origins).split(",") if part.strip()]
             kwargs["websocket"] = websocket
         if self.node("server.kbus") is not None:
-            kbus = self.closed_attrs("server.kbus", "address", "secret")
-            address = kbus.get("address")
-            if (address is not None and not kbus.get("secret")
-                    and KBusAddress(address, allow_network_listener=True).network):
-                raise ValueError(f"server.kbus address {address} is not loopback: it needs a secret")
-            kwargs["kbus"] = kbus
+            options = self.closed_attrs(
+                "server.kbus", "address", *KBUS_TLS, *KBUS_LIMITS)
+            address = options.pop("address", None)
+            tls = {name: options.pop(name, None) for name in KBUS_TLS}
+            if address is not None and not address.startswith(("unix://", "wss://")):
+                raise ValueError(f"server.kbus address {address!r}: use unix://<path> "
+                                 "or wss://<host>:<port>/<path>")
+            if (address or "").startswith("wss://") and not (tls["certfile"] and tls["keyfile"]):
+                raise ValueError(f"server.kbus address {address!r} needs certfile and keyfile")
+            kwargs["kbus"] = {"address": address, "limits": kbus.Limits(**options), **tls}
         if self.node("server.tasks") is not None:
             kwargs["tasks"] = self.closed_attrs(
                 "server.tasks", "enabled", "tick_seconds", "mount"

@@ -45,7 +45,7 @@ Its cooperative ``__init__`` peels the kwargs ``BaseServer`` does not accept —
 ``site_name``/``site_home``/``host``/``port``/``external_url`` — and forwards
 everything else (``applications``, ``auth``, ``session_store``/``session_ttl``,
 ``middleware``/``middleware_registry``, ``plugins``/``plugin_registry``,
-``storage``/``storage_key``, ``parent``) down the D16 chain. The peeled
+``storage``/``storage_key``, ``role``, ``kbus``) down the D16 chain. The peeled
 ``host``/``port`` become the defaults of ``serve``, so a configured server
 serves on its configured address unless the caller overrides it.
 
