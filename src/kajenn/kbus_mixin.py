@@ -50,11 +50,11 @@ from typing import TYPE_CHECKING, Any
 import kbus
 
 from .asgi_endpoint import BufferedAsgiEndpoint
-from .exceptions import HTTPException
+from .exceptions import HTTPException, failure_text
 from .http_record import HttpRecord
 from .kbus import KBusCallError
 from .middleware.errors import ErrorMiddleware
-from .remote_application import websocket_event, websocket_message
+from .remote_application import failure_message, websocket_event, websocket_message
 from .session.avatar import Avatar
 from .spawner import PARENT_VARIABLE, SPAWNERS, Spawner
 
@@ -455,8 +455,7 @@ class KBusMixin:
             except HTTPException as refused:
                 status, body = refused.status, json.dumps(refused.detail).encode()
             except Exception as failure:
-                status = 500
-                body = json.dumps(f"{type(failure).__name__}: {failure}").encode()
+                status, body = 500, json.dumps(failure_text(failure)).encode()
         finally:
             item.run_cleanups()
             self.requests.unregister(item)
@@ -465,8 +464,9 @@ class KBusMixin:
     async def _serve_http_stream(self, message: kbus.Message, stream: kbus.Stream) -> None:
         """Serve a stream opened with an ``HttpRecord`` and answer on it.
 
-        ``meta["auth"]`` becomes the avatar and ``meta["channel"]`` the scope's
-        ``"kajenn.channel"``. The answer is one message ``{"status",
+        ``meta["auth"]`` becomes the avatar, ``meta["channel"]`` the scope's
+        ``"kajenn.channel"``, ``meta["kbus"]`` its ``"kajenn.kbus"`` and each key
+        of ``meta["genro"]`` its ``"genro.<key>"``. The answer is one message ``{"status",
         "headers"}``, one message ``{"more_body"}`` per body chunk with the
         chunk as payload, then the close of this
         direction; a ``WSK`` answer is buffered and adapted first, a raised
@@ -476,9 +476,12 @@ class KBusMixin:
         auth = message.meta.get("auth")
         scope["auth"] = Avatar(auth["identity"], auth["tags"]) if auth is not None else None
         scope["session"] = None
-        scope["kajenn.kbus"] = True
+        if message.meta.get("kbus"):
+            scope["kajenn.kbus"] = True
         if "channel" in message.meta:
             scope["kajenn.channel"] = message.meta["channel"]
+        for key, value in message.meta.get("genro", {}).items():
+            scope[f"genro.{key}"] = value
         item = self.requests.register(scope)
         try:
             if scope["method"] == "WSK":
@@ -486,7 +489,12 @@ class KBusMixin:
                     app, sub_scope = self.demux(scope)
                     result = await BufferedAsgiEndpoint(app).serve(sub_scope, body)
                 except Exception as failure:
-                    result = await self._buffered_failure(scope, body, failure)
+                    self._log_failure(scope, failure)
+                    await stream.send(failure_message(failure))
+                    await stream.close()
+                    async for _ in stream:
+                        pass
+                    return
                 await stream.send(kbus.Message(
                     {"status": result["status"], "headers": result["headers"]}))
                 await stream.send(kbus.Message({"more_body": False}, result["body"]))
@@ -498,6 +506,15 @@ class KBusMixin:
         finally:
             item.run_cleanups()
             self.requests.unregister(item)
+
+    def _log_failure(self, scope: Scope, failure: Exception) -> None:
+        """Log ``failure`` as the server's ``ErrorMiddleware`` logs an unhandled error.
+
+        An ``HTTPException`` is an answer, not an error: it is not logged.
+        """
+        if not isinstance(failure, HTTPException):
+            ErrorMiddleware(None, self).logger.exception(
+                "unhandled error serving %s", scope["path"])
 
     async def _serve_websocket_stream(
         self, message: kbus.Message, stream: kbus.Stream
@@ -535,10 +552,13 @@ class KBusMixin:
 
         The other direction of the stream carries no data: its abort, or the
         loss of the link, makes ``receive`` return ``http.disconnect`` and
-        cancels the application. An answer that fails after its start, or that
-        returns unfinished, aborts the stream.
+        cancels the application. An exception raised before the answer started
+        travels as one ``failure_message`` and closes this direction; an answer
+        that fails after its start, or that returns unfinished, aborts the
+        stream.
         """
         requested = False
+        started = False
         closed = False
         left = asyncio.Event()
 
@@ -551,8 +571,9 @@ class KBusMixin:
             return {"type": "http.disconnect"}
 
         async def send(event: Message) -> None:
-            nonlocal closed
+            nonlocal closed, started
             if event["type"] == "http.response.start":
+                started = True
                 await stream.send(kbus.Message({
                     "status": event["status"],
                     "headers": [[name.decode("latin-1"), value.decode("latin-1")]
@@ -565,8 +586,17 @@ class KBusMixin:
                     closed = True
 
         async def routed(scope: Scope, receive: Receive, send: Send) -> None:
-            app, sub_scope = self.demux(scope)
-            await app(sub_scope, receive, send)
+            nonlocal closed
+            try:
+                app, sub_scope = self.demux(scope)
+                await app(sub_scope, receive, send)
+            except Exception as failure:
+                if started:
+                    raise
+                self._log_failure(scope, failure)
+                await stream.send(failure_message(failure))
+                await stream.close()
+                closed = True
 
         answering = asyncio.create_task(ErrorMiddleware(routed, self)(scope, receive, send))
 
@@ -589,16 +619,3 @@ class KBusMixin:
             return
         await watching
 
-    async def _buffered_failure(
-        self, scope: Scope, body: bytes, failure: Exception
-    ) -> dict[str, Any]:
-        """The buffered answer of a failed http message, built by ``ErrorMiddleware``.
-
-        The same middleware answers the request in the server's process, so the
-        status, the content type and the body follow the request's ``Accept``
-        exactly as they would there.
-        """
-        async def failing(scope: Scope, receive: Receive, send: Send) -> None:
-            raise failure
-
-        return await BufferedAsgiEndpoint(ErrorMiddleware(failing, self)).serve(scope, body)

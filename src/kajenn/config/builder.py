@@ -51,6 +51,7 @@ from genro_bag import BagResolver
 from genro_builders.contrib.config import ConfigBuilder
 from genro_storage import StorageManager
 
+from ..server_app.server_app import ServerApplication
 from ..storage_mixin import DEFAULT_HOME_MOUNT, DEFAULT_SITE_MOUNT
 from .elements import AsgiServerGrammar
 
@@ -70,6 +71,27 @@ class AsgiConfigBuilder(ConfigBuilder, AsgiServerGrammar):
     file, and a missing one is a ``ConfigError``. The recipe governs its own
     inheritance — the server takes no kwarg for it.
     """
+
+    def __getattr__(self, name: str) -> Any:
+        """The element handler of ``name``; ``application(code="_server")`` defaults its class.
+
+        Without ``app_class`` the ``_server`` envelope means ``ServerApplication``:
+        the class is filled in before the grammar validates the call and the
+        subbuilder reference reads it, so ``login``, ``oidc`` and ``provider``
+        are written under it as under an explicit one. The hook lives on the
+        dialect because the element handlers are resolved by the builder's
+        ``__getattr__``, which precedes ``AsgiServerGrammar`` in the MRO.
+        """
+        handler = super().__getattr__(name)
+        if name != "application":
+            return handler
+
+        def application(destination: Any, *args: Any, **kwargs: Any) -> Any:
+            if kwargs.get("code") == "_server":
+                kwargs.setdefault("app_class", ServerApplication)
+            return handler(destination, *args, **kwargs)
+
+        return application
 
     site_name: str | None = None
     """The name this site is filed under, written into the ``site`` section."""

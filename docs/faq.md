@@ -5,8 +5,8 @@
 ### Which package should I install?
 
 Install `kajenn` in a virtual environment with Python 3.11 or newer. That one
-distribution supplies both import packages: the core `kajenn` and the base
-server application `kajenn_server_app`. `import kajenn` loads none of the
+distribution supplies the core `kajenn` and, as its subpackage, the base
+server application `kajenn.server_app`. `import kajenn` loads none of the
 server application.
 
 See [Getting started](getting-started.md#installation).
@@ -141,8 +141,8 @@ caller gets 401, an identified one whose tags do not match gets 403. The server
 creates no user at boot — a deployment that needs a first identity declares the
 store class that carries it.
 
-For a session login flow over JSON, declare `ServerApplication` from
-`kajenn_server_app`; its `POST /_server/login` verifies against the user store
+For a session login flow over JSON, use the `_server` application
+(`ServerApplication` from `kajenn.server_app`), present in every server; its `POST /_server/login` verifies against the user store
 and attaches the avatar to the existing session.
 
 See [Authentication](guides/authentication.md).
@@ -160,14 +160,13 @@ See [Authentication](guides/authentication.md).
 
 ### Where do the server application's endpoints live?
 
-Under `/_server/…`, and only if you declared it. `ServerApplication` lives in
-`kajenn_server_app` and is mounted like any other application, with the code
-`_server`; nothing mounts it for you, and a server that declares none has no
-`/_server/…` at all. It serves JSON — login, users, tokens, tasks and monitor —
+Under `/_server/…`, in every server. `ServerApplication` lives in
+`kajenn.server_app` and the server mounts it itself with the code `_server`;
+the configuration only customises it with `application(code="_server", ...)`. It serves JSON — login, users, tokens, tasks and monitor —
 and no HTML pages: the management pages belong to a front-end of your choosing.
 
 `kajenn` does not export `ServerApplication`, `AuthSection`, `AuthMethod`,
-`PasswordMethod` or `OidcMethod`; import them from `kajenn_server_app`.
+`PasswordMethod` or `OidcMethod`; import them from `kajenn.server_app`.
 
 See the [Server application](api/server-app.rst) API page.
 

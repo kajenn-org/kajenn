@@ -35,6 +35,8 @@ as an exception, and the read loop that catches it simply ends.
 from __future__ import annotations
 
 __all__ = [
+    "ExternalFailure",
+    "failure_text",
     "HTTPBadRequest",
     "HTTPException",
     "HTTPForbidden",
@@ -128,6 +130,25 @@ class Redirect(HTTPException):
     ) -> None:
         super().__init__(status, headers=headers)
         self.location = location
+
+
+class ExternalFailure(Exception):
+    """An exception an application raised in its external process, not an ``HTTPException``.
+
+    Its text is the original ``"<type>: <message>"``, so a caller reads the same
+    text it would read from the application in this process. The external
+    process already logged its traceback.
+    """
+
+
+def failure_text(failure: Exception) -> str:
+    """The ``"<type>: <message>"`` a bus call or a WSX message answers for ``failure``.
+
+    An ``ExternalFailure`` already carries that text from its own process.
+    """
+    if isinstance(failure, ExternalFailure):
+        return str(failure)
+    return f"{type(failure).__name__}: {failure}"
 
 
 class WebSocketDisconnect(Exception):

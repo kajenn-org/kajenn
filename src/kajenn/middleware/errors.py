@@ -47,7 +47,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..exceptions import HTTPException, Redirect
+from ..exceptions import ExternalFailure, HTTPException, Redirect
 from ..response import Response
 from .base import BaseMiddleware, headers_dict
 
@@ -101,7 +101,8 @@ class ErrorMiddleware(BaseMiddleware):
                     content=exc.detail or "", status_code=exc.status, media_type="text/plain"
                 )
         else:
-            self.logger.exception("unhandled error serving %s", scope.get("path", "?"))
+            if not isinstance(exc, ExternalFailure):
+                self.logger.exception("unhandled error serving %s", scope.get("path", "?"))
             if wants_json:
                 response = Response(status_code=500)
                 response.set_result({"error": "Internal Server Error"})

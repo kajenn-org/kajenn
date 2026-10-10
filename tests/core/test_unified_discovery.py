@@ -35,7 +35,7 @@ from genro_routes import RoutingClass, route
 
 from kajenn import AsgiServer, BaseApplication, McpEngine, McpOpenApiApplication
 from kajenn.types import Message, Scope
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 
 ROUTES = {"public", "admin_only", "user_only"}
 

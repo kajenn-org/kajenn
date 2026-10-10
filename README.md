@@ -34,7 +34,7 @@ Pronounced “KAY-jen”, kajenn plays on cayenne and Cajun: spicy, with rhythm.
 | Import package | Content |
 |---|---|
 | `kajenn` | server core and app-side contract |
-| `kajenn_server_app` | base server application, mounted by configuration |
+| `kajenn.server_app` | base server application (a subpackage of the core), mounted by configuration |
 
 The core never imports the server application. A contract test asserts it.
 

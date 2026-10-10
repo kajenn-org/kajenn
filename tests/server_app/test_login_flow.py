@@ -37,7 +37,7 @@ from cryptography.fernet import Fernet
 from tests.storage_support import site_mounts
 
 from kajenn import AsgiServer, BaseApplication, FileUserStore, UserStore
-from kajenn_server_app import (
+from kajenn.server_app import (
     AuthMethod,
     AuthSection,
     PasswordMethod,

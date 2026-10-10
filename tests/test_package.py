@@ -12,11 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Contract: the version is the installed one, the public api is the declared one,
-and no module of the core reaches kajenn_server_app."""
+"""Contract: the version is the installed one and the public api is the declared one."""
 
-import subprocess
-import sys
 from importlib.metadata import version
 
 import kajenn
@@ -95,22 +92,3 @@ def test_root_exports_public_api():
     for name in expected:
         assert hasattr(kajenn, name)
 
-
-def test_importing_the_core_loads_no_module_of_the_server_app_package():
-    # The core imports nothing of kajenn_server_app, in the root package and in
-    # every submodule. Asked in a fresh interpreter, because this one has already
-    # imported the server app through the tests that exercise it.
-    probe = (
-        "import pkgutil, sys\n"
-        "import kajenn\n"
-        "for found in pkgutil.walk_packages(kajenn.__path__, 'kajenn.'):\n"
-        "    __import__(found.name)\n"
-        "print(sorted(name for name in sys.modules if name.startswith('kajenn_server_app')))\n"
-    )
-    loaded = subprocess.run(
-        [sys.executable, "-c", probe],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert loaded == "[]"

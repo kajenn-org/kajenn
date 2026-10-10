@@ -21,7 +21,7 @@ import json
 from genro_routes import RoutingClass, route
 
 from kajenn import AsgiServer, BaseApplication
-from kajenn_server_app import ServerApplication
+from kajenn.server_app import ServerApplication
 
 
 class DemoSection(RoutingClass):
@@ -36,7 +36,7 @@ class DemoSection(RoutingClass):
 
 
 class TestDeclaredMount:
-    """D-SA-10: the app is declared like any other, never registered behind the caller."""
+    """The app exists in every server; a declared one is the one mounted."""
 
     def test_a_declared_server_app_mounts_under_its_own_code(self) -> None:
         server = AsgiServer(applications=[ServerApplication, (BaseApplication, {"mount": ""})])
@@ -45,15 +45,16 @@ class TestDeclaredMount:
         assert app.mount == "_server"
         assert app.server is server
 
-    async def test_a_server_declaring_none_has_none(
-        self, http_request, response_status
+    async def test_a_server_declaring_none_has_the_default_one(
+        self, http_request, response_status, response_body
     ) -> None:
-        # The automatic registration (SPEC D4 "automatic, not configured") is
-        # gone: what is not declared does not exist, and /_server/ is a segment
-        # like any other nobody serves.
+        # The server mounts ServerApplication itself when nothing declares
+        # _server: /_server/ answers the descriptor.
         server = AsgiServer()
-        assert "_server" not in server.applications
-        assert response_status(await http_request(server, "/_server/")) == 404
+        assert isinstance(server.applications["_server"], ServerApplication)
+        sent = await http_request(server, "/_server/")
+        assert response_status(sent) == 200
+        assert "sections" in json.loads(response_body(sent))
 
     def test_identity_is_declared_on_the_class(self) -> None:
         # D4: the system code and mount are declared, not configured — three

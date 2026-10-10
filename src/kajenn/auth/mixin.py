@@ -113,8 +113,8 @@ class AuthMixin:
     async def authenticate_credential(self, credential: str, channel: str) -> Avatar:
         """Verify ``credential`` through the channel's route; cache the ``Avatar`` by TTL.
 
-        The route answers ``{identity, tags, data}``. A 401 from it, or no
-        application answering it (404), is ``HTTPUnauthorized`` with the
+        The route answers ``{identity, tags, data}``. A 401 from it, or a
+        configured channel route nobody serves (404), is ``HTTPUnauthorized`` with the
         ``WWW-Authenticate: Bearer`` challenge; a route that cannot be reached
         (a lost link, a timeout, an error REPLY without status) or that fails
         is a 503; any other error status propagates as ``HTTPException``.
