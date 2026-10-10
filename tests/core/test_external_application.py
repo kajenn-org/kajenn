@@ -206,7 +206,7 @@ async def running(config: str, *, wait: bool = True):
 
 
 def command_line(pid: int) -> str:
-    return subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+    return subprocess.run(["ps", "-ww", "-o", "command=", "-p", str(pid)],
                           capture_output=True, text=True, check=True).stdout.strip()
 
 
