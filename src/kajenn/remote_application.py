@@ -180,13 +180,14 @@ class RemoteApplication(BaseApplication):
     async def _forward(self, scope, receive, send) -> None:
         """Open a stream to the member with the request and relay its answer.
 
-        The ``max_calls`` slot and ``request_timeout`` bound the wait for the
-        first message only, never the length of the answer.
+        ``request_timeout`` bounds the wait for a ``max_calls`` slot and for
+        the first message of the answer, together; never the length of the answer.
         """
-        await self._slots.acquire()
-        held = True
+        held = False
         try:
             async with asyncio.timeout(self.request_timeout) as deadline:
+                await self._slots.acquire()
+                held = True
                 body = bytearray()
                 while True:
                     message = await receive()
@@ -252,7 +253,8 @@ class RemoteApplication(BaseApplication):
         buffered answer stays one closing body and a chunked one stays chunked.
         The client leaving aborts the stream, except on a ``WSK`` scope, whose
         ``receive`` never reports it; a stream that fails ends the answer
-        without its terminal body.
+        without its terminal body. A cancellation of the relay's own task
+        cancels both tasks, retrieves their outcomes and propagates.
         """
         await send({"type": "http.response.start", "status": head.meta["status"],
                     "headers": [(name.encode("latin-1"), value.encode("latin-1"))
@@ -272,18 +274,24 @@ class RemoteApplication(BaseApplication):
         if scope.get("method") != "WSK":
             leaving = asyncio.create_task(client_left())
             waiting.add(leaving)
-        await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
-        if not forwarding.done():
-            forwarding.cancel()
-            return
-        for task in waiting - {forwarding}:
-            task.cancel()
-        failure = forwarding.exception()
-        if isinstance(failure, kbus.Error):
-            return
-        if failure is not None:
-            raise failure
-        await stream.close()
+        completed = False
+        try:
+            await asyncio.wait(waiting, return_when=asyncio.FIRST_COMPLETED)
+            if not forwarding.done():
+                return
+            failure = forwarding.exception()
+            if isinstance(failure, kbus.Error):
+                return
+            if failure is not None:
+                raise failure
+            completed = True
+        finally:
+            for task in waiting:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*waiting, return_exceptions=True)
+            if completed:
+                await stream.close()
 
     async def _forward_websocket(self, scope, receive, send) -> None:
         """Carry one websocket to the member: every event, both directions.

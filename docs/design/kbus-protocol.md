@@ -62,6 +62,19 @@ strings is refused with `kbus.Refused`: the process ends and is relaunched.
 Until its process has joined, a mount answers 503 and `kbus_call` towards it
 raises `KBusCallError` with status 503; its discovery names answer 404.
 
+## Forget credentials
+
+`/_server/tokens/revoke`, `/_server/tokens/delete` and
+`/_server/auth/forget_credential` empty the server's credential cache, then
+call `<code>.forget_credentials` on every joined process, all at once, before
+they answer: `meta = {"credential": <credential>}` drops that credential, an
+empty `meta` drops every cached credential. The process evicts its own cache
+and replies with an empty message. A process the bus cannot reach, or that
+does not reply within 5 seconds, is skipped. Once the route has
+answered, no new request, served by the server or by an external application,
+accepts the credential; a request already past authentication is not
+interrupted. A process that joins later starts with an empty cache.
+
 ## The envelope
 
 A message carries the request in `meta` and the body in the payload:
@@ -105,8 +118,8 @@ is written.
   stream: in the process the application's `receive` returns
   `http.disconnect` and its task is cancelled. A `WSK` request is not watched:
   its answer is buffered and adapted in the process, as one closing body.
-- `request_timeout` and the `max_calls` slot bound the wait for the first
-  message only, never the length of the stream.
+- `request_timeout` bounds the wait for a `max_calls` slot and for the first
+  message, together; never the length of the stream.
 - A process that dies before the first message answers as in the table below;
   after it, the answer ends without its terminal body.
 - An application that fails after its start, or returns without finishing its
@@ -163,10 +176,10 @@ in-process call; a transport failure raises `KBusCallError` with status 503.
 | Outcome | Status |
 | --- | --- |
 | a body over `KAJENN_HTTP_MAX_BODY_BYTES`, or a message over the dispatcher's `max_frame` (`kbus.FrameTooLarge`) | 413 |
-| the process has not joined, `kbus.NoSuchMember`, `kbus.LinkLost`, or no first message within `request_timeout` | 503 |
-| an error reply, or a stream aborted before its first message | 502 |
+| the process has not joined, `kbus.NoSuchMember`, `kbus.LinkLost`, a stream aborted before its first message, or no `max_calls` slot and first message within `request_timeout` | 503 |
+| an error reply | 502 |
 
-At most `max_calls` requests per mount are in flight at once.
+At most `max_calls` requests per mount wait for their first message at once; the slot is released at the first message, so a long answer holds no slot.
 
 ## Relaunch
 

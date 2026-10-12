@@ -106,23 +106,23 @@ class TokensSection(RoutingClass):
         return {"key": key, "label": label}
 
     @route(auth_rule="SUPERADMIN", openapi_method="post")
-    def revoke(self, key_id: str = "") -> dict[str, Any]:
+    async def revoke(self, key_id: str = "") -> dict[str, Any]:
         """Disable a key (the record stays, listed, for audit); the credential cache is emptied."""
         store = self.api_key_store
         if store is None:
             return NO_STORE_ERROR
         revoked = store.revoke(key_id)
-        self.application.server.forget_all_credentials()
+        await self.application.server.forget_credentials_everywhere()
         return {"key_id": key_id, "revoked": revoked}
 
     @route(auth_rule="SUPERADMIN", openapi_method="post")
-    def delete(self, key_id: str = "") -> dict[str, Any]:
+    async def delete(self, key_id: str = "") -> dict[str, Any]:
         """Remove a key record entirely; the credential cache is emptied."""
         store = self.api_key_store
         if store is None:
             return NO_STORE_ERROR
         deleted = store.delete(key_id)
-        self.application.server.forget_all_credentials()
+        await self.application.server.forget_credentials_everywhere()
         return {"key_id": key_id, "deleted": deleted}
 
     @route(auth_rule="SUPERADMIN", openapi_method="post")
