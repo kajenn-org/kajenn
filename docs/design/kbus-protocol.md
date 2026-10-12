@@ -83,13 +83,14 @@ A message carries the request in `meta` and the body in the payload:
 | --- | --- |
 | `format` | `"http"` (the payload is an `HttpRecord` request) or `"json"` (the payload is the JSON request data) |
 | `path` | the route's path |
-| `auth` | `{"identity", "tags"}` of the caller's avatar, when there is one |
+| `auth` | `{"identity", "tags"}` of the caller's avatar, with optional `"data"` as a JSON-compatible plain dict when its data Bag is nonempty |
 | `channel` | becomes `scope["kajenn.channel"]` |
 | `kbus` | `true` on a forwarded request that reached the server as a bus call; becomes `scope["kajenn.kbus"]` |
 | `genro` | `{"page_id", "reply_path"}`, the keys present on the forwarded scope; each becomes `scope["genro.<key>"]` |
 
 `auth` is read by the execution point (`RoutedApplication.execute`) as the
-caller's avatar. The key `credential` is reserved and still unread. Other keys
+caller's avatar, restoring `data` into its Bag; absent `data` leaves an empty Bag.
+The key `credential` is reserved and still unread. Other keys
 travel untouched; the keys kbus reserves for itself (`id`, `kind`, `route`,
 `from`, `via`) cannot be set.
 
@@ -250,9 +251,10 @@ it; a body over it answers 413. Values must be integers.
 
 ## Not part of this contract
 
-The KajennBus carries identity as a string and the string tags of an authenticated
-`Avatar`, and nothing else of the session: no `Avatar` object, no `Bag` data, no
-pickle. The far endpoint rebuilds an `Avatar` from those two fields.
+The KajennBus carries identity as a string, the string tags and optional plain
+data of an authenticated `Avatar`, and nothing else of the session: no `Avatar`
+or `Bag` objects, no pickle. The far endpoint rebuilds an `Avatar` and its data
+Bag from those fields. Bag node attributes are not part of the plain data.
 
 `BufferedAsgiEndpoint` refuses a streaming answer: the answer stream and the
 websocket stream above carry streaming answers and raw sockets without it.
