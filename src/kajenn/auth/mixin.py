@@ -46,7 +46,7 @@ has already put the session on an ``http`` scope when the execution point runs.
 from __future__ import annotations
 
 import hashlib
-from time import monotonic
+from time import monotonic, time
 from typing import Any
 
 import kbus
@@ -113,7 +113,10 @@ class AuthMixin:
     async def authenticate_credential(self, credential: str, channel: str) -> Avatar:
         """Verify ``credential`` through the channel's route; cache the ``Avatar`` by TTL.
 
-        The route answers ``{identity, tags, data}``. A 401 from it, or a
+        The route answers ``{identity, tags, data}`` and, optionally,
+        ``valid_until`` (a POSIX timestamp): the cache entry then ends at the
+        earlier of the TTL and that instant, so a cached avatar never outlives
+        the credential. A 401 from it, or a
         configured channel route nobody serves (404), is ``HTTPUnauthorized`` with the
         ``WWW-Authenticate: Bearer`` challenge; a route that cannot be reached
         (a lost link, a timeout, an error REPLY without status) or that fails
@@ -148,7 +151,12 @@ class AuthMixin:
         for name, value in (answer.get("data") or {}).items():
             avatar.data[name] = value
         if self.credential_cache_ttl > 0 and generation == self._credential_cache_generation:
-            self._credential_cache[key] = (monotonic() + self.credential_cache_ttl, avatar)
+            lifetime = self.credential_cache_ttl
+            valid_until = answer.get("valid_until")
+            if valid_until is not None:
+                lifetime = min(lifetime, valid_until - time())
+            if lifetime > 0:
+                self._credential_cache[key] = (monotonic() + lifetime, avatar)
         return avatar
 
     def forget_credential(self, credential: str) -> None:

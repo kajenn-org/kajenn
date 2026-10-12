@@ -91,10 +91,10 @@ The examples above describe a `StreamingResponse` returned directly by a core
 `RoutedApplication`. The request body has already been fully read before that
 handler runs; streaming the response does not stream an upload.
 
-An application hosted in another process through the KajennBus buffers the
-complete request and the complete response: `BufferedAsgiEndpoint` refuses a
-chunked or event-stream answer rather than buffering it, so that seam delivers
-no incremental chunks and no endless SSE. [WSX](websockets.md) likewise requires
+An application hosted in another process through the KajennBus receives the
+complete request body. Its answer crosses the seam one `http.response.body`
+message at a time, each carrying the application's own `more_body`: a chunked
+answer stays chunked and an SSE stream flows. [WSX](websockets.md) likewise requires
 a finite response and rejects one with `more_body=True`.
 
 The server's default `shutdown_timeout_seconds=5.0` limits uvicorn's wait for

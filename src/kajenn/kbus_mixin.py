@@ -70,6 +70,9 @@ LIFESPAN_ENDINGS = frozenset({
 #: The name of the server's own member on its dispatcher.
 SERVER_MEMBER = "server"
 
+#: Seconds a joined process has to confirm it forgot a credential.
+FORGET_CREDENTIALS_TIMEOUT = 5.0
+
 
 class KBusMixin:
     """KajennBus capability mixin, composed BEFORE a server class.
@@ -153,6 +156,29 @@ class KBusMixin:
         if code not in self.kbus_pids or self.kbus_member is None:
             raise kbus.NoSuchMember(f"application {code!r} has not joined")
         return self.kbus_member.open(code, message)
+
+    async def forget_credentials_everywhere(self, credential: str | None = None) -> None:
+        """Forget ``credential`` (every credential when ``None``) here and in every joined process.
+
+        Every joined process is called at once and confirms it forgot;
+        returns when all of them confirmed. A process the bus cannot reach, or
+        that does not confirm within ``FORGET_CREDENTIALS_TIMEOUT``, is
+        skipped: the proxy cannot reach it either.
+        """
+        if credential is None:
+            self.forget_all_credentials()
+        else:
+            self.forget_credential(credential)
+        meta = {"credential": credential} if credential is not None else {}
+
+        async def forget_in(code: str) -> None:
+            try:
+                async with asyncio.timeout(FORGET_CREDENTIALS_TIMEOUT):
+                    await self.kbus_member.call(f"{code}.forget_credentials", kbus.Message(meta))
+            except (kbus.Error, TimeoutError):
+                return
+
+        await asyncio.gather(*(forget_in(code) for code in list(self.kbus_pids)))
 
     async def _serve_with_children(
         self, scope: Scope, receive: Receive, send: Send
@@ -281,7 +307,7 @@ class KBusMixin:
 
     async def serve_kbus_call(self, message: kbus.Message, reply: Any) -> None:
         """The handler of the member: an http or websocket stream, ``joined``
-        from a process, or a message to serve.
+        from a process, ``forget_credentials`` from the server, or a message to serve.
 
         ``reply`` is a ``kbus.Stream`` for a forwarded http request or
         websocket, ``None`` for a send: the message is served, nothing answers.
@@ -295,6 +321,14 @@ class KBusMixin:
         if message.meta["route"] == "joined":
             self._external_joined(message.meta["from"], message.meta)
             await reply.send(kbus.Message())
+            return
+        if message.meta["route"] == "forget_credentials":
+            if "credential" in message.meta:
+                self.forget_credential(message.meta["credential"])
+            else:
+                self.forget_all_credentials()
+            if reply is not None:
+                await reply.send(kbus.Message())
             return
         answer = await self.serve_kbus_message(message)
         if reply is not None:
