@@ -54,7 +54,9 @@ from .exceptions import HTTPException, failure_text
 from .http_record import HttpRecord
 from .kbus import KBusCallError
 from .middleware.errors import ErrorMiddleware
-from .remote_application import failure_message, websocket_event, websocket_message
+from .remote_application import (
+    avatar_auth, avatar_from_auth, failure_message, websocket_event, websocket_message,
+)
 from .session.avatar import Avatar
 from .spawner import PARENT_VARIABLE, SPAWNERS, Spawner
 
@@ -444,7 +446,7 @@ class KBusMixin:
         """The message of a bus call: JSON payload, ``auth`` and ``channel`` when given."""
         meta: dict[str, Any] = {"format": "json", "path": path}
         if auth is not None:
-            meta["auth"] = {"identity": auth.identity, "tags": list(auth.tags)}
+            meta["auth"] = avatar_auth(auth)
         if channel is not None:
             meta["channel"] = channel
         return kbus.Message(meta, json.dumps(data).encode())
@@ -474,7 +476,7 @@ class KBusMixin:
             "root_path": "",
             "query_string": b"",
             "headers": [(b"content-type", b"application/json")],
-            "auth": Avatar(auth["identity"], auth["tags"]) if auth is not None else None,
+            "auth": avatar_from_auth(auth),
             "session": None,
             "kajenn.kbus": True,
         }
@@ -508,7 +510,7 @@ class KBusMixin:
         """
         scope, body = HttpRecord().decode_request(message.payload)
         auth = message.meta.get("auth")
-        scope["auth"] = Avatar(auth["identity"], auth["tags"]) if auth is not None else None
+        scope["auth"] = avatar_from_auth(auth)
         scope["session"] = None
         if message.meta.get("kbus"):
             scope["kajenn.kbus"] = True
