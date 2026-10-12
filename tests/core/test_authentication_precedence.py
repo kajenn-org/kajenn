@@ -168,25 +168,42 @@ class TestTheCacheAndTheRoute:
         assert idp.calls == 2
 
     async def test_forget_credential_tolerates_a_concurrent_write(self) -> None:
+        """Insert one unrelated entry while revocation is removing a cached credential."""
         server = api_server()
         await server.authenticate_credential("Bearer sk_live_xyz", "rest")
-        cache = server._credential_cache
-        stop = threading.Event()
+        revoking = threading.Event()
+        written = threading.Event()
+
+        class ConcurrentCache(dict):
+            def pop(self, key, default=None):
+                value = super().pop(key, default)
+                revoking.set()
+                assert written.wait(timeout=5), "concurrent writer did not finish"
+                return value
+
+        cache = ConcurrentCache(server._credential_cache)
+        assert len(cache) == 1
+        revoked_key = next(iter(cache))
+        server._credential_cache = cache
+        other_key = ("other", "rest")
+        other_entry = (float("inf"), Avatar("x"))
 
         def writer() -> None:
-            n = 0
-            while not stop.is_set():
-                cache[(f"other{n}", "rest")] = (float("inf"), Avatar("x"))
-                n += 1
+            if revoking.wait(timeout=5):
+                cache[other_key] = other_entry
+                written.set()
 
         thread = threading.Thread(target=writer)
         thread.start()
         try:
-            for _ in range(200):
-                server.forget_credential("Bearer sk_live_xyz")
+            server.forget_credential("Bearer sk_live_xyz")
         finally:
-            stop.set()
-            thread.join()
+            revoking.set()
+            thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert written.is_set()
+        assert revoked_key not in cache
+        assert cache[other_key] == other_entry
 
     async def test_a_failing_route_is_503(self) -> None:
         class Broken(RoutedApplication):

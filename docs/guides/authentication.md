@@ -88,7 +88,13 @@ MCP `arguments` are the handler's keyword arguments, never a body: a handler
 declaring `body_data` receives an argument named `body_data`, not the whole
 arguments dict. REST keeps the JSON body whole as `body_data`.
 
-The route answers `{identity, tags, data}` or `401`. Without configuration every
+The route answers `{identity, tags, data, valid_until}` or `401`. `valid_until`
+is optional: a POSIX timestamp, the instant the credential itself expires (the
+`exp` of a JWT, the `expires_at` of an api key), or `None` when it has none. A
+route may omit the key. A cached avatar never outlives the credential: the
+cache entry ends at `valid_until` when that comes before the TTL.
+
+Without configuration every
 channel uses `/_server/auth/authenticate`, backed by `AuthCore`. A recipe
 assigns a route per channel with `channels()`:
 
@@ -101,8 +107,16 @@ cfg.channels().channel(name="mcp", authentication_route="/sourcerer/auth/verify"
 - `POST /_server/auth/authenticate` — verifies a credential for a channel.
 - `POST /_server/auth/forget_credential` — evicts a credential from the cache.
 
-A verified credential is cached for `authentication(cache_ttl=...)` seconds
-(`0` disables the cache). Revoking or deleting an api key empties the cache.
+A verified credential is cached for at most `authentication(cache_ttl=...)`
+seconds (`0` disables the cache). The TTL is an upper bound: a route answering
+`valid_until` shortens the entry to that instant.
+
+Revoking or deleting an api key, or `forget_credential`, empties the cache of
+the server and of every joined process (the `forget_credentials` bus message)
+before the route answers. From then on no new request, served by the server or
+by an external application, accepts the credential; a request already past
+authentication is not interrupted. A process that joins later starts with an
+empty cache.
 
 `server.authenticate(scope)` is now `async`. A caller awaits it; a pool thread
 uses `server.run_on_loop(server.authenticate(scope))`.

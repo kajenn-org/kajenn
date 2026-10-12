@@ -176,6 +176,15 @@ class AuthCore:
         A malformed or invalid credential raises ``HTTPUnauthorized`` carrying a
         ``WWW-Authenticate: Bearer`` challenge header.
         """
+        return self.verify_with_validity(credential)[0]
+
+    def verify_with_validity(self, credential: str) -> tuple[Avatar, float | None]:
+        """Verify like ``verify``; also return the credential's own expiry.
+
+        The second element is ``valid_until``, a POSIX timestamp: the ``exp``
+        claim of a JWT, the ``expires_at`` of an api key, ``None`` when the
+        credential carries no expiry (basic, static bearer, a JWT without ``exp``).
+        """
         challenge = [(b"www-authenticate", b"Bearer")]
         if " " not in credential:
             raise HTTPUnauthorized("Malformed Authorization header", headers=challenge)
@@ -184,7 +193,7 @@ class AuthCore:
         result = verify(credentials)
         if result is None:
             raise HTTPUnauthorized("Invalid or expired credentials", headers=challenge)
-        return Avatar(result["identity"], result["tags"])
+        return Avatar(result["identity"], result["tags"]), result.get("valid_until")
 
     def _auth_basic(self, credentials: str) -> dict[str, Any] | None:
         """Look up Basic credentials by their raw base64 header value."""
@@ -216,6 +225,7 @@ class AuthCore:
             "identity": record["label"],
             "tags": record["tags"],
             "backend": "api_key",
+            "valid_until": record.get("expires_at"),
         }
 
     def _auth_jwt(self, credentials: str) -> dict[str, Any] | None:
@@ -244,4 +254,5 @@ class AuthCore:
             "identity": payload.get("sub"),
             "tags": payload.get("tags", config["tags"]),
             "backend": f"jwt:{name}" if name else "jwt",
+            "valid_until": payload.get("exp"),
         }

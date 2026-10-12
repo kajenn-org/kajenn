@@ -96,12 +96,12 @@ class TestAuthCoreVerify:
 class TestTheServerRoutes:
     async def test_the_default_route_verifies_with_auth_core(self) -> None:
         # wf:contract: /_server/auth/authenticate exists on every server declaring _server
-        # wf:contract: and answers {identity, tags, data} for a credential AuthCore knows.
+        # wf:contract: and answers {identity, tags, data, valid_until} for a credential AuthCore knows.
         server = server_with_idp()
         answer = await server.kbus_call(
             "/_server/auth/authenticate", {"credential": "Bearer sk_live_xyz", "channel": "rest"}
         )
-        assert answer == {"identity": "svc", "tags": ["api"], "data": {}}
+        assert answer == {"identity": "svc", "tags": ["api"], "data": {}, "valid_until": None}
 
     async def test_the_default_route_refuses_with_401(self) -> None:
         # wf:contract: an invalid credential on /_server/auth/authenticate is a 401 for

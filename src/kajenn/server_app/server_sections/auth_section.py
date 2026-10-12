@@ -121,7 +121,8 @@ class AuthSection(RoutingClass):
     ) -> dict[str, Any]:
         """Verify ``credential`` with the server's ``AuthCore``.
 
-        Returns ``{identity, tags, data}``; an invalid credential raises
+        Returns ``{identity, tags, data, valid_until}`` — ``valid_until`` is the
+        credential's own expiry (POSIX timestamp) or ``None``; an invalid credential raises
         ``HTTPUnauthorized`` (status 401 for a bus caller). Reachable through
         the bus only: an HTTP caller gets 403.
 
@@ -129,16 +130,21 @@ class AuthSection(RoutingClass):
             Route: POST /_server/auth/authenticate
         """
         self._bus_only(_request)
-        avatar = self.server.auth_core.verify(credential)
-        return {"identity": avatar.identity, "tags": avatar.tags, "data": {}}
+        avatar, valid_until = self.server.auth_core.verify_with_validity(credential)
+        return {
+            "identity": avatar.identity,
+            "tags": avatar.tags,
+            "data": {},
+            "valid_until": valid_until,
+        }
 
     @route(media_type="application/json", openapi_method="post")
-    def forget_credential(self, credential: str = "", _request=None) -> dict[str, Any]:
+    async def forget_credential(self, credential: str = "", _request=None) -> dict[str, Any]:
         """Drop the cached avatars of ``credential``. Bus only, like ``authenticate``.
 
         Note:
             Route: POST /_server/auth/forget_credential
         """
         self._bus_only(_request)
-        self.server.forget_credential(credential)
+        await self.server.forget_credentials_everywhere(credential)
         return {"status": "ok"}

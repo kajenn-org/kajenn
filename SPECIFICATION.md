@@ -4,8 +4,7 @@
 
 > Founding specification of the redesign. Decided in the design sessions of
 > 2026-07-17→19; the critical survey of the current codebase that motivates it
-> is `temp/architecture_2026-07-17_overview_and_critique.md` (+ HTML version),
-> tracked in the OLD `kajenn` repo. This document is the tracked founding
+> is tracked in the OLD `kajenn` repo. This document is the tracked founding
 > document of this repository.
 
 ---
@@ -945,8 +944,7 @@ as genropy does. The fixed 401 → `/_server/...` redirect leaves the core: a 40
 is bare, with `WWW-Authenticate`. Which application authenticates for which
 path, and how shared users link by a unique code, is a later decision
 (issue #83). The table row of `_server` above and the D4 mention in the wave
-record are read through this decision. Amended by the block ratified 2026-10-10 below. Register:
-`temp/decisioni_serverapp_identita_2026-09-12.md` (D-SA-1..11).
+record are read through this decision. Amended by the block ratified 2026-10-10 below.
 
 ### Ratified 2026-10-07 (the KajennBus as the instance's internal communication)
 
@@ -1016,3 +1014,27 @@ and the child verifies it through the parent's authentication route over the
 KajennBus; `info.auth` carries only the parent's session identity (or an
 identity already on the scope). The "no `_server` → 401" case is gone: a
 channel route pointing at a missing path remains the only 404 branch.
+
+### Ratified 2026-10-12 (credential validity and revocation across processes)
+
+**The credential bounds its cache entry.** The authentication route's answer is
+`{identity, tags, data, valid_until}`; `valid_until` is optional, a POSIX
+timestamp, and a route that omits it keeps the TTL alone. The cache deadline is
+`min(TTL, valid_until)`: a cached avatar never outlives the credential, and an
+entry whose deadline is already past is not written.
+
+**A revocation reaches every process.** `revoke`, `delete` and
+`forget_credential` forget the credential locally and call
+`forget_credentials` on every joined process, which confirms, before the route
+answers. Once the route has answered, no new request accepts the credential;
+a request already past authentication is not interrupted; a process that joins
+later starts with an empty cache.
+
+**One admission budget.** `request_timeout` bounds the wait for a `max_calls`
+slot and the wait for the first message of the answer, together; a timeout in
+either answers 503. It never bounds the length of the answer.
+
+**Two transports during the transition.** `kajenn.kbus.FrameStream`, still used
+by kajenn-orchestra's worker connector, and the `kbus` library used by kajenn
+coexist and are not one implementation. The migration of Orchestra is later
+work.
