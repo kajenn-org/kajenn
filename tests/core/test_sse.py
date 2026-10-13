@@ -25,7 +25,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterable
+from datetime import date
+from decimal import Decimal
 from typing import Any
+
+from genro_tytx import from_tytx
 
 from kajenn.sse import KEEPALIVE_SECONDS, SseStream
 from kajenn.streaming import StreamingResponse
@@ -52,6 +56,12 @@ class TestFrame:
     def test_non_string_data_is_json(self) -> None:
         frame = SseStream(source()).frame({"data": {"pct": 50}})
         assert frame == b'data: {"pct": 50}\n\n'
+
+    def test_tytx_transport_keeps_typed_data(self) -> None:
+        data = {"amount": Decimal("1.10"), "day": date(2026, 10, 13)}
+        frame = SseStream(source(), tytx_transport="json").frame({"data": data})
+        assert frame.startswith(b"data: ") and frame.endswith(b"\n\n")
+        assert from_tytx(frame[len(b"data: "):-2].decode(), "json") == data
 
     def test_multiline_data_split(self) -> None:
         frame = SseStream(source()).frame({"data": "line1\nline2"})

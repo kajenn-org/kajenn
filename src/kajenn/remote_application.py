@@ -30,6 +30,7 @@ import json
 from typing import Any
 
 import kbus
+from genro_tytx import from_tytx, to_tytx
 
 from .application import BaseApplication
 from .spawner import cancel_and_wait
@@ -51,19 +52,20 @@ PROXY_OPTIONS = frozenset({"spawner", "request_timeout", "max_calls"})
 
 
 def avatar_auth(avatar: Avatar) -> dict[str, Any]:
-    """The bus auth record, including plain data only when the avatar has any."""
+    """The bus auth record, with the data as TYTX json only when the avatar has any."""
     auth: dict[str, Any] = {"identity": avatar.identity, "tags": list(avatar.tags)}
     if avatar.data:
-        auth["data"] = avatar.data.as_dict(recursive=True)
+        auth["data"] = to_tytx(avatar.data.as_dict(recursive=True), "json")
     return auth
 
 
 def avatar_from_auth(auth: dict[str, Any] | None) -> Avatar | None:
-    """Rebuild the bus caller; older auth records leave its data Bag empty."""
+    """Rebuild the bus caller; a record without data leaves its data Bag empty."""
     if auth is None:
         return None
     avatar = Avatar(auth["identity"], auth["tags"])
-    avatar.data.update(auth.get("data", {}))
+    if "data" in auth:
+        avatar.data.update(from_tytx(auth["data"], "json"))
     return avatar
 
 
