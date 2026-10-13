@@ -4,6 +4,8 @@
 """Avatar data survives bus calls and external placement through public requests."""
 
 import json
+from datetime import date
+from decimal import Decimal
 
 import pytest
 from genro_bag import Bag
@@ -15,6 +17,8 @@ from .test_external_parity import PLACEMENTS, bearer, call
 
 RECIPE = '''
 import os
+
+from decimal import Decimal
 
 from genro_bag import Bag
 from genro_routes import route
@@ -33,6 +37,16 @@ class Billing(RoutedApplication):
         data = _request.avatar().data
         assert isinstance(data, Bag)
         return data.as_dict(recursive=True)
+
+    @route()
+    def amount(self):
+        return Decimal("3.30")
+
+    @route()
+    def typed(self, amount=None, day=None, _request=None):
+        return {"amount": amount, "day": day,
+                "types": [type(amount).__name__, type(day).__name__],
+                "data": _request.avatar().data.as_dict(recursive=True)}
 
 
 class Idp(RoutedApplication):
@@ -96,3 +110,22 @@ async def test_session_avatar_data_reaches_handler(tmp_path, placement):
             server, "/billing/avatar_data",
             headers=[(b"cookie", f"session_id={session.id}".encode())])
         assert (status, json.loads(body)) == (200, {"allowed_repository": ["r1"]})
+
+
+@pytest.mark.parametrize("placement", PLACEMENTS)
+async def test_kbus_call_keeps_typed_values(tmp_path, placement):
+    avatar = Avatar("svc", ["admin"])
+    avatar.data.update(Bag({"budget": Decimal("12.50"), "since": date(2026, 1, 2)}))
+    async with running(write_recipe(tmp_path, placement)) as server:
+        answer = await server.kbus_call(
+            "/billing/typed", {"amount": Decimal("1.10"), "day": date(2026, 10, 13)}, auth=avatar)
+    assert answer == {"amount": Decimal("1.10"), "day": date(2026, 10, 13),
+                      "types": ["Decimal", "date"],
+                      "data": {"budget": Decimal("12.50"), "since": date(2026, 1, 2)}}
+
+
+@pytest.mark.parametrize("placement", PLACEMENTS)
+async def test_kbus_call_keeps_a_typed_scalar_answer(tmp_path, placement):
+    async with running(write_recipe(tmp_path, placement)) as server:
+        answer = await server.kbus_call("/billing/amount", {})
+    assert answer == Decimal("3.30") and type(answer) is Decimal

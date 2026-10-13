@@ -26,7 +26,8 @@ a separate class.
 ``genro_tytx.json_dumps`` (or TYTX serialization — media type from
 ``media_types.TRANSPORT_MIME`` — when the bound request is in TYTX mode),
 ``Path`` → file bytes, ``bytes`` → as-is, ``str`` → UTF-8 text, ``None`` →
-empty, anything else → its ``str``. ``set_error`` maps an exception to a
+empty, anything else → TYTX in TYTX mode (a ``Decimal`` or a ``date`` keeps
+its type), its ``str`` otherwise. ``set_error`` maps an exception to a
 status: ``HTTPException`` subtypes carry their own status;
 ``ValueError``/``TypeError`` → 400, ``FileNotFoundError`` → 404,
 ``PermissionError`` → 403, anything else → 500 (logged). ``set_cookie``
@@ -194,24 +195,17 @@ class Response:
     def set_result(self, result: Any, metadata: dict[str, Any] | None = None) -> None:
         """Set the body from a handler result, dispatching by type.
 
-        ``dict``/``list`` → JSON bytes (``genro_tytx.json_dumps``), or TYTX
-        bytes/text when the bound request is in TYTX mode; ``Path`` → file
-        bytes; ``bytes`` → as-is;
-        ``str`` → UTF-8 text; ``None`` → empty; anything else → its ``str``.
+        ``dict``/``list`` → JSON bytes (``genro_tytx.json_dumps``); ``Path`` →
+        file bytes; ``bytes`` → as-is; ``str`` → UTF-8 text; ``None`` → empty;
+        anything else → its ``str``. When the bound request is in TYTX mode,
+        ``dict``/``list`` and anything else are TYTX bytes/text instead.
         A ``media_type`` in ``metadata`` overrides the type-based default.
         """
         override = metadata.get("media_type") if metadata else None
-        if isinstance(result, (dict, list)):
-            if self.request is not None and self.request.tytx_mode:
-                transport = cast(
-                    Literal["json", "xml", "msgpack"], self.request.tytx_transport or "json"
-                )
-                encoded = to_tytx(result, transport)
-                self.body = encoded if isinstance(encoded, bytes) else encoded.encode("utf-8")
-                self._media_type = override or TRANSPORT_MIME[transport]
-            else:
-                self.body = json_dumps(result)
-                self._media_type = override or "application/json"
+        tytx = self.request is not None and self.request.tytx_mode
+        if isinstance(result, (dict, list)) and not tytx:
+            self.body = json_dumps(result)
+            self._media_type = override or "application/json"
         elif isinstance(result, Path):
             self.body = result.read_bytes()
             self._media_type = override or "application/octet-stream"
@@ -224,6 +218,13 @@ class Response:
         elif result is None:
             self.body = b""
             self._media_type = override or "text/plain"
+        elif tytx:
+            transport = cast(
+                Literal["json", "xml", "msgpack"], self.request.tytx_transport or "json"
+            )
+            encoded = to_tytx(result, transport)
+            self.body = encoded if isinstance(encoded, bytes) else encoded.encode("utf-8")
+            self._media_type = override or TRANSPORT_MIME[transport]
         else:
             self.body = str(result).encode(self.charset)
             self._media_type = override or "text/plain"

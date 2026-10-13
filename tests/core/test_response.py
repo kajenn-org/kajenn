@@ -22,11 +22,13 @@ wire shape (exactly two messages), then covers ``set_header``/``set_cookie``/
 from __future__ import annotations
 
 import json
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from genro_tytx import json_dumps, to_tytx
+from genro_tytx import from_tytx, json_dumps, to_tytx
 
 from kajenn import HTTPForbidden, HTTPNotFound, HTTPUnauthorized, Response
 from kajenn.media_types import TRANSPORT_MIME
@@ -247,6 +249,22 @@ class TestTytxBranch:
         response = Response(request=request)
         response.set_result([1, 2])
         assert dict(response._headers)["content-type"] == TRANSPORT_MIME["json"]
+
+    async def test_tytx_scalar_keeps_its_type(self) -> None:
+        for value in (Decimal("1.10"), date(2026, 10, 13), 5, True):
+            response = Response(request=StubRequest(tytx_mode=True, tytx_transport="json"))
+            response.set_result(value)
+            sent = await drive(response)
+            decoded = from_tytx(sent[1]["body"].decode("utf-8"), "json")
+            assert decoded == value and type(decoded) is type(value)
+            assert start_headers(sent)[b"content-type"] == TRANSPORT_MIME["json"].encode()
+
+    async def test_scalar_without_tytx_mode_is_text(self) -> None:
+        response = Response(request=StubRequest(tytx_mode=False))
+        response.set_result(Decimal("1.10"))
+        sent = await drive(response)
+        assert sent[1]["body"] == b"1.10"
+        assert start_headers(sent)[b"content-type"].startswith(b"text/plain")
 
     def test_no_request_falls_back_to_json(self) -> None:
         response = Response(request=None)

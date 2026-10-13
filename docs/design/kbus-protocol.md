@@ -81,9 +81,9 @@ A message carries the request in `meta` and the body in the payload:
 
 | `meta` key | Meaning |
 | --- | --- |
-| `format` | `"http"` (the payload is an `HttpRecord` request) or `"json"` (the payload is the JSON request data) |
+| `format` | `"http"` (the payload is an `HttpRecord` request) or `"json"` (the payload is the request data as TYTX json, so `Decimal`, `date` and the other typed values keep their type) |
 | `path` | the route's path |
-| `auth` | `{"identity", "tags"}` of the caller's avatar, with optional `"data"` as a JSON-compatible plain dict when its data Bag is nonempty |
+| `auth` | `{"identity", "tags"}` of the caller's avatar, with optional `"data"` as the TYTX json string of its data Bag when the Bag is nonempty |
 | `channel` | becomes `scope["kajenn.channel"]` |
 | `kbus` | `true` on a forwarded request that reached the server as a bus call; becomes `scope["kajenn.kbus"]` |
 | `genro` | `{"page_id", "reply_path"}`, the keys present on the forwarded scope; each becomes `scope["genro.<key>"]` |
@@ -95,7 +95,9 @@ travel untouched; the keys kbus reserves for itself (`id`, `kind`, `route`,
 `from`, `via`) cannot be set.
 
 An `http` message opens a stream (below); the reply of a `json` call carries
-`status`, `format: "json"` and the response body.
+`status`, `format: "json"` and the response body as TYTX json: the bus scope
+has the `x-tytx-transport: json` header, so the route answers in TYTX json,
+a single typed value included.
 
 ## The answer stream
 
@@ -158,7 +160,7 @@ rebuilt from `auth`, no session and `"kajenn.kbus": True`.
 
 A route answers `kbus_call` the same way whether its application runs in the
 server's process or in a spawned one. A failing handler answers 500 with
-`"<Type>: <message>"` in the json format; `kbus_call` raises `KBusCallError`
+`"<Type>: <message>"` as TYTX json; `kbus_call` raises `KBusCallError`
 for a status of 400 or more. On an answer stream, an exception raised before
 the answer started travels back as one message `{"failure"}` and is raised
 again in the server (see the HTTP record); an exception other than an
