@@ -39,7 +39,7 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterable, AsyncIterator
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from genro_tytx import to_tytx
 
@@ -99,7 +99,7 @@ class SseStream:
         if isinstance(data, str):
             text = data
         elif self.tytx_transport is not None:
-            text = cast(str, to_tytx(data, self.tytx_transport))
+            text = to_tytx(data, self.tytx_transport)
         else:
             text = json.dumps(data)
         for line in text.split("\n"):

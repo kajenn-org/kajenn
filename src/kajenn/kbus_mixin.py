@@ -44,7 +44,7 @@ import shutil
 import signal
 import ssl
 import tempfile
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import kbus
 from genro_tytx import from_tytx, to_tytx
@@ -447,7 +447,7 @@ class KBusMixin:
             meta["auth"] = avatar_auth(auth)
         if channel is not None:
             meta["channel"] = channel
-        return kbus.Message(meta, cast(str, to_tytx(data, "json")).encode())
+        return kbus.Message(meta, to_tytx(data, "json").encode())
 
     async def serve_kbus_message(self, message: kbus.Message) -> kbus.Message:
         """Serve one message through the demux, as an http request.
@@ -488,9 +488,9 @@ class KBusMixin:
                 result = await BufferedAsgiEndpoint(app).serve(sub_scope, message.payload)
                 status, body = result["status"], result["body"]
             except HTTPException as refused:
-                status, body = refused.status, cast(str, to_tytx(refused.detail, "json")).encode()
+                status, body = refused.status, to_tytx(refused.detail, "json").encode()
             except Exception as failure:
-                status, body = 500, cast(str, to_tytx(failure_text(failure), "json")).encode()
+                status, body = 500, to_tytx(failure_text(failure), "json").encode()
         finally:
             item.run_cleanups()
             self.requests.unregister(item)
