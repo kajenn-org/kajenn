@@ -38,7 +38,6 @@ bytes, so nothing the handler does to its arguments reaches the caller.
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import secrets
 import shutil
@@ -48,13 +47,16 @@ import tempfile
 from typing import TYPE_CHECKING, Any
 
 import kbus
+from genro_tytx import from_tytx, to_tytx
 
 from .asgi_endpoint import BufferedAsgiEndpoint
 from .exceptions import HTTPException, failure_text
 from .http_record import HttpRecord
 from .kbus import KBusCallError
 from .middleware.errors import ErrorMiddleware
-from .remote_application import failure_message, websocket_event, websocket_message
+from .remote_application import (
+    avatar_auth, avatar_from_auth, failure_message, websocket_event, websocket_message,
+)
 from .session.avatar import Avatar
 from .spawner import PARENT_VARIABLE, SPAWNERS, Spawner
 
@@ -391,9 +393,10 @@ class KBusMixin:
     ) -> Any:
         """Call the route at ``path`` with ``data`` and return its decoded answer.
 
-        A status below 400 returns the JSON body (``None`` when empty); any
-        other status raises ``KBusCallError`` carrying the status and the body,
-        decoded as JSON when it is JSON and as text otherwise. In a role
+        ``data`` travels as TYTX json, so typed values keep their type. A
+        status below 400 returns the TYTX-hydrated body (``None`` when empty);
+        any other status raises ``KBusCallError`` carrying the status and the
+        body, hydrated when it is JSON and as text otherwise. In a role
         process, a call to the server that fails in transport raises
         ``KBusCallError`` with status 503. ``timeout`` bounds the call in
         seconds: past it the call raises ``TimeoutError``.
@@ -409,12 +412,9 @@ class KBusMixin:
                 reply = await self.serve_kbus_message(message)
         status = reply.meta["status"]
         if status >= 400:
-            try:
-                error = json.loads(reply.payload)
-            except ValueError:
-                error = reply.payload.decode(errors="replace")
+            error = from_tytx(reply.payload.decode(errors="replace"), "json")
             raise KBusCallError(path, error=error, status=status)
-        return json.loads(reply.payload) if reply.payload else None
+        return from_tytx(reply.payload.decode(), "json") if reply.payload else None
 
     async def kbus_post(
         self,
@@ -441,24 +441,25 @@ class KBusMixin:
     def _kbus_message(
         self, path: str, data: Any, auth: Avatar | None, channel: str | None
     ) -> kbus.Message:
-        """The message of a bus call: JSON payload, ``auth`` and ``channel`` when given."""
+        """The message of a bus call: TYTX json payload, ``auth`` and ``channel`` when given."""
         meta: dict[str, Any] = {"format": "json", "path": path}
         if auth is not None:
-            meta["auth"] = {"identity": auth.identity, "tags": list(auth.tags)}
+            meta["auth"] = avatar_auth(auth)
         if channel is not None:
             meta["channel"] = channel
-        return kbus.Message(meta, json.dumps(data).encode())
+        return kbus.Message(meta, to_tytx(data, "json").encode())
 
     async def serve_kbus_message(self, message: kbus.Message) -> kbus.Message:
         """Serve one message through the demux, as an http request.
 
         The scope is a ``POST`` of
-        ``meta["path"]`` with the JSON payload as body, the avatar rebuilt from
-        ``meta["auth"]``, no session, ``"kajenn.kbus": True`` and
-        ``"kajenn.channel"`` when ``meta`` carries one. The answer has
-        ``meta={"status", "format": "json"}`` and the response body as payload;
-        an ``HTTPException`` becomes its status with its detail as a JSON
-        string, any other exception a 500.
+        ``meta["path"]`` with the TYTX json payload as body and the
+        ``x-tytx-transport: json`` header, so the route answers in TYTX json;
+        the avatar rebuilt from ``meta["auth"]``, no session,
+        ``"kajenn.kbus": True`` and ``"kajenn.channel"`` when ``meta`` carries
+        one. The answer has ``meta={"status", "format": "json"}`` and the
+        response body as payload; an ``HTTPException`` becomes its status with
+        its detail as TYTX json, any other exception a 500.
         """
         meta = message.meta
         auth = meta.get("auth")
@@ -473,8 +474,8 @@ class KBusMixin:
             "raw_path": path.encode(),
             "root_path": "",
             "query_string": b"",
-            "headers": [(b"content-type", b"application/json")],
-            "auth": Avatar(auth["identity"], auth["tags"]) if auth is not None else None,
+            "headers": [(b"content-type", b"application/json"), (b"x-tytx-transport", b"json")],
+            "auth": avatar_from_auth(auth),
             "session": None,
             "kajenn.kbus": True,
         }
@@ -487,9 +488,9 @@ class KBusMixin:
                 result = await BufferedAsgiEndpoint(app).serve(sub_scope, message.payload)
                 status, body = result["status"], result["body"]
             except HTTPException as refused:
-                status, body = refused.status, json.dumps(refused.detail).encode()
+                status, body = refused.status, to_tytx(refused.detail, "json").encode()
             except Exception as failure:
-                status, body = 500, json.dumps(failure_text(failure)).encode()
+                status, body = 500, to_tytx(failure_text(failure), "json").encode()
         finally:
             item.run_cleanups()
             self.requests.unregister(item)
@@ -508,7 +509,7 @@ class KBusMixin:
         """
         scope, body = HttpRecord().decode_request(message.payload)
         auth = message.meta.get("auth")
-        scope["auth"] = Avatar(auth["identity"], auth["tags"]) if auth is not None else None
+        scope["auth"] = avatar_from_auth(auth)
         scope["session"] = None
         if message.meta.get("kbus"):
             scope["kajenn.kbus"] = True

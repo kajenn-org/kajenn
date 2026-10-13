@@ -20,7 +20,9 @@ into the ``text/event-stream`` wire format: ``id:``/``event:``/``data:`` lines
 start when configured, and a ``: keepalive`` comment when the source falls
 silent longer than the heartbeat interval (the comment keeps proxies from
 closing an idle connection; the client ignores it). Each event ends with a
-blank line. ``data`` that is not a string is JSON-encoded.
+blank line. ``data`` that is not a string is JSON-encoded, or TYTX-encoded
+when the stream is built with a ``tytx_transport`` (the one the client asked
+for with ``X-TYTX-Transport``): plain JSON loses ``Decimal``/``date`` values.
 
 The framing is shaped like ``kbus/frame.py`` (a slotted codec, its own wire
 format) but has no bytes in common — SSE is a text protocol over HTTP, not the
@@ -37,7 +39,9 @@ import asyncio
 import contextlib
 import json
 from collections.abc import AsyncIterable, AsyncIterator
-from typing import Any
+from typing import Any, Literal
+
+from genro_tytx import to_tytx
 
 from .streaming import StreamingResponse
 
@@ -56,7 +60,7 @@ class SseStream:
         ``StreamingResponse`` with the SSE headers already set.
     """
 
-    __slots__ = ("source", "retry_ms", "keepalive_seconds")
+    __slots__ = ("source", "retry_ms", "keepalive_seconds", "tytx_transport")
 
     def __init__(
         self,
@@ -64,6 +68,7 @@ class SseStream:
         *,
         retry_ms: int | None = None,
         keepalive_seconds: float = KEEPALIVE_SECONDS,
+        tytx_transport: Literal["json", "xml"] | None = None,
     ) -> None:
         """Bind to an async source of event dicts.
 
@@ -74,10 +79,14 @@ class SseStream:
                 (the client's reconnection delay).
             keepalive_seconds: Idle interval after which a ``: keepalive``
                 comment is sent to hold the connection open.
+            tytx_transport: When set, ``data`` that is not a string is
+                encoded with ``to_tytx`` in this transport, so typed values
+                keep their type; otherwise it is plain JSON.
         """
         self.source = source
         self.retry_ms = retry_ms
         self.keepalive_seconds = keepalive_seconds
+        self.tytx_transport = tytx_transport
 
     def frame(self, event: dict[str, Any]) -> bytes:
         """Encode one event dict into an SSE record (ends with a blank line)."""
@@ -87,7 +96,12 @@ class SseStream:
         if event.get("event") is not None:
             lines.append(f"event: {event['event']}")
         data = event.get("data")
-        text = data if isinstance(data, str) else json.dumps(data)
+        if isinstance(data, str):
+            text = data
+        elif self.tytx_transport is not None:
+            text = to_tytx(data, self.tytx_transport)
+        else:
+            text = json.dumps(data)
         for line in text.split("\n"):
             lines.append(f"data: {line}")
         return ("\n".join(lines) + "\n\n").encode("utf-8")

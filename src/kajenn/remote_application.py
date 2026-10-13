@@ -30,6 +30,7 @@ import json
 from typing import Any
 
 import kbus
+from genro_tytx import from_tytx, to_tytx
 
 from .application import BaseApplication
 from .spawner import cancel_and_wait
@@ -38,14 +39,34 @@ from .exceptions import ExternalFailure, HTTPException, Redirect, failure_text
 from .http_record import HttpRecord
 from .middleware.base import headers_dict
 from .response import Response
+from .session.avatar import Avatar
 from .transport_limits import HttpBodyTooLarge, http_max_body_size
 
-__all__ = ["PROXY_OPTIONS", "RemoteApplication", "failure_message", "raised_failure",
+__all__ = ["PROXY_OPTIONS", "RemoteApplication", "avatar_auth", "avatar_from_auth",
+           "failure_message", "raised_failure",
            "websocket_event", "websocket_message"]
 
 #: The kwargs of an application declaration that belong to its proxy mount:
 #: the spawned process builds the real application without them.
 PROXY_OPTIONS = frozenset({"spawner", "request_timeout", "max_calls"})
+
+
+def avatar_auth(avatar: Avatar) -> dict[str, Any]:
+    """The bus auth record, with the data as TYTX json only when the avatar has any."""
+    auth: dict[str, Any] = {"identity": avatar.identity, "tags": list(avatar.tags)}
+    if avatar.data:
+        auth["data"] = to_tytx(avatar.data.as_dict(recursive=True), "json")
+    return auth
+
+
+def avatar_from_auth(auth: dict[str, Any] | None) -> Avatar | None:
+    """Rebuild the bus caller; a record without data leaves its data Bag empty."""
+    if auth is None:
+        return None
+    avatar = Avatar(auth["identity"], auth["tags"])
+    if "data" in auth:
+        avatar.data.update(from_tytx(auth["data"], "json"))
+    return avatar
 
 
 def websocket_message(event: dict[str, Any]) -> kbus.Message:
@@ -204,7 +225,7 @@ class RemoteApplication(BaseApplication):
                 meta: dict[str, Any] = {"format": "http"}
                 avatar = self._trusted_avatar(scope)
                 if avatar is not None:
-                    meta["auth"] = {"identity": avatar.identity, "tags": list(avatar.tags)}
+                    meta["auth"] = avatar_auth(avatar)
                 if "kajenn.channel" in scope:
                     meta["channel"] = scope["kajenn.channel"]
                 if "kajenn.kbus" in scope:
