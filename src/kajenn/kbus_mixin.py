@@ -50,9 +50,8 @@ import kbus
 from genro_tytx import from_tytx, to_tytx
 
 from .asgi_endpoint import BufferedAsgiEndpoint
-from .exceptions import HTTPException, failure_text
+from .exceptions import HTTPException, KBusCallError, failure_text
 from .http_record import HttpRecord
-from .kbus import KBusCallError
 from .middleware.errors import ErrorMiddleware
 from .remote_application import (
     avatar_auth, avatar_from_auth, failure_message, websocket_event, websocket_message,

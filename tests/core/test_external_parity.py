@@ -33,7 +33,7 @@ import pytest
 
 from kajenn import AsgiServer, Avatar
 from kajenn.asgi_endpoint import BufferedAsgiEndpoint
-from kajenn.kbus import KBusCallError
+from kajenn.exceptions import KBusCallError
 from kajenn.wsx import WsxEnvelope
 
 from .test_external_application import running

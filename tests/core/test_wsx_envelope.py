@@ -35,8 +35,10 @@ from typing import Any
 
 import pytest
 from genro_bag import Bag
+from genro_tytx import to_tytx
 
 from kajenn.wsx import WsxEnvelope
+from kajenn.wsx_payload import SerializedWsxPayload
 
 PREFIX = "WSX://"
 
@@ -215,3 +217,14 @@ class TestTheRoundTripOfTheWholeEnvelope:
     def test_an_answer_read_back_carries_its_status(self) -> None:
         back = WsxEnvelope(WsxEnvelope(id="m1", status=403, data="not yours").encode())
         assert (back.id, back.status, back.data) == ("m1", 403, "not yours")
+
+
+def test_wsx_serialized_null_is_distinct_from_absent_without_changing_legacy_alias():
+    absent = WsxEnvelope("WSX://{}")
+    legacy_null = WsxEnvelope('WSX://{"data":null}')
+    serialized = WsxEnvelope(serialized_data=SerializedWsxPayload(to_tytx(None, "json")))
+    assert "data" not in json.loads(absent.encode()[6:])
+    assert legacy_null.encode() == absent.encode()
+    assert "data" in json.loads(serialized.encode()[6:])
+    assert serialized.data is None
+    assert WsxEnvelope(serialized.encode()).serialized_data.text == serialized.serialized_data.text
