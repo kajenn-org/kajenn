@@ -70,7 +70,8 @@ call `<code>.forget_credentials` on every joined process, all at once, before
 they answer: `meta = {"credential": <credential>}` drops that credential, an
 empty `meta` drops every cached credential. The process evicts its own cache
 and replies with an empty message. A process the bus cannot reach, or that
-does not reply within 5 seconds, is skipped. Once the route has
+does not reply within 5 seconds, is relaunched: the new process starts with
+an empty cache, and the mount answers 503 until it joins. Once the route has
 answered, no new request, served by the server or by an external application,
 accepts the credential; a request already past authentication is not
 interrupted. A process that joins later starts with an empty cache.

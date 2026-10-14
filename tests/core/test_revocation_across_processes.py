@@ -18,20 +18,29 @@ An external application authenticates on its own face, through the server's
 authentication route over the bus, and keeps its own credential cache. The
 server's ``/_server/tokens/revoke``, ``/_server/tokens/delete`` and
 ``/_server/auth/forget_credential`` empty the server's cache and the cache of
-every joined process before they answer. Driven end to end on the bench of
-``tests/core/test_external_application.py``: HTTP through the mount and
-``server.kbus_call``.
+every joined process before they answer. A process that does not confirm is
+relaunched, so it comes back with an empty cache. Driven end to end on the
+bench of ``tests/core/test_external_application.py``: HTTP through the mount
+and ``server.kbus_call``.
 """
 
 from __future__ import annotations
 
-from kajenn import Avatar, AsgiServer
+import asyncio
+import time
 
-from .test_external_application import running
+import pytest
+
+from kajenn import Avatar, AsgiServer
+from kajenn import kbus_mixin
+from kajenn.exceptions import KBusCallError
+
+from .test_external_application import answering, running
 from .test_external_parity import bearer, call
 
 RECIPE = '''
 import os
+import time
 from typing import Any
 
 from genro_routes import route
@@ -69,6 +78,13 @@ class Billing(RoutedApplication):
     def secret(self, _request=None):
         return {"identity": _request.avatar().identity}
 
+    @route()
+    async def freeze(self, marker: str = ""):
+        with open(marker, "w"):
+            pass
+        time.sleep(60)
+        return {}
+
 
 class Local(RoutedApplication):
     @route(auth_rule="admin")
@@ -93,7 +109,7 @@ class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def main(self, root):
         cfg = root.configuration()
         self.site_section(cfg)
-        self.server_section(cfg)
+        SERVER
         self.storage_section(cfg)
         self.applications_section(cfg)
         cfg.authentication().tokens(store_class=MemoryApiKeyStore)
@@ -110,9 +126,12 @@ REST_CHANNEL = 'cfg.channels().channel(name="rest", authentication_route="/idp/c
 SUPERADMIN = Avatar("root", ["SUPERADMIN"])
 
 
-def write_recipe(tmp_path, *, channels: str = "pass") -> str:
+SHORT_SHUTDOWN = 'cfg.server(shutdown_timeout_seconds=1)'
+
+
+def write_recipe(tmp_path, *, channels: str = "pass", server: str = "self.server_section(cfg)") -> str:
     path = tmp_path / "config.py"
-    path.write_text(RECIPE.replace("CHANNELS", channels))
+    path.write_text(RECIPE.replace("CHANNELS", channels).replace("SERVER", server))
     return str(path)
 
 
@@ -167,3 +186,30 @@ async def test_forget_credential_evicts_the_cache_of_the_external_process(tmp_pa
         await server.kbus_call("/_server/auth/forget_credential", {"credential": "Bearer good"})
         assert await status_of(server, "/billing/secret", headers) == 200
         assert idp.calls == ["Bearer good", "Bearer good"]
+
+
+async def test_a_process_that_does_not_confirm_the_revocation_is_relaunched(
+        tmp_path, monkeypatch) -> None:
+    # wf:contract: billing's event loop is blocked, so it cannot confirm forget_credentials
+    # wf:contract: within FORGET_CREDENTIALS_TIMEOUT; /_server/tokens/revoke still answers
+    # wf:contract: {"revoked": True}, billing comes back as a new process, and the revoked
+    # wf:contract: key answers 401 through the mount.
+    monkeypatch.setattr(kbus_mixin, "FORGET_CREDENTIALS_TIMEOUT", 1.0)
+    async with running(write_recipe(tmp_path, server=SHORT_SHUTDOWN)) as server:
+        key = server.api_key_store.issue("audit", ["admin"])
+        key_id = server.api_key_store.load_all()[0]["key_id"]
+        headers = bearer(key)
+        assert await status_of(server, "/billing/secret", headers) == 200
+        before = await answering(server)
+        marker = tmp_path / "frozen"
+        frozen = asyncio.create_task(server.kbus_call("/billing/freeze", {"marker": str(marker)}))
+        deadline = time.monotonic() + 10
+        while not marker.exists():
+            assert time.monotonic() < deadline, "billing never entered freeze"
+            await asyncio.sleep(0.05)
+        answer = await server.kbus_call("/_server/tokens/revoke", {"key_id": key_id}, auth=SUPERADMIN)
+        assert answer["revoked"] is True
+        await answering(server, other_than=before["pid"])
+        assert await status_of(server, "/billing/secret", headers) == 401
+        with pytest.raises(KBusCallError):
+            await frozen
