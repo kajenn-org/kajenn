@@ -159,7 +159,13 @@ def failure_text(failure: Exception) -> str:
 
 
 class KBusCallError(Exception):
-    """A CALL answered with an error REPLY; ``error`` is what the REPLY carried."""
+    """A kbus CALL that failed.
+
+    Raised when the REPLY carries a status >= 400: ``error`` is what the REPLY
+    carried and ``status`` its status. Also raised with status 503 when a call
+    from a role process to the server fails in transport: ``error`` is then the
+    text of the transport failure.
+    """
 
     def __init__(self, path: str, error: Any, status: int | None = None) -> None:
         super().__init__(f"call {path} failed: {error}")

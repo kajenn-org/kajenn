@@ -34,9 +34,10 @@ Pronounced “KAY-jen”, kajenn plays on cayenne and Cajun: spicy, with rhythm.
 | Import package | Content |
 |---|---|
 | `kajenn` | server core and app-side contract |
-| `kajenn.server_app` | base server application (a subpackage of the core), mounted by configuration |
+| `kajenn.server_app` | base server application (a subpackage of the core), mounted on every server under `/_server` |
 
-The core never imports the server application. A contract test asserts it.
+`AsgiServer` imports the server application and mounts it when no declared
+application has the code `_server`.
 
 ## Project
 

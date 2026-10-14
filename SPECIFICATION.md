@@ -248,6 +248,8 @@ The CommunicationMixin is the first REAL proof of the D16 cooperative
 contract: it must build its members and hook the lifespan without the base
 knowing it — if the chains don't hold this, they fail in phase 0, not phase 2.
 
+> Note 2026-10-14: superseded — `parent_kbus`, `children_kbus`, `parent=` and `CommunicationMixin` do not exist. The communication capability is `KBusMixin` (src/kajenn/kbus_mixin.py:78); a role process reads the parent URL from `KAJENN_KBUS_PARENT` (src/kajenn/spawner.py:39, src/kajenn/kbus_mixin.py:348).
+
 **D18 — Slots policy.** `__slots__` only on high-cardinality objects
 (requests, register items, events/frames, config nodes); NEVER on servers,
 managers, commanders, apps — single/low-count complex objects where slots are
@@ -422,6 +424,12 @@ remain the detailed record). The 1d-wave-1 rulings, compressed:
 - The two-stage live-config architecture (config as live object,
   `apply_configuration`, hot/cold changes) stays parked as a future macro.
 
+> Note 2026-10-14: superseded — no hook mounts `_server`: `AsgiServer.__init__` appends `ServerApplication()` before `super().__init__` when no application has the code `_server`, and skips it on role processes (`role` set) (src/kajenn/asgi_server.py:136-137).
+
+> Note 2026-10-14: superseded — there is no `login_page` route; `login` (JSON POST) is the only login route of `ServerApplication` (src/kajenn/server_app/server_app.py:307-308).
+
+> Note 2026-10-14: superseded — the withdrawal by D31 was not carried out: a handler that declares `_request` is given the live `Request` by `RoutedApplication.bind_kwargs` (src/kajenn/routed_application.py:374-375, :396-403).
+
 **D24 — Login attaches identity in place: the session id never changes.**
 (Supersedes the wave-plan "option A" ruling.) A session is a CONTINUUM: the
 login is an event that enriches it with an identity, not a replacement.
@@ -436,6 +444,8 @@ URL), NOT id rotation — the codebase does not accumulate ceremony against
 threats its cookie discipline already forecloses. Open point for 5b:
 `FileSessionStore` persists only at creation (post-creation mutations —
 cart, avatar — live in the process cache only); decide the write-back seam.
+
+> Note 2026-10-14: superseded — `promote_session` does not exist: the login route calls `session.attach_avatar` directly (src/kajenn/server_app/server_app.py:379). `FileSessionStore` does not exist: the store is `MemorySessionStore` (src/kajenn/session/store.py:88), with a pickle snapshot on `save_session` (src/kajenn/session/mixin.py:64-76).
 
 **D25 — Invariant 10 enforced; `attach_instance` is transitional and will
 be removed.** The wave initially attached the zero-route `PasswordMethod`
@@ -456,6 +466,8 @@ self}}` — the rule-7 dual relationship as data); the `register()`/
 is part of the migration design; the 4 call sites (`openapi.py:84`,
 `openapi.py:122`, `server_app.py:140`, `auth_section.py:90`) migrate in
 Macro 5b together with OIDC, which lands directly on branches.
+
+> Note 2026-10-14: done — `attach_instance` is removed from kajenn; `AuthSection.register` links a method's router with `add_branches({"name": method_id, "instance": method})` (src/kajenn/server_app/server_sections/auth_section.py:99-100).
 
 **D26 — The `_server` profile flag is removed; the internal server is a
 subclass.** (Supersedes the D23 wave-ruling bullet — "one
@@ -824,6 +836,9 @@ one config describes the whole site — stands unchanged.)
   `provider(code=…)`, and `credentials` (`basic_user`/`bearer_token`/`jwt`)
   folded by the handler into the exact dicts `AuthCore` already consumes.
   `AuthCore` itself is not touched: only how its values travel changes.
+
+> Note 2026-10-14: superseded — `admin_password` is removed: the `authentication` element has no bootstrap password word and the server creates no user (src/kajenn/config/elements.py:278-290).
+
 - The `_server` app remains **automatic, not configured** (D4): the
   `authentication` login surface reaches it as forwarded kwargs at mount time.
 - Pins: `genro-builders>=0.22.0`, `genro-bag>=0.20.0`.
@@ -841,6 +856,9 @@ decided 2026-07-25.)
   `stop <name>`, `remove <name>`; `serve` options `--host`, `--port`,
   `--reload`, `--name`. Exit codes: 0 success, 2 usage, 1 runtime error on one
   stderr line.
+
+> Note 2026-10-14: superseded — the subcommands are `serve`, `configure`, `sites`, `stop`, `remove`; `serve` also takes `--home`, `--debug` and `--role` (src/kajenn/__main__.py:682-729).
+
 - **`serve <source>` resolves in three steps**: an `application=<target>`
   assignment (quickstart — the class is instantiated with no arguments and
   handed to `AsgiServer(applications=[...])`), an existing `.py` path (handed to
@@ -860,9 +878,15 @@ decided 2026-07-25.)
   Relaunching by name always runs the current code. A pidfile is **never
   trusted** — missing, unreadable or naming a dead process all read as "not
   running" — so a crashed server shows as stopped, not as a phantom.
+
+> Note 2026-10-14: superseded — the registry card is `sites/<name>.json` under the kajenn home (src/kajenn/__main__.py:128, :132-133).
+
 - **`--workers` is excluded**: multi-process supervision is genro-juggler's
   territory. `--debug` is excluded as well (never discussed on the merits).
   `--role`/`--app` have no meaning since D-config removed `Projection`.
+
+> Note 2026-10-14: superseded — `serve --debug` and `serve --role application:<code>` exist (src/kajenn/__main__.py:696-704).
+
 - **Two derogations from the coding rules, confined to `__main__.py`**: one
   module-level function (`factory`) and state in the environment
   (`KAJENN_LAUNCHER`, one JSON object: one source key plus explicitly-given
@@ -921,6 +945,8 @@ handler bare and sees the pure value. genro-routes is untouched — the call is
 kajenn's. The `_request` injection and the `ServerApplication.bind_kwargs`
 override are dismantled accordingly (implementation pending).
 
+> Note 2026-10-14: superseded — the `_request` injection stays: `RoutedApplication.bind_kwargs` passes the live `Request` to a handler that declares `_request` (src/kajenn/routed_application.py:374-375, :396-403).
+
 ### Ratified 2026-08-25
 
 **D32 — Static only where dynamic cannot be had.**
@@ -955,6 +981,8 @@ member (`LocalKBus`) and the spawner interface (`KBusSpawner`, with
 judgments (occupancy, rebalance, move). The KajennBus is the internal
 communication of one instance; klink is the communication between instances.
 
+> Note 2026-10-14: superseded — `KBusHub`, `KBusClient`, `LocalKBus`, `KBusSpawner` and `KBusConnector` do not exist. The bus is the `kbus` library (`kbus.Dispatcher`, `kbus.Member`, `kbus.Link`); kajenn holds `kajenn.spawner.Spawner` and `SubprocessSpawner` (src/kajenn/spawner.py:42, :84) and the capability `KBusMixin` (src/kajenn/kbus_mixin.py:78).
+
 **D17 restated.** The communication capability is `KBusMixin`: it adds
 `kbus_call`, `kbus_post`, `serve_kbus_call` and `serve_kbus_message` to the
 server and starts the applications declared with `spawner=` through their
@@ -984,6 +1012,8 @@ authentication behind the `_server` route. A verified credential is cached by
 TTL (`authentication(cache_ttl=...)`, `0` disables it) and is evicted by
 `forget_credential`; revoking or deleting an api key empties the cache.
 `server.authenticate(scope)` is `async`.
+
+> Note 2026-10-14: superseded — `channels` is a child of `configuration`, not of `server`: a recipe writes `cfg.channels().channel(name=..., authentication_route=...)` (src/kajenn/config/elements.py:395).
 
 **What stays open.** For 0.5.0: the session at first write, the login mixin and
 the enrichment per branch. For klink: `info.credential` stays reserved and

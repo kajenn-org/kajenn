@@ -3,9 +3,9 @@
 ## What it does
 
 Runs work outside the request/response cycle: a **spool** of queued jobs, an
-**executor** that runs them, and a **scheduler** for interval and cron jobs. A
-server that declares `ServerApplication` also manages them over HTTP under
-`/_server/tasks`.
+**executor** that runs them, and a **scheduler** for interval and cron jobs. The
+server also manages them over HTTP under `/_server/tasks`, served by the
+`ServerApplication` every server mounts.
 
 ## When to use it
 
@@ -148,7 +148,7 @@ assert server.tasks.worker_id == "local"
 assert server.tasks.spool is not None
 ```
 
-Over HTTP, with `ServerApplication` declared and a credential carrying the
+Over HTTP, with a credential carrying the
 `SUPERADMIN` tag:
 
 ```console
@@ -158,7 +158,7 @@ $ curl -u admin:… "http://127.0.0.1:8000/_server/tasks/progress?task_id=..."
 $ curl -u admin:… "http://127.0.0.1:8000/_server/tasks/result?task_id=..."
 ```
 
-Without the credential those paths answer 401; without the application, 404.
+Without the credential those paths answer 401.
 
 ## Gotchas
 

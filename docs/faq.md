@@ -6,8 +6,8 @@
 
 Install `kajenn` in a virtual environment with Python 3.11 or newer. That one
 distribution supplies the core `kajenn` and, as its subpackage, the base
-server application `kajenn.server_app`. `import kajenn` loads none of the
-server application.
+server application `kajenn.server_app`. `AsgiServer` mounts the server
+application on every server.
 
 See [Getting started](getting-started.md#installation).
 
@@ -211,7 +211,8 @@ See [Body arguments](guides/requests.md#body-arguments).
 
 No. `Request.read_body()` buffers the complete body, including multipart
 uploads, and has no size limit of its own — `KAJENN_HTTP_MAX_BODY_BYTES` bounds
-the frames the KajennBus carries, not this read. Use an ingress limit, or an
+the HTTP body a remote application forwards to its process, not this read; the
+frames of the KajennBus are bounded by `server.kbus(max_frame=...)`. Use an ingress limit, or an
 application that drives ASGI `receive` itself, when you need bounded or
 streaming upload processing.
 
