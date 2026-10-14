@@ -101,7 +101,7 @@ class TestTheScopeKey:
         assert answer["result"]["structuredContent"] == {"channel": "mcp"}
 
     async def test_a_bus_call_keeps_the_channel_of_the_frame(self) -> None:
-        # wf:contract: serve_kbus_frame writes the frame's channel; without one the
+        # wf:contract: serve_kbus_message writes the message's channel; without one the
         # wf:contract: application's http_channel applies.
         server = faces_server()
         assert await server.kbus_call("/plain/channel", {}, channel="telegram") == {

@@ -260,6 +260,3 @@ Bag from those fields. Bag node attributes are not part of the plain data.
 
 `BufferedAsgiEndpoint` refuses a streaming answer: the answer stream and the
 websocket stream above carry streaming answers and raw sockets without it.
-
-The package `kajenn.kbus` (the `KJNF` frame, `KBusHub`, `KBusClient`) is no
-longer used by the carriage described here; it remains for kajenn-orchestra.

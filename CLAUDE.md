@@ -7,7 +7,7 @@
 
 ### Current Status
 - Development Status: Beta — Has Implementation: Yes
-- Version 0.2.0: the internal lane is the KajennBus (`kajenn.kbus`).
+- The internal lane is the `kbus` library (kajenn-kbus).
 
 ### Content
 server core and base server application.

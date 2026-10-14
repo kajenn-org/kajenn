@@ -956,10 +956,10 @@ judgments (occupancy, rebalance, move). The KajennBus is the internal
 communication of one instance; klink is the communication between instances.
 
 **D17 restated.** The communication capability is `KBusMixin`: it adds
-`kbus_call`, `kbus_post` and `serve_kbus_frame` to the server and starts the
-applications declared with `spawner=` through their spawner. A `kbus_call` to
-an in-process application goes straight to `serve_kbus_frame`: no `LocalKBus`
-is attached for in-process applications. `RemoteConnection` and the remote runner
+`kbus_call`, `kbus_post`, `serve_kbus_call` and `serve_kbus_message` to the
+server and starts the applications declared with `spawner=` through their
+spawner. A `kbus_call` to an in-process application goes straight to
+`serve_kbus_message`: no bus member is attached for in-process applications. `RemoteConnection` and the remote runner
 are retired. D33 and D-SA are untouched.
 
 ### Ratified 2026-10-08 (the single execution point and authentication on demand)
@@ -1034,7 +1034,4 @@ later starts with an empty cache.
 slot and the wait for the first message of the answer, together; a timeout in
 either answers 503. It never bounds the length of the answer.
 
-**Two transports during the transition.** `kajenn.kbus.FrameStream`, still used
-by kajenn-orchestra's worker connector, and the `kbus` library used by kajenn
-coexist and are not one implementation. The migration of Orchestra is later
-work.
+**One transport.** The `kbus` library is the only bus of kajenn.

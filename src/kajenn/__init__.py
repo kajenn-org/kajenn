@@ -41,7 +41,6 @@ from .auth import (
     FileUserStore,
     UserStore,
 )
-from .kbus import KBusClient, Frame, FrameStream
 from .kbus_mixin import KBusMixin
 from .config import (
     AsgiConfigBuilder,
@@ -60,6 +59,7 @@ from .exceptions import (
     HTTPUnauthorized,
     HTTPUnprocessableContent,
     HTTPUnsupportedMediaType,
+    KBusCallError,
     Redirect,
 )
 from .mcp import McpEngine, McpError
@@ -98,15 +98,13 @@ __all__ = [
     "BaseConfiguration",
     "BaseMiddleware",
     "BaseServer",
-    "KBusClient",
+    "KBusCallError",
     "KBusMixin",
     "ConfigError",
     "ConfigurationHandler",
     "DefaultConfig",
     "FileApiKeyStore",
     "FileUserStore",
-    "Frame",
-    "FrameStream",
     "HTTPBadRequest",
     "HTTPException",
     "HTTPForbidden",
