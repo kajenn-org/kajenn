@@ -8,7 +8,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from genro_bag import Bag
+from genro_tytx import from_tytx
 
 from kajenn import Avatar
 
@@ -18,6 +18,7 @@ from .test_external_parity import PLACEMENTS, bearer, call
 RECIPE = '''
 import os
 
+from datetime import date
 from decimal import Decimal
 
 from genro_bag import Bag
@@ -48,14 +49,31 @@ class Billing(RoutedApplication):
                 "types": [type(amount).__name__, type(day).__name__],
                 "data": _request.avatar().data.as_dict(recursive=True)}
 
+    @route()
+    async def relay_avatar_data(self, _request=None):
+        return await self.server.kbus_call(
+            "/billing/avatar_data", {}, auth=_request.avatar())
+
+    @route()
+    async def relay_typed(self, _request=None):
+        return await self.server.kbus_call(
+            "/billing/typed", {"amount": Decimal("1.10"), "day": date(2026, 10, 13)},
+            auth=_request.avatar())
+
 
 class Idp(RoutedApplication):
     @route()
     def check(self, credential: str = "", channel: str = ""):
-        assert credential == "Bearer tok"
         assert channel == "rest"
-        return {"identity": "idp-user", "tags": ["admin"],
-                "data": {"allowed_repository": ["r1"]}}
+        return {"identity": "idp-user", "tags": ["admin"], "data": IDP_DATA[credential]}
+
+
+IDP_DATA = {
+    "Bearer tok": {"allowed_repository": ["r1"]},
+    "Bearer nested": {"permissions": {"allowed_repository": ["r1"], "enabled": True},
+                      "limit": None},
+    "Bearer typed": {"budget": Decimal("12.50"), "since": date(2026, 1, 2)},
+}
 
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
@@ -74,15 +92,15 @@ def write_recipe(tmp_path, placement):
 
 
 @pytest.mark.parametrize("placement", PLACEMENTS)
-@pytest.mark.parametrize("data", [
-    {"allowed_repository": ["r1"]},
-    {"permissions": {"allowed_repository": ["r1"], "enabled": True}, "limit": None},
+@pytest.mark.parametrize("token, data", [
+    ("tok", {"allowed_repository": ["r1"]}),
+    ("nested", {"permissions": {"allowed_repository": ["r1"], "enabled": True}, "limit": None}),
 ], ids=["repositories", "nested"])
-async def test_kbus_call_preserves_avatar_data(tmp_path, placement, data):
-    avatar = Avatar("svc", ["admin"])
-    avatar.data.update(Bag(data))
+async def test_kbus_call_preserves_avatar_data(tmp_path, placement, token, data):
     async with running(write_recipe(tmp_path, placement)) as server:
-        assert await server.kbus_call("/billing/avatar_data", {}, auth=avatar) == data
+        status, _, body = await call(
+            server, "/billing/relay_avatar_data", headers=bearer(token))
+    assert (status, json.loads(body)) == (200, data)
 
 
 @pytest.mark.parametrize("placement", PLACEMENTS)
@@ -114,12 +132,12 @@ async def test_session_avatar_data_reaches_handler(tmp_path, placement):
 
 @pytest.mark.parametrize("placement", PLACEMENTS)
 async def test_kbus_call_keeps_typed_values(tmp_path, placement):
-    avatar = Avatar("svc", ["admin"])
-    avatar.data.update(Bag({"budget": Decimal("12.50"), "since": date(2026, 1, 2)}))
     async with running(write_recipe(tmp_path, placement)) as server:
-        answer = await server.kbus_call(
-            "/billing/typed", {"amount": Decimal("1.10"), "day": date(2026, 10, 13)}, auth=avatar)
-    assert answer == {"amount": Decimal("1.10"), "day": date(2026, 10, 13),
+        status, _, body = await call(
+            server, "/billing/relay_typed",
+            headers=[*bearer("typed"), (b"x-tytx-transport", b"json")])
+    assert status == 200
+    assert from_tytx(body.decode(), "json") == {"amount": Decimal("1.10"), "day": date(2026, 10, 13),
                       "types": ["Decimal", "date"],
                       "data": {"budget": Decimal("12.50"), "since": date(2026, 1, 2)}}
 

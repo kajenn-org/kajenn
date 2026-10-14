@@ -33,7 +33,7 @@ from genro_routes import route
 from kajenn import AsgiServer, AuthCore, Avatar, BaseApplication, RoutedApplication
 from kajenn.config import AsgiConfigBuilder
 from kajenn.exceptions import HTTPUnauthorized
-from kajenn.kbus import KBusCallError
+from kajenn.exceptions import KBusCallError
 from kajenn.server_app import ServerApplication
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "api"}}}

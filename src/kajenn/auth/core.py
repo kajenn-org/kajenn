@@ -182,8 +182,9 @@ class AuthCore:
         """Verify like ``verify``; also return the credential's own expiry.
 
         The second element is ``valid_until``, a POSIX timestamp: the ``exp``
-        claim of a JWT, the ``expires_at`` of an api key, ``None`` when the
-        credential carries no expiry (basic, static bearer, a JWT without ``exp``).
+        claim of a JWT as the integer PyJWT validates, the ``expires_at`` of an
+        api key, ``None`` when the credential carries no expiry (basic, static
+        bearer, a JWT without ``exp``).
         """
         challenge = [(b"www-authenticate", b"Bearer")]
         if " " not in credential:
@@ -254,5 +255,5 @@ class AuthCore:
             "identity": payload.get("sub"),
             "tags": payload.get("tags", config["tags"]),
             "backend": f"jwt:{name}" if name else "jwt",
-            "valid_until": payload.get("exp"),
+            "valid_until": int(payload["exp"]) if "exp" in payload else None,
         }

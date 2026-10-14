@@ -24,9 +24,8 @@ blank line. ``data`` that is not a string is JSON-encoded, or TYTX-encoded
 when the stream is built with a ``tytx_transport`` (the one the client asked
 for with ``X-TYTX-Transport``): plain JSON loses ``Decimal``/``date`` values.
 
-The framing is shaped like ``kbus/frame.py`` (a slotted codec, its own wire
-format) but has no bytes in common — SSE is a text protocol over HTTP, not the
-length-prefixed KajennBus frame. ``SseStream`` is SELF-CONTAINED: it wraps ANY
+The framing is a slotted codec with its own wire format; SSE is a text
+protocol over HTTP. ``SseStream`` is SELF-CONTAINED: it wraps ANY
 async source of event dicts (a user generator, a task hub subscription) and
 yields wire ``bytes``; the source is the caller's concern. Resumability
 (``Last-Event-ID`` → a snapshot baseline then the live source) is built by the

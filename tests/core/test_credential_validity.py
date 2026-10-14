@@ -103,6 +103,41 @@ async def test_an_expired_jwt_is_refused_even_when_cached() -> None:
         await server.authenticate_credential(credential, "rest")
 
 
+async def judged_like_pyjwt(exp: Any, expires: int) -> None:
+    """Authenticate a JWT carrying ``exp``, then check it just past ``expires``.
+
+    ``expires`` is the instant PyJWT reads in ``exp``: at that moment PyJWT
+    refuses the token, and the cache refuses it as well.
+    """
+    server = make_server()
+    token = jwt.encode({"sub": "carol", "exp": exp}, JWT_SECRET, algorithm="HS256")
+    credential = f"Bearer {token}"
+    avatar = await server.authenticate_credential(credential, "rest")
+    assert avatar.identity == "carol"
+    await asyncio.sleep(expires + 0.2 - time.time())
+    with pytest.raises(jwt.ExpiredSignatureError):
+        jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    with pytest.raises(HTTPUnauthorized):
+        await server.authenticate_credential(credential, "rest")
+
+
+async def test_a_jwt_with_a_string_exp_is_cached_until_pyjwt_expires_it() -> None:
+    # wf:contract: a JWT whose exp is the string of an instant three seconds ahead is
+    # wf:contract: authenticated and cached; just past that instant PyJWT refuses it and
+    # wf:contract: authenticate_credential refuses it with HTTPUnauthorized.
+    expires = int(time.time()) + 3
+    await judged_like_pyjwt(str(expires), expires)
+
+
+async def test_a_jwt_with_a_fractional_exp_is_cached_until_pyjwt_expires_it() -> None:
+    # wf:contract: a JWT whose exp is an integer instant three seconds ahead plus 0.9 is
+    # wf:contract: authenticated and cached; 0.2 seconds past the integer instant PyJWT
+    # wf:contract: refuses it and authenticate_credential refuses it with HTTPUnauthorized,
+    # wf:contract: although the fraction has not elapsed.
+    expires = int(time.time()) + 3
+    await judged_like_pyjwt(expires + 0.9, expires)
+
+
 async def test_an_expired_api_key_is_refused_even_when_cached() -> None:
     # wf:contract: an api key issued with expires_at one second ahead is authenticated and
     # wf:contract: cached under a long TTL; once expires_at has passed,

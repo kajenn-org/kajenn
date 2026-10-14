@@ -132,3 +132,9 @@ def test_body_and_payload_require_exact_bytes():
         HttpRecord().encode({}, bytearray())
     with pytest.raises(TypeError):
         HttpRecord().decode(bytearray(b"HTTP\x01\x00\x00\x00\x02{}"))
+
+
+def test_deep_bounded_json_is_a_protocol_error():
+    nested = b'{"v":' + b"[" * 3000 + b"0" + b"]" * 3000 + b"}"
+    with pytest.raises(ValueError):
+        HttpRecord().decode(b"HTTP\x01" + struct.pack("!I", len(nested)) + nested)
