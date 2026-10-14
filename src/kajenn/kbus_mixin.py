@@ -162,9 +162,9 @@ class KBusMixin:
         """Forget ``credential`` (every credential when ``None``) here and in every joined process.
 
         Every joined process is called at once and confirms it forgot;
-        returns when all of them confirmed. A process the bus cannot reach, or
+        returns when all of them answered. A process the bus cannot reach, or
         that does not confirm within ``FORGET_CREDENTIALS_TIMEOUT``, is
-        skipped: the proxy cannot reach it either.
+        relaunched: the new process starts with an empty cache.
         """
         if credential is None:
             self.forget_all_credentials()
@@ -172,14 +172,16 @@ class KBusMixin:
             self.forget_credential(credential)
         meta = {"credential": credential} if credential is not None else {}
 
-        async def forget_in(code: str) -> None:
+        async def forget_in(code: str, pid: int) -> None:
             try:
                 async with asyncio.timeout(FORGET_CREDENTIALS_TIMEOUT):
                     await self.kbus_member.call(f"{code}.forget_credentials", kbus.Message(meta))
             except (kbus.Error, TimeoutError):
-                return
+                if self.kbus_pids.get(code) == pid:
+                    del self.kbus_pids[code]
+                    self._relaunch(code, pid=pid)
 
-        await asyncio.gather(*(forget_in(code) for code in list(self.kbus_pids)))
+        await asyncio.gather(*(forget_in(code, pid) for code, pid in list(self.kbus_pids.items())))
 
     async def _serve_with_children(
         self, scope: Scope, receive: Receive, send: Send

@@ -100,16 +100,17 @@ class LocalTaskExecutor:
         Reads the descriptor and params from the spool, resolves the handler, runs
         it (async on the loop, sync on the pool via ``server.run_sync``), writes the
         result, and settles the folder to ``terminated`` (ok) or ``aborted`` (error).
+        The spool is synchronous: its calls run in a thread (``asyncio.to_thread``).
         The outcome is ``"ok"`` or ``"error"``; on error the exception text is
         stamped on the descriptor via ``settle``.
 
         Raises:
             LookupError: if no task ``task_id`` exists in the spool.
         """
-        descriptor = self.spool.get(task_id)
+        descriptor = await asyncio.to_thread(self.spool.get, task_id)
         if descriptor is None:
             raise LookupError(f"task not found: {task_id}")
-        params = self.spool.read_params(task_id)
+        params = await asyncio.to_thread(self.spool.read_params, task_id)
         outcome, error = "ok", None
         self._publish(descriptor, {"type": "started"})
         try:
@@ -118,11 +119,11 @@ class LocalTaskExecutor:
                 result = await node(**params)
             else:
                 result = await self.server.run_sync(lambda: node(**params))
-            self.spool.write_result(task_id, worker_id, result)
+            await asyncio.to_thread(self.spool.write_result, task_id, worker_id, result)
         except Exception as exc:
             outcome, error = "error", f"{type(exc).__name__}: {exc}"
             logging.getLogger(__name__).exception("batch task %r failed", task_id)
-        self.spool.settle(task_id, worker_id, outcome, error=error)
+        await asyncio.to_thread(self.spool.settle, task_id, worker_id, outcome, error=error)
         self._publish(descriptor, {"type": "settled", "outcome": outcome, "error": error})
         return outcome
 
