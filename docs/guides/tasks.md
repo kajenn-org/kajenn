@@ -171,3 +171,10 @@ Without the credential those paths answer 401.
   both.
 - The MCP push stream (`GET /mcp`) depends on the task backbone — it is `405`
   without it. See the [MCP guide](mcp.md).
+- Known limit (accepted 2026-10-14, task management is not complete yet):
+  `server.tasks.publish_progress(task_id, data)` is synchronous. Called from an
+  `async` task handler, its spool write runs on the event loop and blocks it;
+  when the loop runs in a thread other than the one that built the server, the
+  write fails with `TypeError`. Called from a sync handler (a pool thread), the
+  live event goes through the hub's `asyncio.Queue`, which is not thread-safe,
+  so a subscriber of the MCP push stream may not be woken.
