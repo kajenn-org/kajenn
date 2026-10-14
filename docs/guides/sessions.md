@@ -128,7 +128,7 @@ subsequent requests carry the identity:
 from kajenn import Avatar
 
 # inside a handler that has verified the credentials:
-_request.session.attach_avatar(Avatar("alice", tags="admin,ops"))
+_request.session.attach_avatar(Avatar("alice", tags=["admin", "ops"]))
 ```
 
 From then on, requests bearing the session cookie resolve to that avatar — no

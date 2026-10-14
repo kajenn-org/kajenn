@@ -12,15 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""AsgiServer — the shipped mono-process server composition (D22, D6, D16).
+"""AsgiServer — the shipped server composition (D22, D6, D16).
 
 ``AsgiServer`` stacks every core capability mixin over ``BaseServer`` in one
 MRO (``KBusMixin, AuthMixin, SessionMixin, MiddlewareMixin,
-PluginMixin, StorageMixin, TaskMixin, BaseServer``): the complete mono-process
+PluginMixin, StorageMixin, TaskMixin, BaseServer``): the complete
 async server of D22. ``TaskMixin`` sits after ``StorageMixin`` (it needs
 ``server.storage``) and before ``BaseServer`` (its lifespan hook must wrap the
-base ``Lifespan``). An internal (worker) server composes the SAME base WITHOUT
-the auth mixin (D6 by construction — the base never learned about the chain).
+base ``Lifespan``).
 
 The server is SELF-CONFIGURING: ``AsgiServer(config=source)`` builds its own
 read door — a ``ConfigurationHandler`` over a template NAME, a ``config.py``

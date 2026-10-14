@@ -2,14 +2,19 @@ Server application
 ==================
 
 The ``kajenn.server_app`` package: the system surface a server exposes under
-``/_server``, a subpackage of the core that no other module of the core imports. It is declared like any other application, with the code ``_server``::
+``/_server``, a subpackage of the core. ``AsgiServer`` mounts it with the code
+``_server`` when no declared application has that code; an application declared
+with the code ``_server`` takes its place::
 
     from kajenn import AsgiServer
     from kajenn.server_app import ServerApplication
 
-    server = AsgiServer(applications=[ServerApplication, (MyApp, {"mount": ""})])
+    class MyServerApp(ServerApplication):
+        ...
 
-A server that declares none exposes no ``/_server/...``. The management pages
+    server = AsgiServer(applications=[MyServerApp, (MyApp, {"mount": ""})])
+
+The role process of an external application mounts none. The management pages
 themselves are not here: this package serves the JSON a page drives.
 
 Application and grammar

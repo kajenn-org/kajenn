@@ -342,8 +342,9 @@ declared on the folder of `site:`. Both must already exist — a recipe naming a
 missing directory is a boot error.
 
 `site:` is where the server's own state lands, all in one tree: `site:users` and
-`site:api_keys` (written `encrypted=True`), `site:sessions`, `site:tasks` and
-`site:batches` (plain). Encryption is declared per **write**, not per mount, and
+`site:api_keys` (written `encrypted=True`), `site:tasks` and `site:batches`
+(plain). Sessions are not on `site:`: they live in a `MemorySessionStore`, and
+a pickle snapshot is written on the session's `save_path` when one is set. Encryption is declared per **write**, not per mount, and
 what lands on disk is self-describing — an envelope whose first line starts
 `#GNRE1:` — so reads declare nothing.
 

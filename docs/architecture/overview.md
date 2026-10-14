@@ -223,7 +223,8 @@ message format and runnable clients.
 ## Communication between processes
 
 The KajennBus lets an application endpoint run in another process. The core
-provides communication; the component that launches the process is separate.
+provides both the communication and the launch of the process
+(`kajenn.spawner.SubprocessSpawner`).
 
 ```mermaid
 flowchart TD
@@ -245,7 +246,9 @@ place a message becomes an ASGI scope; `serve_kbus_call` is the handler of the
 `server` member.
 
 A remote application forwards HTTP calls to its process through this
-KajennBus. Both ends use an HTTP record and a buffered ASGI endpoint. Payload
+KajennBus. The request travels as an HTTP record; the answer travels back as a
+stream, one message per body the application sends. Only a `WSK` request is
+buffered, through a buffered ASGI endpoint. Payload
 handling and transport limits belong in the
 [KajennBus protocol reference](../design/kbus-protocol.md).
 

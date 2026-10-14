@@ -3,21 +3,21 @@
 ## What it does
 
 Wraps request handling in an ordered chain of cross-cutting stages — error
-handling, logging, CORS, sessions and auth. Each stage is a class in the
+handling, logging, CORS and sessions. Each stage is a class in the
 server's registry; you arm it through config.
 
 ## When to use it
 
 Whenever you need behaviour that applies across routes rather than inside a single
 handler: turning exceptions into clean responses, adding CORS headers, logging
-requests, and so on. Use the `middleware` kwarg to configure stages. On `AsgiServer`, errors,
-sessions and authentication are active by default; the last two are armed by
-the capability mixins.
+requests, and so on. Use the `middleware` kwarg to configure stages. On `AsgiServer`, errors
+and sessions are active by default; sessions are armed by `SessionMixin`.
+Authentication is not a stage of the chain.
 
 ## The built-in chain
 
 The registry ships these middleware with a priority. The table shows the
-registry default; `AsgiServer` additionally arms session and auth via its mixins.
+registry default; `AsgiServer` additionally arms session via `SessionMixin`.
 **Lower priority number = more outer** (runs first on the way in, last on the way
 out):
 
@@ -122,8 +122,9 @@ With `logging` armed, requests appear in the server's log output.
 
 ## Gotchas
 
-- The registry enables `errors`; the shipped `AsgiServer` also arms `session`
-  and `auth`. CORS and logging require explicit configuration.
+- The registry enables `errors`; the shipped `AsgiServer` also arms `session`.
+  CORS and logging require explicit configuration. There is no `auth` stage:
+  `middleware={"auth": True}` raises `ValueError`.
 - Hidden paths are NOT a middleware: a first path segment starting with a dot
   answers 404 in the server's own demux, always, and no switch turns it off.
   See [Hidden paths](hidden-paths.md).
@@ -139,5 +140,5 @@ With `logging` armed, requests appear in the server's log output.
   arming a custom stage, register it in `middleware_registry` first.
 - Ordering is by priority, lower = more outer. A custom stage lands according to
   its own priority in the chain.
-- Session and auth are already armed on `AsgiServer`; configure their middleware
-  options when needed, or explicitly disable them.
+- Session is already armed on `AsgiServer`; configure its middleware options
+  when needed, or disable it with `middleware={"session": False}`.

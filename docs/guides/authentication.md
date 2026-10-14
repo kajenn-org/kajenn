@@ -16,8 +16,8 @@ routes with `auth_rule`.
 
 Auth is a mixin capability of `AsgiServer`. The execution point resolves the
 identity of every request: the session's avatar, else the `Authorization`
-header verified through `/_server/auth/authenticate`, so the server declares
-`ServerApplication`. The `auth` keyword configures header credential backends.
+header verified through `/_server/auth/authenticate`, served by the
+`ServerApplication` that every server mounts. The `auth` keyword configures header credential backends.
 Without them, session identity can still be resolved.
 
 ```python
@@ -142,7 +142,7 @@ An authenticated caller is represented by an `Avatar`:
 ```python
 from kajenn import Avatar
 
-avatar = Avatar("alice", tags="admin,ops")   # tags: comma string or list
+avatar = Avatar("alice", tags=["admin", "ops"])   # tags: a list
 ```
 
 The avatar's tags are what `auth_rule` matches against. The same `Avatar` type is
