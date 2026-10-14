@@ -63,13 +63,12 @@ if __name__ == "__main__":
 Save this as `calc.py`, run `python calc.py`, and stop it with Ctrl-C after
 the checks below.
 
-- `channel_channels="mcp"` includes the method in the MCP tool surface.
-- `channel_channels="mcp,rest"` declares both channel names for consumers that
-  filter by channel.
+- `channel_channels="mcp"` includes the method in the MCP tool surface only.
+- `channel_channels="mcp,rest"` also makes it callable over HTTP.
 
-HTTP dispatch does not apply this channel filter. Either declaration leaves
-the route callable directly over HTTP; channel metadata is not an HTTP access
-restriction. Use authorization rules to restrict callers.
+HTTP dispatch filters routes by the channel `rest`. A route declared only for
+`mcp` answers `404` over HTTP: in the example `GET /add` is a 404 and
+`GET /mul?a=2&b=3` answers `{"result": 6}`.
 
 `AsgiServer` automatically arms the `pydantic` and `openapi` plugins used by
 this example. Explicit entries are needed only to configure their options.
@@ -113,8 +112,8 @@ curl -X POST http://127.0.0.1:8000/mcp \
 ## Gotchas
 
 - Only routes carrying `channel_channels` that includes `"mcp"` appear as tools.
-  A plain `@route()` is not offered as an MCP tool. Channel metadata does not
-  prevent HTTP access; authorization rules govern access restrictions.
+  A plain `@route()` is not offered as an MCP tool. A route whose channels do
+  not include `"rest"` is not reachable over HTTP (`404`).
 - `tools/list` lists the tools the caller can call: the channel `mcp` and the
   caller's identity filter the list as they filter `tools/call`. A tool with an
   `auth_rule` appears only to a caller whose tags match it.

@@ -243,9 +243,11 @@ server instance: it starts a fresh process on every restart, and nothing of the
 parent survives into it. So the command passes it
 `kajenn.__main__:factory` and sends the description of the server across the
 process boundary in one environment variable, **`KAJENN_LAUNCHER`** — a JSON
-object carrying one source key (`config` or `application`, always an absolute
-path), the site's name and home when it has them, plus `host`/`port` *only when
-you gave them explicitly*, so an absent key
+object carrying one source key (`config` or `application`; `config` holds the
+absolute path of a `config.py`, or the template name when the source was
+`template=<name>`), the site's name and home when it has them, the session
+snapshot path (`save_session`) and `debug` when they are armed, plus
+`host`/`port` *only when you gave them explicitly*, so an absent key
 still lets the config's own value apply. `factory()` reads it and rebuilds the
 very same server each time.
 

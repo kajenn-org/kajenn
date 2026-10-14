@@ -72,7 +72,6 @@ https://github.com/kajenn-org/kajenn-orchestra.
    :caption: Design notes
 
    design/kbus-protocol
-   design/kbus-benchmark
 
 Indices and tables
 ==================

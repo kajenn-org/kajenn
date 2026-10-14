@@ -29,6 +29,7 @@ spool and a cleanly stopped manager.
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 
 import pytest
@@ -96,7 +97,7 @@ async def run_until_settled(server: AsgiServer, task_ids: list[str], timeout: fl
         if not started:
             started = True
             return {"type": "lifespan.startup"}
-        while not settled() and asyncio.get_running_loop().time() < deadline:
+        while not await asyncio.to_thread(settled) and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(POLL_SECONDS / 2)
         return {"type": "lifespan.shutdown"}
 
@@ -161,6 +162,23 @@ class TestLifespanDrivenExecution:
 
     async def test_loop_not_running_before_startup(self, server: AsgiServer) -> None:
         assert server.tasks.running is False        # armed but idle until lifespan
+
+
+class TestLoopInAnotherThread:
+    """The server is built in one thread and served by an event loop in another."""
+
+    def test_pending_task_runs_on_a_loop_in_another_thread(self, server: AsgiServer) -> None:
+        # wf:contract: a server built in the test's thread, its lifespan run by asyncio.run in a
+        # wf:contract: second thread: a pending task is picked up by the worker loop's polling
+        # wf:contract: and settles terminated with its result.
+        stage(server, "sum_sync", {"a": 2, "b": 3}, "t1")
+        thread = threading.Thread(target=asyncio.run, args=(run_until_settled(server, ["t1"]),))
+        thread.start()
+        thread.join()
+        descriptor = server.tasks.spool.get("t1")
+        assert descriptor is not None
+        assert descriptor["status"] == "terminated"
+        assert server.tasks.spool.read_result("t1") == 5
 
 
 class TestNonLifespanPassThrough:

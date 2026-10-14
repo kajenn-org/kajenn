@@ -135,23 +135,24 @@ class TaskManager:
         """Poll pending forever; a failing poll is logged and never kills the loop."""
         while True:
             try:
-                self._drain_pending()
+                await self._drain_pending()
             except Exception:
                 logging.getLogger(__name__).exception("task worker poll failed")
             await asyncio.sleep(POLL_SECONDS)
 
-    def _drain_pending(self) -> None:
+    async def _drain_pending(self) -> None:
         """Assign every pending task to the worker and launch its execution.
 
         Each task is claimed with an atomic ``assign`` (pending -> active) and its
         ``execute`` runs as its own loop task (fire-and-forget); the sync handler
-        body inside ``execute`` goes to the pool, not this loop.
+        body inside ``execute`` goes to the pool, not this loop. The spool is
+        synchronous: its calls run in a thread (``asyncio.to_thread``).
         """
         loop = self._loop
         assert loop is not None      # set by start() before the loop runs
-        for descriptor in self.spool.list_pending():
+        for descriptor in await asyncio.to_thread(self.spool.list_pending):
             task_id = descriptor["task_id"]
-            self.spool.assign(task_id, self.worker_id)
+            await asyncio.to_thread(self.spool.assign, task_id, self.worker_id)
             loop.create_task(self.executor.execute(task_id, self.worker_id))
 
     # -- the A<->C progress seam (spool = source of truth, hub = live courier) --

@@ -28,11 +28,11 @@ def read(relative: str) -> str:
 def test_the_specification_ratifies_credential_validity_across_processes() -> None:
     # wf:contract: SPECIFICATION.md carries exactly one block titled with "credential validity
     # wf:contract: and revocation across processes", naming valid_until, forget_credentials,
-    # wf:contract: request_timeout and FrameStream.
+    # wf:contract: request_timeout and the `kbus` library as the one transport.
     spec = read("SPECIFICATION.md")
     assert spec.count("credential validity and revocation across processes") == 1
     block = spec[spec.index("credential validity and revocation across processes"):]
-    for word in ("valid_until", "forget_credentials", "request_timeout", "FrameStream"):
+    for word in ("valid_until", "forget_credentials", "request_timeout", "One transport", "`kbus` library"):
         assert word in block
 
 

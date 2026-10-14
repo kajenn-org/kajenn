@@ -30,9 +30,15 @@ One exception here is not an HTTP error at all: ``WebSocketDisconnect`` is how
 the websocket facade reports that the client is gone. A disconnect is not a
 value a read can return — every read would have to be checked — so it arrives
 as an exception, and the read loop that catches it simply ends.
+
+``KBusCallError`` is not an HTTP error either: ``kbus_call`` raises it when the
+called route answers an error, carrying the ``path``, the ``error`` text and
+the ``status``.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 __all__ = [
     "ExternalFailure",
@@ -44,6 +50,7 @@ __all__ = [
     "HTTPUnauthorized",
     "HTTPUnprocessableContent",
     "HTTPUnsupportedMediaType",
+    "KBusCallError",
     "Redirect",
     "WebSocketDisconnect",
 ]
@@ -149,6 +156,22 @@ def failure_text(failure: Exception) -> str:
     if isinstance(failure, ExternalFailure):
         return str(failure)
     return f"{type(failure).__name__}: {failure}"
+
+
+class KBusCallError(Exception):
+    """A kbus CALL that failed.
+
+    Raised when the REPLY carries a status >= 400: ``error`` is what the REPLY
+    carried and ``status`` its status. Also raised with status 503 when a call
+    from a role process to the server fails in transport: ``error`` is then the
+    text of the transport failure.
+    """
+
+    def __init__(self, path: str, error: Any, status: int | None = None) -> None:
+        super().__init__(f"call {path} failed: {error}")
+        self.path = path
+        self.error = error
+        self.status = status
 
 
 class WebSocketDisconnect(Exception):

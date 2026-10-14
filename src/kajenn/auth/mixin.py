@@ -51,8 +51,7 @@ from typing import Any
 
 import kbus
 
-from ..exceptions import HTTPException, HTTPUnauthorized
-from ..kbus import KBusCallError
+from ..exceptions import HTTPException, HTTPUnauthorized, KBusCallError
 from ..middleware.base import headers_dict
 from ..session.avatar import Avatar
 from .api_key_store import ApiKeyStore, FileApiKeyStore

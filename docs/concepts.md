@@ -142,8 +142,9 @@ lifespan, and the request registry.
 `AsgiServer` is the shipped, batteries-included server. It is a **composition of
 capability mixins** stacked over `BaseServer` in a single MRO — KajennBus (`KBusMixin`),
 auth, session, middleware, plugins, storage, and tasks. Each mixin contributes a
-feature configured through constructor keyword arguments. Sessions, auth
-middleware and the task backbone are active on the shipped composition.
+feature configured through constructor keyword arguments. Sessions, the
+identity resolution of the execution point and the task backbone are active on
+the shipped composition.
 This is a configuration sketch: replace the ellipses with real option dictionaries
 and provide your application class before running it.
 

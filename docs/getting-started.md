@@ -202,21 +202,17 @@ routed application can also raise an HTTP exception for a missing route; the
 a layer that wraps request handling, for example to handle errors or attach a session. You will meet the rest of the middleware chain in the
 [middleware guide](guides/middleware.md).
 
-## The `_server` app, when you ask for it
+## The `_server` app
 
 The management surface — login, users, tokens, task management, monitor — is
-`ServerApplication`, and it is **not** mounted for you. The hello-world above
-answers `404` under `/_server/`, because it declared no such application. To
-have it, declare it like any other:
+`ServerApplication`, and it is mounted for you: `AsgiServer` appends it when no
+declared application has the code `_server`. The hello-world above already has
+it. An application declared with the code `_server` (a subclass, or the same
+class with options) takes its place.
 
-```python
-from kajenn.server_app import ServerApplication
-
-server = AsgiServer(applications=[ServerApplication, Hello])
-```
-
-Its endpoints then live under `/_server/…` and never leak into your own app's
-route tree. It serves JSON, not HTML pages. See the
+Its endpoints live under `/_server/…` and never leak into your own app's
+route tree. Its routes answer JSON; `/_server/_meta/docs` is a Swagger HTML
+page over them. See the
 [authentication](guides/authentication.md) and [tasks](guides/tasks.md) guides
 for what lives under it.
 

@@ -23,14 +23,16 @@ handler does to its arguments reaches the caller.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
 from genro_routes import route
 
 import kajenn
-from kajenn import AsgiServer, KBusMixin, RoutedApplication
-from kajenn.kbus import KBusCallError
+from kajenn import AsgiServer, BaseApplication, BaseServer, KBusMixin, RoutedApplication
+from kajenn.exceptions import KBusCallError
+from kajenn.remote_application import RemoteApplication
 from kajenn.session.avatar import Avatar
 
 
@@ -69,6 +71,16 @@ class Billing(RoutedApplication):
 
     def route_cleanup(self) -> None:
         self.cleanups += 1
+
+
+class Failing(RoutedApplication):
+    @route()
+    def broken(self):
+        raise LookupError("gone")
+
+
+class KBusServer(KBusMixin, BaseServer):
+    """The composition under test: communication capability over the base."""
 
 
 @pytest.fixture
@@ -132,3 +144,40 @@ async def test_a_post_runs_the_route_and_returns_nothing(server):
     assert billing(server).notes == ["hi"]
 
 
+async def test_a_call_whose_handler_fails_answers_500():
+    server = AsgiServer(applications=[(Failing, {"code": "failing"})])
+    with pytest.raises(KBusCallError) as failed:
+        await server.kbus_call("/failing/broken")
+    assert (failed.value.status, failed.value.error) == (500, "LookupError: gone")
+
+
+async def test_a_call_to_no_application_is_a_404():
+    with pytest.raises(KBusCallError) as missing:
+        await AsgiServer().kbus_call("/nowhere/x")
+    assert missing.value.status == 404
+
+
+async def test_an_external_application_without_a_configuration_source_does_not_start():
+    server = AsgiServer(applications=[(RemoteApplication, {"code": "billing", "spawner": "subprocess"})])
+    inbox: asyncio.Queue = asyncio.Queue()
+    outbox: asyncio.Queue = asyncio.Queue()
+    await inbox.put({"type": "lifespan.startup"})
+    with pytest.raises(RuntimeError, match="configuration file or template"):
+        await server({"type": "lifespan", "asgi": {"version": "3.0"}}, inbox.get, outbox.put)
+
+
+class TestKBusMixin:
+    async def test_unarmed_composition_passes_lifespan_straight_through(self) -> None:
+        server = KBusServer(applications=[BaseApplication(mount="")])
+        queue = [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}]
+        sent: list[dict[str, object]] = []
+
+        async def receive() -> dict[str, object]:
+            return queue.pop(0)
+
+        async def send(message: dict[str, object]) -> None:
+            sent.append(message)
+
+        await server({"type": "lifespan"}, receive, send)
+        assert {"type": "lifespan.startup.complete"} in sent
+        assert {"type": "lifespan.shutdown.complete"} in sent
