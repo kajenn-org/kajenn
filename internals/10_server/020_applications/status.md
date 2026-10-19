@@ -25,7 +25,8 @@ Claim anchors: [`BaseApplication`](../../../src/kajenn/application.py#L86), [`ap
 
 `Request.init` owns headers, cookies, query parsing and body consumption. It
 drains all body chunks even without a Content-Type. JSON, XML and MessagePack
-are decoded with TYTX; URL-encoded fields use `from_qs`. Multipart text fields
+are decoded with TYTX; URL-encoded bodies are split and
+percent-decoded like the query string (`parse_qs`, UTF-8), values hydrated. Multipart text fields
 are hydrated and files become `UploadedFile` values (`name`, `filename`,
 `content_type`, `data`); repeated field names produce a list. Unknown media and
 absent Content-Type are refused with 415, and a body that is not what its
