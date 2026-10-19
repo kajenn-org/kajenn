@@ -165,7 +165,7 @@ class TestHandlerKwargs:
             headers=[(b"content-type", b"application/x-www-form-urlencoded")],
             body=b"a=1&b=hello",
         )
-        # The urlencoded body is hydrated via TYTX from_qs: it arrives as a
+        # The urlencoded body is split and TYTX-hydrated: it arrives as a
         # typed dict, not raw bytes.
         assert request.data == {"a": 1, "b": "hello"}
         kwargs = request.handler_kwargs()
@@ -263,6 +263,27 @@ class TestBodyDecoding:
             body=b"n=1::L&price=100.50::N&when=2025-01-15::D",
         )
         assert request.data == {"n": 1, "price": Decimal("100.50"), "when": date(2025, 1, 15)}
+
+    async def test_urlencoded_body_is_percent_decoded_as_utf8(self) -> None:
+        request = await make_request(
+            method="POST",
+            headers=[(b"content-type", b"application/x-www-form-urlencoded")],
+            body=b"html=%3Cp%3EForm+body%3C%2Fp%3E&city=Citt%C3%A0+%E2%82%AC&raw=caf\xc3\xa9&empty=",
+        )
+        assert request.data == {
+            "html": "<p>Form body</p>",
+            "city": "Città €",
+            "raw": "café",
+            "empty": "",
+        }
+
+    async def test_urlencoded_repeated_key_becomes_a_list(self) -> None:
+        request = await make_request(
+            method="POST",
+            headers=[(b"content-type", b"application/x-www-form-urlencoded")],
+            body=b"tag=a&tag=b%20c",
+        )
+        assert request.data == {"tag": ["a", "b c"]}
 
     async def test_empty_json_body_is_none_and_adds_no_kwargs(self) -> None:
         request = await make_request(

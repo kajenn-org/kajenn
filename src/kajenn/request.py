@@ -20,11 +20,14 @@ async ``init()``, reads the request once and by itself: headers and cookies
 off the scope, the query string, and the whole body pumped from ``receive``
 until ``more_body`` is false — always, whatever the content-type, so a
 request never leaves unread ASGI messages behind. genro-tytx is used ONLY as
-a serializer: header values, query values and multipart fields are hydrated
-with ``from_tytx``, an urlencoded body with ``from_qs``, a json/xml/msgpack
-body with ``from_tytx(transport=...)``. The transport → media type map lives
-in ``media_types``, the inbound content-type is resolved here in
-``get_transport``; the protocol reading lives here and nowhere else.
+a serializer: header values, query values, urlencoded form fields and
+multipart fields are hydrated with ``from_tytx``, a json/xml/msgpack body
+with ``from_tytx(transport=...)``. Query strings and urlencoded bodies are
+split and percent-decoded (UTF-8, ``+`` as space) by ``urllib.parse`` first:
+TYTX ``from_qs`` reads its own unescaped QS format, not a URL encoding. The
+transport → media type map lives in ``media_types``, the inbound
+content-type is resolved here in ``get_transport``; the protocol reading
+lives here and nowhere else.
 
 The owning application decides whether the body is decoded at all
 (``request(body=...)`` in its own grammar, ``decoded`` by default). Decoded,
@@ -32,7 +35,8 @@ it is decoded by content-type:
 
 - json / xml / msgpack (standard or ``application/vnd.tytx+*`` media type) →
   the hydrated value;
-- ``application/x-www-form-urlencoded`` → a dict via ``from_qs``;
+- ``application/x-www-form-urlencoded`` → a dict split like the query string
+  (UTF-8 percent-decoding, values hydrated, a repeated key gives a list);
 - ``multipart/form-data`` → a dict: text parts hydrated with ``from_tytx``,
   file parts (those carrying a ``filename``) as ``UploadedFile``; a field
   name repeated across parts collects its values in a list;
@@ -83,7 +87,7 @@ from http.cookies import SimpleCookie
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import parse_qs
 
-from genro_tytx import from_qs, from_tytx
+from genro_tytx import from_tytx
 
 from .exceptions import HTTPBadRequest, HTTPException, HTTPUnsupportedMediaType
 from .response import Response
@@ -275,7 +279,7 @@ class Request:
             if transport == "json":
                 return self.decode_json(body.decode("utf-8"))
             if "x-www-form-urlencoded" in media:
-                return from_qs(body.decode("latin-1"))
+                return self.decode_query(body.decode("utf-8"))
             if "multipart/form-data" in media:
                 return self.decode_multipart(body, content_type)
         except HTTPException:
