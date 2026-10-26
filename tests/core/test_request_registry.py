@@ -182,15 +182,28 @@ class TestErrorPath:
 
 
 class TestCleanups:
-    def test_add_cleanup_runs_lifo(self) -> None:
+    async def test_add_cleanup_runs_lifo(self) -> None:
         item = RegisteredRequest(1, "http", "/")
         order: list[str] = []
         item.add_cleanup(lambda: order.append("a"))
         item.add_cleanup(lambda: order.append("b"))
-        item.run_cleanups()
+        await item.run_cleanups()
         assert order == ["b", "a"]  # last registered runs first
 
-    def test_exception_in_one_cleanup_does_not_stop_the_rest(self) -> None:
+    async def test_a_coroutine_cleanup_is_awaited_in_the_lifo_order(self) -> None:
+        item = RegisteredRequest(1, "http", "/")
+        order: list[str] = []
+
+        async def released() -> None:
+            await asyncio.sleep(0)
+            order.append("async")
+
+        item.add_cleanup(lambda: order.append("sync"))
+        item.add_cleanup(released)
+        await item.run_cleanups()
+        assert order == ["async", "sync"]
+
+    async def test_exception_in_one_cleanup_does_not_stop_the_rest(self) -> None:
         item = RegisteredRequest(1, "http", "/")
         order: list[str] = []
 
@@ -200,10 +213,10 @@ class TestCleanups:
         item.add_cleanup(lambda: order.append("first"))
         item.add_cleanup(boom)
         item.add_cleanup(lambda: order.append("last"))
-        item.run_cleanups()
+        await item.run_cleanups()
         assert order == ["last", "first"]  # LIFO; the raising one is isolated
 
-    def test_exception_in_a_cleanup_is_logged(
+    async def test_exception_in_a_cleanup_is_logged(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         item = RegisteredRequest(1, "http", "/")
@@ -213,15 +226,15 @@ class TestCleanups:
 
         item.add_cleanup(boom)
         with caplog.at_level("ERROR", logger="kajenn.request_registry"):
-            item.run_cleanups()
+            await item.run_cleanups()
         assert any(
             "Request cleanup" in record.message and record.exc_info
             for record in caplog.records
         )
 
-    def test_run_cleanups_is_noop_without_any(self) -> None:
+    async def test_run_cleanups_is_noop_without_any(self) -> None:
         item = RegisteredRequest(1, "http", "/")
-        item.run_cleanups()  # no cleanups queued → nothing happens, no error
+        await item.run_cleanups()  # no cleanups queued → nothing happens, no error
 
 
 class OkApp(BaseApplication):

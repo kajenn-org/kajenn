@@ -500,7 +500,7 @@ class TestWhatTheRequestRegistryCounts:
         assert counted == [1]
         assert server.requests.in_flight == 0
 
-    async def test_an_event_is_served_and_counted_nowhere(self) -> None:
+    async def test_an_event_is_a_registered_request_too(self) -> None:
         server = echo_server()
         counted: list[int] = []
 
@@ -511,4 +511,5 @@ class TestWhatTheRequestRegistryCounts:
 
         server = WsServer(applications=[CountingApp(mount="echo")])
         await drive(server, XT_Socket(request_message("/echo/main")))
-        assert counted == [0]
+        assert counted == [1]
+        assert server.requests.in_flight == 0

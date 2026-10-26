@@ -13,17 +13,35 @@ an external service. Save as `database_demo.py` and run it in a writable directo
 
 ```python
 from genro_routes import route
-from kajenn import AsgiServer, RoutedApplication
+from kajenn import AsgiServer, DbHandlerBase, RoutedApplication
 from kajenn.config import AsgiConfigBuilder
 
 
 class ExampleDatabase:
     def __init__(self, label: str):
         self.label = label
-        self.closed = 0
+        self.releases = 0
 
-    def closeConnection(self):
-        self.closed += 1
+    def describe(self) -> dict:
+        return {"label": self.label, "previous_releases": self.releases}
+
+
+class ExampleHandler(DbHandlerBase):
+    terminals = ("describe",)
+
+    def __init__(self, server):
+        super().__init__(server)
+        self.databases = {}
+
+    def add_database(self, name, params):
+        self.databases[name] = ExampleDatabase(**params)
+
+    def take(self, name, call):
+        return self.databases[name]
+
+    def release(self, call):
+        for name in call.databases:
+            self.databases[name].releases += 1
 
 
 class DatabaseApp(RoutedApplication):
@@ -32,13 +50,11 @@ class DatabaseApp(RoutedApplication):
 
     @route()
     def database(self, _request=None) -> dict:
-        db = _request.db
-        return {"label": db.label, "previous_cleanups": db.closed}
+        return _request.db().describe()
 
     @route()
-    def lookup(self, _request=None) -> dict:
-        db = _request.get_db("main")
-        return {"label": db.label, "previous_cleanups": db.closed}
+    async def lookup(self, _request=None) -> dict:
+        return await _request.async_db().describe()
 
 
 class Configuration(AsgiConfigBuilder):
@@ -46,7 +62,7 @@ class Configuration(AsgiConfigBuilder):
 
     def main(self, root):
         cfg = root.configuration()
-        cfg.databases().database(code="main", db_class=ExampleDatabase, label="catalog")
+        cfg.databases(handler_class=ExampleHandler).database(code="main", label="catalog")
         cfg.applications().application(code="catalog", mount="", app_class=DatabaseApp)
 
 
@@ -63,26 +79,29 @@ curl http://127.0.0.1:8000/lookup
 curl http://127.0.0.1:8000/lookup
 ```
 
-The first two calls report cleanup counts 0 and 1. The last two both report 2:
-`request.db` registers cleanup; `request.get_db(name)` is lookup only.
-Stop with Ctrl-C.
+The four calls report 0, 1, 2 and 3 previous releases: every call takes `main`
+once and the handler releases it when the call ends. The sync route uses
+`request.db()`, the async one `request.async_db()`. Stop with Ctrl-C.
 
 ## The contract for a real driver
 
-- The recipe constructs `db_class(**params)` and wraps it with AsgiDbHandlerBase,
-  or your declared `db_handler_class`.
-- `request.db` selects the application's `db_name`, or `default` when omitted.
-  The first successful lookup registers `closeConnection` for request cleanup.
-- `request.get_db(name)` selects explicitly without registering cleanup.
-- An unknown registration returns None. Declaring `code="main"` does not make it
-  the automatic default; use `db_name="main"` as above.
-- The handler proxies public attributes to your database. Its default cleanup
-  calls the database's `closeConnection` method when present.
+- The `databases` section names the `handler_class`, a `DbHandlerBase`
+  subclass; a `database` may override it. One handler instance serves every
+  database of its class and receives each one with `add_database(name, params)`:
+  the handler builds the database from the params.
+- Names follow the owner: `main` is a server database, `catalog:main` the
+  database `main` that the application `catalog` declares in its own
+  `databases` section.
+- `request.db()` resolves `db_name` when set, else the application's own
+  `default`, else the server's `default`; `request.db(name)` picks one by name.
+  An unknown name raises `LookupError`.
+- The core asks `take(name, call)` once per name per call and calls
+  `release(call)` at the end of every call that took, on a pool thread.
+- An `async def` route uses `request.async_db()`: the methods the handler lists
+  in `terminals` become awaitable and run on the pool.
 
-Choose a driver/handler that matches your concurrency and connection ownership.
-The registry holds a shared object; the core adds no transaction management,
-connection pool or per-request database instance. Cleanup is not an automatic
-commit. See the [handler API](../api/config.rst).
+The handler owns connections and transactions: the core adds no connection pool
+and no automatic commit. See the [handler API](../api/config.rst).
 
 ```{admonition} In revisione
 :class: warning
