@@ -217,13 +217,6 @@ class TestSecretsFromTheEnvironment:
         assert entries is not None
         assert entries["basic"]["admin"]["password"] == "attr-s3cret"
 
-class RecordingDb:
-    """A ``db_class`` stand-in: the fold hands it the connection params."""
-
-    def __init__(self, **params: Any) -> None:
-        self.params = params
-
-
 class TestOpenAttributesFromTheEnvironment:
     """A resolver in an OPEN element's ``**kwargs`` resolves through the bulk read."""
 
@@ -237,7 +230,6 @@ class TestOpenAttributesFromTheEnvironment:
                 cfg = root.configuration()
                 cfg.databases().database(
                     code="main",
-                    db_class=RecordingDb,
                     dsn="postgres://localhost/main",
                     password=EnvResolver(DB_PW_ENV_VAR),
                 )

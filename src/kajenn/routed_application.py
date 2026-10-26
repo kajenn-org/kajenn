@@ -17,9 +17,8 @@
 ``RoutedApplication`` composes the app-side contract (``BaseApplication``)
 with the genro-routes ``RoutingClass``: handlers are ``@route``-decorated
 methods on subclasses, and external ``RoutingClass`` instances mount as
-sub-trees via ``add_branches({"name": ..., "instance": child})``. The constructor peels
-``db_name`` (the ``request.db`` seam resolves it against the server's
-database registry) and plugs the ``auth`` plugin on the app router, so
+sub-trees via ``add_branches({"name": ..., "instance": child})``. The constructor
+plugs the ``auth`` plugin on the app router, so
 entries declaring ``auth_rule`` are filtered by the request's authorization
 tags — attached children inherit the plug.
 
@@ -125,10 +124,8 @@ class _ChallengedUnauthorized(HTTPUnauthorized):
 class RoutedApplication(BaseApplication, RoutingClass):
     """Application base serving ``@route`` handlers through the app router.
 
-    Constructor kwargs peeled here: ``db_name`` — the server database code
-    the ``request.db`` seam resolves for this app (``None`` falls back to
-    ``"default"``). The rest flows down the D16 chain (``code``/``mount`` to
-    ``BaseApplication``).
+    Constructor kwargs flow down the D16 chain (``code``/``mount``/``db_name``
+    to ``BaseApplication``).
     """
 
     # genro-routes resolution error codes mapped to core HTTP exceptions (the
@@ -152,14 +149,8 @@ class RoutedApplication(BaseApplication, RoutingClass):
 
     def __init__(self, **kwargs: Any) -> None:
         self._armed: bool = False
-        self._db_name: str | None = kwargs.pop("db_name", None)
         super().__init__(**kwargs)
         self.route.plug("auth")
-
-    @property
-    def db_name(self) -> str | None:
-        """Server database code for the ``request.db`` seam (``None`` → default)."""
-        return self._db_name
 
     def _import_routing_class(self, module_path: str) -> RoutingClass:
         """Import and instantiate a ``RoutingClass`` from a ``"pkg.mod:Class"`` path.
@@ -353,11 +344,15 @@ class RoutedApplication(BaseApplication, RoutingClass):
 
         The sync dispatch runs this on the SAME pool thread the handler just
         ran on, after it returned or raised: the place to release whatever
-        thread-local resources the handler's code opened (a synchronous db
-        connection lives and must die on its own thread). No-op by default,
-        same consumer-seam discipline as ``wsgi_app`` and ``build_registry``.
-        The async path never calls it — an async handler owns its awaits.
+        thread-local resources the handler's code opened. Here it releases the
+        databases the current call took (``server.release_databases``), so a
+        sync handler's databases die on its own thread; an override calls
+        ``super()`` to keep that. The async path never calls it: the release
+        of what an ``async def`` handler took is the call's async cleanup.
         """
+        call = self.server.requests.current
+        if call is not None:
+            self.server.release_databases(call)
 
     def bind_kwargs(self, node: RouterNode, request: Request) -> dict[str, Any]:
         """Reconcile the request kwargs with the handler's declared parameters.

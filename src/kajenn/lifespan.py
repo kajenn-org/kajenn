@@ -19,6 +19,9 @@
 ``on_startup`` on the server's applications in registration order; on
 ``lifespan.shutdown`` it runs ``on_shutdown`` in REVERSE order. Hooks may
 be sync or async, detected with ``inspect.iscoroutinefunction`` at call time.
+The server's database handlers bracket the hooks: each handler's ``open()``
+runs before the first ``on_startup``, its ``close()`` after the last
+``on_shutdown`` — before the server tears its pool down.
 
 A hook that raises is logged and the sequence CONTINUES: one app's error
 never blocks the others, and uvicorn always receives the matching
@@ -46,10 +49,11 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
     from .application import BaseApplication
+    from .db import DbHandlerBase
     from .server import BaseServer
     from .types import Receive, Scope, Send
 
@@ -116,9 +120,27 @@ class Lifespan:
                 return
 
     async def startup(self) -> None:
-        """Run ``on_startup`` in registration order; ``FatalBootError`` stops it."""
-        for app in self._apps():
-            await self._run_hook(app, "on_startup")
+        """Open the database handlers, then run ``on_startup`` in registration order.
+
+        A handler whose ``open`` raises is a ``FatalBootError``, like one raised
+        by a hook: the startup stops there and the handlers already opened are
+        closed before the error reaches ``__call__``.
+        """
+        opened: list[DbHandlerBase] = []
+        try:
+            for handler in self.server.db_handlers.values():
+                try:
+                    await handler.open()
+                except Exception as failure:
+                    raise FatalBootError(
+                        f"{type(handler).__name__}.open failed: {failure}"
+                    ) from failure
+                opened.append(handler)
+            for app in self._apps():
+                await self._run_hook(app, "on_startup")
+        except FatalBootError:
+            await self._close_handlers(opened)
+            raise
 
     async def shutdown(self) -> None:
         """Stop accepting, drain what is in flight, THEN run the hooks in reverse.
@@ -129,7 +151,8 @@ class Lifespan:
         no application saves while new work can still arrive. The drain is bounded:
         past ``SHUTDOWN_DRAIN_TIMEOUT_SECONDS`` the count still in flight goes in
         the log and the sequence proceeds — the hooks are never held behind a
-        request that does not end.
+        request that does not end. After the hooks each database handler is
+        closed; a ``close`` that raises is logged and the next one still runs.
         """
         self.server.start_leaving()
         still_in_flight = await self.server.requests.await_drain(SHUTDOWN_DRAIN_TIMEOUT_SECONDS)
@@ -141,6 +164,15 @@ class Lifespan:
             )
         for app in reversed(self._apps()):
             await self._run_hook(app, "on_shutdown")
+        await self._close_handlers(self.server.db_handlers.values())
+
+    async def _close_handlers(self, handlers: Iterable[DbHandlerBase]) -> None:
+        """Close each handler; a ``close`` that raises is logged and the next one runs."""
+        for handler in handlers:
+            try:
+                await handler.close()
+            except Exception:
+                self._logger.exception("%s.close raised", type(handler).__name__)
 
     def _apps(self) -> list[BaseApplication]:
         """The server's applications, in registration order."""

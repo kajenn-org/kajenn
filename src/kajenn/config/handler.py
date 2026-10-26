@@ -42,8 +42,8 @@ Section → constructor kwarg:
   ``storage_key`` (the section's at-rest key material).
 - ``applications`` → ``applications``/``default`` (each entry an
   ``(app_class, kwargs)`` pair the server instantiates).
-- ``databases`` → one descriptor per entry, registered by the server after the
-  cooperative chain has run.
+- ``databases`` → one descriptor per database, the server's and each
+  application's, registered by the server after the cooperative chain has run.
 - ``plugins`` → ``plugins`` ({code: bool | dict} switches).
 - ``openapi`` → no consumer in the core; read and skipped.
 - ``applications.<code>.orchestration`` → the orchestration subtree an
@@ -314,27 +314,39 @@ class ConfigurationHandler(ConfigHandler):
         return entries, self("applications.default", default=None)
 
     def databases(self) -> list[dict[str, Any]]:
-        """The ``databases`` descriptors as ``{code, db_class, db_handler_class, params}``.
+        """Every declared database as ``{name, owner, handler_class, params}``.
 
-        ``db_handler_class`` is ``None`` when the recipe omits it (the server
-        substitutes its default) and ``params`` are the remaining connection
-        kwargs handed to ``db_class(**params)``.
+        The server's ``databases`` first (``owner`` ``None``, ``name`` the
+        code), then each application's (``owner`` its code, ``name``
+        ``<owner>:<code>``). ``handler_class`` is resolved: the database's own,
+        else its section's default, else — for an application — the server
+        section's default; ``None`` when none is declared. ``params`` are the
+        remaining attributes, handed to the handler's ``add_database``.
         """
-        node = self.node("databases")
-        if node is None:
-            return []
+        server_default = self("databases.handler_class", default=None)
+        sections: list[tuple[str | None, Any, Any]] = [
+            (None, self.node("databases"), server_default)
+        ]
+        applications = self.node("applications")
+        for app in (applications.value or ()) if applications is not None else ():
+            path = f"applications.{app.label}.databases"
+            own_default = self(f"{path}.handler_class", default=None)
+            sections.append((app.label, self.node(path), own_default or server_default))
         descriptors: list[dict[str, Any]] = []
-        for child in node.value:
-            params = self.open_attrs(child)
-            params.pop("code", None)
-            descriptors.append(
-                {
-                    "code": child.label,
-                    "db_class": params.pop("db_class"),
-                    "db_handler_class": params.pop("db_handler_class", None),
-                    "params": params,
-                }
-            )
+        for owner, node, default in sections:
+            if node is None:
+                continue
+            for child in node.value or ():
+                params = self.open_attrs(child)
+                params.pop("code", None)
+                descriptors.append(
+                    {
+                        "name": child.label if owner is None else f"{owner}:{child.label}",
+                        "owner": owner,
+                        "handler_class": params.pop("handler_class", None) or default,
+                        "params": params,
+                    }
+                )
         return descriptors
 
     def orchestration_kwargs(self, code: str) -> dict[str, Any] | None:

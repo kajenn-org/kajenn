@@ -493,8 +493,10 @@ class KBusMixin:
             except Exception as failure:
                 status, body = 500, to_tytx(failure_text(failure), "json").encode()
         finally:
-            item.run_cleanups()
-            self.requests.unregister(item)
+            try:
+                await item.run_cleanups()
+            finally:
+                self.requests.unregister(item)
         return kbus.Message({"status": status, "format": "json"}, body)
 
     async def _serve_http_stream(self, message: kbus.Message, stream: kbus.Stream) -> None:
@@ -540,8 +542,10 @@ class KBusMixin:
                 return
             await self._stream_answer(scope, body, stream)
         finally:
-            item.run_cleanups()
-            self.requests.unregister(item)
+            try:
+                await item.run_cleanups()
+            finally:
+                self.requests.unregister(item)
 
     def _log_failure(self, scope: Scope, failure: Exception) -> None:
         """Log ``failure`` as the server's ``ErrorMiddleware`` logs an unhandled error.

@@ -26,10 +26,9 @@ kwargs. A content-type the core cannot decode is refused with 415 while
 decoding and kept whole for an application whose recipe declares
 ``request(body="raw")`` (issues #87, #91).
 
-The ``db`` preparation layer is exercised end-to-end through the server: a fake
-app touches ``request.db`` and the server drains ``closeConnection`` at end of
-request; ``get_db`` never registers a cleanup; an unregistered code answers
-``None``.
+``request.db()`` and ``request.async_db()`` are exercised end-to-end through
+the server: one take per call, the same object for both, one release at the
+end of the call (the full contract lives in ``test_db.py``).
 """
 
 from __future__ import annotations
@@ -47,6 +46,7 @@ from kajenn import (
     Avatar,
     BaseApplication,
     BaseServer,
+    DbHandlerBase,
     Request,
     Response,
     Session,
@@ -446,34 +446,25 @@ class TestAuthSessionAccessors:
         assert request.server is server
 
 
-class FakeDb:
-    """A stand-in db handler recording how often it is closed."""
+class CountingHandler(DbHandlerBase):
+    """A handler that hands out one fresh object per take and counts the releases."""
 
-    def __init__(self) -> None:
-        self.closed = 0
+    def __init__(self, server: BaseServer) -> None:
+        super().__init__(server)
+        self.released = 0
 
-    def closeConnection(self) -> None:
-        self.closed += 1
+    def add_database(self, name: str, params: dict[str, Any]) -> None:
+        pass
+
+    def take(self, name: str, call: Any) -> dict[str, Any]:
+        return {"name": name, "call": call.request_id}
+
+    def release(self, call: Any) -> None:
+        self.released += 1
 
 
 class DbApp(BaseApplication):
-    """Primary app that touches ``request.db`` (twice) and records the handler."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        self.db_name: str | None = kwargs.pop("db_name", None)
-        self.seen: dict[str, Any] = kwargs.pop("seen")
-        super().__init__(**kwargs)
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        request = Request(scope, receive, application=self)
-        await request.init()
-        self.seen["db"] = request.db
-        self.seen["db_again"] = request.db  # second access is cached
-        await request.response(scope, receive, send)
-
-
-class GetDbApp(BaseApplication):
-    """Primary app that resolves a db via ``get_db`` (no cleanup registration)."""
+    """A bare application whose request takes ``db()`` twice and ``async_db()`` once."""
 
     def __init__(self, **kwargs: Any) -> None:
         self.seen: dict[str, Any] = kwargs.pop("seen")
@@ -482,7 +473,9 @@ class GetDbApp(BaseApplication):
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         request = Request(scope, receive, application=self)
         await request.init()
-        self.seen["db"] = request.get_db("default")
+        self.seen["db"] = request.db()
+        self.seen["db_again"] = request.db()
+        self.seen["async_db"] = request.async_db()
         await request.response(scope, receive, send)
 
 
@@ -502,53 +495,36 @@ async def drive(server: BaseServer, path: str = "/") -> None:
     )
 
 
-class TestDbPreparationLayer:
-    async def test_db_returns_default_handler_and_closes_at_request_end(self) -> None:
+class TestRequestDatabases:
+    async def test_db_is_the_applications_take_once_per_call_released_at_the_end(self) -> None:
         seen: dict[str, Any] = {}
-        fake = FakeDb()
         server = BaseServer(applications=[DbApp(mount="", seen=seen)])
-        server.add_database("default", fake)
+        server.add_database("default", {}, CountingHandler)
 
         await drive(server)
 
-        assert seen["db"] is fake
-        assert seen["db_again"] is fake  # cached, same object
-        assert fake.closed == 1  # cleanup registered once, drained by the server
+        assert seen["db"] is seen["db_again"]
+        assert seen["db"]["name"] == "default"
+        assert seen["async_db"].get("name") == "default"
+        assert server.databases["default"].released == 1
 
-    async def test_db_resolves_named_handler_from_app_db_name(self) -> None:
+    async def test_each_call_takes_anew(self) -> None:
         seen: dict[str, Any] = {}
-        fake = FakeDb()
+        server = BaseServer(applications=[DbApp(mount="", seen=seen)])
+        server.add_database("default", {}, CountingHandler)
+
+        await drive(server)
+        first = seen["db"]
+        await drive(server)
+
+        assert seen["db"] is not first
+        assert server.databases["default"].released == 2
+
+    async def test_db_name_picks_the_database(self) -> None:
+        seen: dict[str, Any] = {}
         server = BaseServer(applications=[DbApp(mount="", db_name="shop", seen=seen)])
-        server.add_database("shop", fake)
+        server.add_database("shop", {}, CountingHandler)
 
         await drive(server)
 
-        assert seen["db"] is fake
-        assert fake.closed == 1
-
-    async def test_db_is_none_when_code_absent(self) -> None:
-        seen: dict[str, Any] = {}
-        server = BaseServer(applications=[DbApp(mount="", seen=seen)])  # no database registered
-
-        await drive(server)
-
-        assert seen["db"] is None
-
-    async def test_get_db_does_not_register_cleanup(self) -> None:
-        seen: dict[str, Any] = {}
-        fake = FakeDb()
-        server = BaseServer(applications=[GetDbApp(mount="", seen=seen)])
-        server.add_database("default", fake)
-
-        await drive(server)
-
-        assert seen["db"] is fake
-        assert fake.closed == 0  # get_db never queues closeConnection
-
-    async def test_get_db_is_none_when_code_absent(self) -> None:
-        seen: dict[str, Any] = {}
-        server = BaseServer(applications=[GetDbApp(mount="", seen=seen)])  # nothing registered
-
-        await drive(server)
-
-        assert seen["db"] is None
+        assert seen["db"]["name"] == "shop"
