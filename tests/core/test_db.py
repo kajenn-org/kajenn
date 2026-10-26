@@ -250,6 +250,30 @@ class TestRegistry:
         server = AsgiServer(config=TwoApps, role="application:shop")
         assert set(server.databases) == {"default", "shop:a"}
 
+    def test_a_handler_that_implements_nothing_says_so(self) -> None:
+        class Bare(DbHandlerBase):
+            pass
+
+        server = BaseServer()
+        with pytest.raises(NotImplementedError, match="Bare does not implement add_database"):
+            server.add_database("default", {}, Bare)
+        handler = Bare(server)
+        call = RegisteredRequest(1, "http", "/")
+        assert handler.capabilities == frozenset()
+        with pytest.raises(NotImplementedError, match="Bare does not implement take"):
+            handler.take("default", call)
+        with pytest.raises(NotImplementedError, match="Bare does not implement release"):
+            handler.release(call)
+        assert repr(handler.async_view(FakeSession("default", 1, {}))) == "AsyncDbView(FakeSession)"
+
+    def test_a_base_server_refuses_a_database_without_a_handler_class(self) -> None:
+        with pytest.raises(ValueError, match="has no handler_class"):
+            BaseServer().add_database("default", {})
+
+    def test_a_take_outside_a_registered_call_is_an_error(self) -> None:
+        with pytest.raises(RuntimeError, match="outside a registered call"):
+            configured().take_database("default")
+
 
 class TestResolution:
     async def test_one_take_per_name_per_call_shared_by_db_and_async_db(self) -> None:
@@ -389,6 +413,30 @@ class TestRelease:
         assert on_pool(release)
         assert server.requests.in_flight == 0
 
+    async def test_a_release_that_raises_is_logged_and_the_next_handler_releases(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        class FailingRelease(RecordingHandler):
+            def release(self, call: RegisteredRequest) -> None:
+                raise ConnectionError("release failed")
+
+        class Recipe(DatabasesRecipe):
+            def main(self, root: Any) -> None:
+                cfg = root.configuration()
+                dbs = cfg.databases(handler_class=FailingRelease)
+                dbs.database(code="default")
+                dbs.database(code="reports")
+                dbs.database(code="audit", handler_class=OtherHandler)
+                apps = cfg.applications()
+                apps.application(code="shop", mount="", app_class=Shop).databases().database(
+                    code="archive"
+                )
+
+        server = AsgiServer(config=Recipe)
+        assert await drive_http(server, "/named") == 200
+        assert server.databases["audit"].of("release")
+        assert "Database release by" in caplog.text
+
 
 class TestLifespan:
     async def test_open_and_close_run_once_around_the_hooks(self) -> None:
@@ -442,6 +490,28 @@ class TestLifespan:
         assert [message["type"] for message in sent] == ["lifespan.startup.failed"]
         assert "database unreachable" in sent[0]["message"]
         assert [event[0] for event in server.databases["default"].events] == ["open", "close"]
+
+    async def test_a_close_that_raises_is_logged_and_the_next_handler_closes(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        class FailingClose(RecordingHandler):
+            async def close(self) -> None:
+                raise ConnectionError("close failed")
+
+        server = BaseServer(applications=[Shop(mount="")])
+        server.add_database("default", {}, FailingClose)
+        server.add_database("audit", {}, OtherHandler)
+        messages = [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}]
+
+        async def receive() -> dict[str, Any]:
+            return messages.pop(0)
+
+        async def send(message: dict[str, Any]) -> None:
+            pass
+
+        await server({"type": "lifespan"}, receive, send)
+        assert server.databases["audit"].of("close")
+        assert "FailingClose.close raised" in caplog.text
 
 
 def test_a_request_bound_to_no_application_has_no_databases() -> None:
