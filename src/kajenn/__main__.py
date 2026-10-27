@@ -25,6 +25,8 @@ Usage::
     kajenn sites                                  # list the configured sites
     kajenn stop demo                              # stop a running site
     kajenn remove demo                            # drop a card
+    kajenn db plan demo default                   # the migration plan of one database
+    kajenn db apply ./config.py chat:archive      # apply it
 
 The ``serve`` source resolves in this order: an ``application=<target>``
 assignment (quickstart — the target class is instantiated with no arguments and
@@ -34,6 +36,14 @@ handed to ``AsgiServer(applications=[...])``), a ``template=<name>`` assignment
 the contrib handler's own: exactly one ``ConfigBuilder`` subclass defined in the
 file — this command ships no loader and lets that error surface), otherwise a
 NAME looked up in the registry.
+
+``db plan|apply SOURCE NAME`` takes the same SOURCE forms as ``serve`` and
+builds the same server WITHOUT starting it: ``NAME`` and its handler's
+capability are checked first, then every database handler is opened, the
+handler of ``NAME`` runs ``migration_plan(NAME)`` or ``migrate(NAME)``, the
+handlers are closed — also when the operation fails — and
+``{"name": NAME, "result": ...}`` is printed as plain JSON. The operator launches it; the server never does. A database whose
+handler does not offer the operation is an error, never an empty result.
 
 Explicit ``--host``/``--port`` are forwarded as ``AsgiServer`` kwargs: the
 server's own "explicit kwarg wins over the configured value" rule does the
@@ -84,7 +94,6 @@ from pathlib import Path
 from types import ModuleType
 from typing import Callable
 
-
 from .asgi_server import AsgiServer
 from .lifespan import QUITTING
 from .reloading import LAUNCHER_ENV, serve_reloading
@@ -97,6 +106,7 @@ __all__ = [
     "SitesRegistry",
     "CliError",
     "Cli",
+    "DatabaseCommand",
     "ServerLauncher",
     "SiteConfigurator",
     "TargetResolver",
@@ -524,6 +534,68 @@ class ServerLauncher:
         return 0
 
 
+class DatabaseCommand:
+    """One ``db plan|apply`` invocation: the configured server, never started.
+
+    The source is resolved by ``ServerLauncher`` exactly as ``serve`` resolves
+    it, so a registered name, a config.py, a template and a quickstart target
+    all name the same databases they serve.
+    """
+
+    OPERATIONS = {"plan": "migration_plan", "apply": "migrate"}
+
+    def __init__(self, options: argparse.Namespace, registry: SitesRegistry) -> None:
+        self.launcher = ServerLauncher(options, registry)
+        self.operation = self.OPERATIONS[options.operation]
+        self.database = options.database
+
+    async def operate(self, server: AsgiServer) -> dict[str, object]:
+        """Check ``database``, open every handler, run the operation, close them all.
+
+        An unknown name or a handler without the operation is a ``CliError``
+        before any handler is opened. A handler failure — opening, or the
+        operation itself — is a ``CliError`` naming the handler; the handlers
+        already opened are closed either way, a ``close`` that raises reported
+        on stderr without stopping the next one.
+        """
+        try:
+            handler = server.database_handler(self.database, self.operation)
+        except (LookupError, ValueError) as error:
+            raise CliError(str(error)) from error
+        opened = []
+        try:
+            for each in server.db_handlers.values():
+                try:
+                    await each.open()
+                except Exception as failure:
+                    raise CliError(f"{type(each).__name__}.open failed: {failure}") from failure
+                opened.append(each)
+            try:
+                result = getattr(handler, self.operation)(self.database)
+            except Exception as failure:
+                raise CliError(
+                    f"{type(handler).__name__}.{self.operation} failed: {failure}"
+                ) from failure
+        finally:
+            for each in opened:
+                try:
+                    await each.close()
+                except Exception as failure:
+                    print(f"{type(each).__name__}.close failed: {failure}", file=sys.stderr)
+        return {"name": self.database, "result": result}
+
+    def run(self) -> int:
+        """Build the server, operate, print ``{"name": ..., "result": ...}`` as JSON.
+
+        Plain indented JSON, for a reader at the terminal and for ``jq``: a
+        value JSON has no type for (date, Decimal, UUID) prints as its string.
+        """
+        server = self.launcher.build_server()
+        result = asyncio.run(self.operate(server))
+        print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
+        return 0
+
+
 RECIPE_HEADER = '''"""Configuration of the {name} site, written by ``kajenn configure``."""
 
 from kajenn.config import {template_class}
@@ -728,6 +800,18 @@ class Cli:
         remove = commands.add_parser("remove", help="drop a registration")
         remove.add_argument("name")
         remove.set_defaults(handler=self.remove)
+
+        db = commands.add_parser("db", help="read or apply the migration of a declared database")
+        db.add_argument("operation", choices=sorted(DatabaseCommand.OPERATIONS))
+        db.add_argument(
+            "source",
+            help="a config.py path, 'template=<name>', 'application=<target>', "
+            "or a registered name",
+        )
+        db.add_argument("database", metavar="NAME", help="the database name (foo, chat:foo)")
+        db.set_defaults(
+            handler=self.db, name=None, home=None, host=None, port=None, reload=False, debug=False
+        )
         return parser
 
     def run(self, argv: list[str] | None = None) -> int:
@@ -740,6 +824,9 @@ class Cli:
 
     def serve(self, options: argparse.Namespace) -> int:
         return ServerLauncher(options, self.registry).run()
+
+    def db(self, options: argparse.Namespace) -> int:
+        return DatabaseCommand(options, self.registry).run()
 
     def configure(self, options: argparse.Namespace) -> int:
         return SiteConfigurator(options, self.registry).run()

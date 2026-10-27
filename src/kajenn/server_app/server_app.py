@@ -88,6 +88,7 @@ from .auth_method import AuthMethod, PasswordMethod
 from .oidc_method import OidcMethod
 from .server_sections import (
     AuthSection,
+    DatabasesSection,
     MonitorSection,
     TasksSection,
     TokensSection,
@@ -179,6 +180,7 @@ class ServerApplication(OpenApiApplication):
         self.attach_section(TokensSection(self), name="tokens")
         self.attach_section(TasksSection(self), name="tasks")
         self.attach_section(MonitorSection(self), name="monitor")
+        self.attach_section(DatabasesSection(self), name="databases")
 
     @BaseApplication.server.setter
     def server(self, value: Any) -> None:

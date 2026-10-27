@@ -128,8 +128,10 @@ def make_server(avatar: Avatar | None, *applications: Any) -> AsgiServer:
     )
 
 
-async def drive(server: AsgiServer, path: str, accept: bytes | None = None) -> list[Message]:
-    """One GET through ``server``, query string split off the path.
+async def drive(
+    server: AsgiServer, path: str, accept: bytes | None = None, method: str = "GET"
+) -> list[Message]:
+    """One request (GET by default) through ``server``, query string split off the path.
 
     The ``http_request`` fixture puts the whole string in ``path``; ``panel``
     is addressed by query, so it needs the ASGI split.
@@ -138,7 +140,7 @@ async def drive(server: AsgiServer, path: str, accept: bytes | None = None) -> l
     headers = [(b"accept", accept)] if accept else []
     scope: Scope = {
         "type": "http",
-        "method": "GET",
+        "method": method,
         "path": path,
         "query_string": query.encode(),
         "headers": headers,
