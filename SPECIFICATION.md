@@ -210,6 +210,8 @@ class ServerConfiguration(AsgiConfigBuilder):
         apps.application(code="batch", app_class="genro_server:BatchApp", workers=1)
 ```
 
+> Note 2026-10-27: the `databases` section names a `handler_class`, a `DbHandlerBase` subclass (src/kajenn/db.py:51), as the default of its `database(code=..., **params)` children; one handler per class receives each database with `add_database(name, params)` (src/kajenn/server.py:291-311). Names follow the owner: `foo` is a server database, `chat:foo` the database `foo` of the application `chat`; a process mounts the server's databases and those of the applications it serves (src/kajenn/asgi_server.py:230-246). A call takes each name once and the handler's `release(call)` runs at the end of the call (src/kajenn/server.py:330-371). Migration runs only from `_server/databases` or `kajenn db plan|apply SOURCE NAME`. Concrete handlers live in the kajenn-db package.
+
 ### Ratified 2026-07-19 (decision session)
 
 **D9 → ratified (choice A).** The minimal package governs URL topology, mounts
