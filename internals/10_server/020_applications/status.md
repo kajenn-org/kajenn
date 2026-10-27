@@ -19,7 +19,7 @@ first router access after attachment. Branches use `add_branches`; the existing
 instance-form consumers do not demonstrate the full declarative `cls`/`params`
 destination described in the decisions.
 
-Claim anchors: [`BaseApplication`](../../../src/kajenn/application.py#L86), [`app_snapshot`](../../../src/kajenn/application.py#L170), [`app_panel`](../../../src/kajenn/application.py#L180), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L111).
+Claim anchors: [`BaseApplication`](../../../src/kajenn/application.py#L150), [`app_snapshot`](../../../src/kajenn/application.py#L303), [`app_panel`](../../../src/kajenn/application.py#L313), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L128).
 
 ## Request parsing and handler arguments
 
@@ -43,7 +43,7 @@ This common opt-in seam was explicitly approved in N37 on 2026-09-06; its
 relationship to the older D31 effects target remains recorded in the
 [decision follow-up](decisions.md).
 
-Claim anchors: [`Request`](../../../src/kajenn/request.py#L107), [`init`](../../../src/kajenn/request.py#L152), [`UploadedFile`](../../../src/kajenn/request.py#L89), [`content_type`](../../../src/kajenn/request.py#L303), [`handler_kwargs`](../../../src/kajenn/request.py#L407), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L272), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L111).
+Claim anchors: [`Request`](../../../src/kajenn/request.py#L120), [`init`](../../../src/kajenn/request.py#L141), [`UploadedFile`](../../../src/kajenn/request.py#L102), [`content_type`](../../../src/kajenn/request.py#L362), [`handler_kwargs`](../../../src/kajenn/request.py#L451), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L385), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L128).
 
 ## Dispatch, authorization and failures
 
@@ -59,9 +59,9 @@ default strict reading, 422 for an application declaring
 propagates to the error middleware as 500. The `Response.set_error` helper's
 standalone exception table must not be substituted for that dispatch contract.
 
-Claim anchors: [`run_sync`](../../../src/kajenn/server.py#L222), [`route_cleanup`](../../../src/kajenn/routed_application.py#L261), [`Response`](../../../src/kajenn/response.py#L57), [`set_error`](../../../src/kajenn/response.py#L242).
+Claim anchors: [`run_sync`](../../../src/kajenn/server.py#L388), [`route_cleanup`](../../../src/kajenn/routed_application.py#L370), [`Response`](../../../src/kajenn/response.py#L60), [`set_error`](../../../src/kajenn/response.py#L250).
 
-Behavior evidence: [`__call__`](../../../src/kajenn/routed_application.py#L173), [`make_callable`](../../../src/kajenn/routed_application.py#L233).
+Behavior evidence: [`__call__`](../../../src/kajenn/routed_application.py#L206), [`make_callable`](../../../src/kajenn/routed_application.py#L342).
 
 ## Buffered responses, streams and database cleanup
 
@@ -72,11 +72,13 @@ without collecting them; `SseStream` provides framing, keepalive and iterator
 cleanup. Streaming is a property of this process: an application served through
 an adapter that buffers a whole response loses it, and the adapter says so.
 
-`Request.db` resolves the configured database handler and registers its
-`closeConnection` cleanup on the current request item. `get_db(name)` only
-looks up the handler. The handler-specific thread cleanup hook is a separate seam.
+`Request.db` and `Request.async_db` delegate to the bound application: the
+database is taken from its handler once per name per call, and the handler's
+`release(call)` runs at the end of the call on a pool thread — after a sync
+route, from `route_cleanup` on the route's own thread. The database contract
+is in [065_db](../065_db/status.md).
 
-Claim anchors: [`Response`](../../../src/kajenn/response.py#L57), [`set_result`](../../../src/kajenn/response.py#L192), [`StreamingResponse`](../../../src/kajenn/streaming.py#L41), [`SseStream`](../../../src/kajenn/sse.py#L50), [`Request`](../../../src/kajenn/request.py#L107), [`db`](../../../src/kajenn/request.py#L374), [`get_db`](../../../src/kajenn/request.py#L400).
+Claim anchors: [`Response`](../../../src/kajenn/response.py#L60), [`set_result`](../../../src/kajenn/response.py#L200), [`StreamingResponse`](../../../src/kajenn/streaming.py#L41), [`SseStream`](../../../src/kajenn/sse.py#L53), [`Request`](../../../src/kajenn/request.py#L120), [`db`](../../../src/kajenn/request.py#L432), [`async_db`](../../../src/kajenn/request.py#L440), [`route_cleanup`](../../../src/kajenn/routed_application.py#L370).
 
 ## WebSocket and package boundaries
 
@@ -90,7 +92,7 @@ brings its own vocabulary arrives from its own distribution and is mounted by
 class reference, so the core ships no list of the applications that exist.
 Dynamic movability/removal/failure declarations remain design distance.
 
-Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#L365), [`_call_application`](../../../src/kajenn/wsx.py#L361), [`OpenApiApplication`](../../../src/kajenn/applications/openapi.py#L66), [`McpApplication`](../../../src/kajenn/applications/mcp.py#L280).
+Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#L594), [`_call_application`](../../../src/kajenn/wsx.py#L361), [`OpenApiApplication`](../../../src/kajenn/applications/openapi.py#L67), [`McpApplication`](../../../src/kajenn/applications/mcp.py#L323).
 
 ## Source and test evidence
 

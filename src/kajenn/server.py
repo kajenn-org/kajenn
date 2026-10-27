@@ -310,6 +310,23 @@ class BaseServer:
         handler.add_database(name, params)
         self.databases[name] = handler
 
+    def database_handler(self, name: str, capability: str) -> Any:
+        """The handler of database ``name``, refused unless it offers ``capability``.
+
+        Typed ``Any``: the optional operations (``migration_plan``, ``migrate``)
+        are not on ``DbHandlerBase``; ``capabilities`` says which one is there.
+        An unknown name raises ``LookupError``; a handler without the
+        capability raises ``ValueError``.
+        """
+        handler = self.databases.get(name)
+        if handler is None:
+            raise LookupError(f"no database registered as {name!r}")
+        if capability not in handler.capabilities:
+            raise ValueError(
+                f"database {name!r}: {type(handler).__name__} does not offer {capability}"
+            )
+        return handler
+
     def take_database(self, name: str) -> Any:
         """The object database ``name`` gives the current call, taken once per call.
 

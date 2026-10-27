@@ -569,3 +569,172 @@ class TestDebugAndReloadTrigger:
         from kajenn import BaseServer
         from kajenn.application import BaseApplication
         assert BaseServer(applications=[BaseApplication(mount="")]).shutdown_mode == STOPPING
+
+
+DB_RECIPE = '''import datetime
+import decimal
+
+from kajenn import DbHandlerBase
+from kajenn.config import AsgiConfigBuilder
+
+
+class LoggingHandler(DbHandlerBase):
+    """Offers both migration operations; writes every event to a log file."""
+
+    def __init__(self, server):
+        super().__init__(server)
+        self.log = None
+
+    @property
+    def capabilities(self):
+        return frozenset({{"migration_plan", "migrate"}})
+
+    def add_database(self, name, params):
+        self.log = params["log"]
+
+    def record(self, line):
+        with open(self.log, "a") as log:
+            log.write(line + "\\n")
+
+    async def open(self):
+        self.record("open")
+
+    async def close(self):
+        self.record("close")
+
+    def migration_plan(self, name):
+        self.record(f"migration_plan {{name}}")
+        if name == "dated":
+            return {{"at": datetime.date(2026, 10, 27), "size": decimal.Decimal("1.5")}}
+        return {{"sql": [f"CREATE TABLE {{name}}"], "empty": False}}
+
+    def migrate(self, name):
+        self.record(f"migrate {{name}}")
+        if name == "broken":
+            raise RuntimeError("connection refused")
+        return {{"applied": name}}
+
+
+class PlainHandler(DbHandlerBase):
+    """Offers no optional operation."""
+
+    def add_database(self, name, params):
+        pass
+
+
+class FailingCloseHandler(DbHandlerBase):
+    """Opens, then raises on close."""
+
+    def add_database(self, name, params):
+        self.log = params["log"]
+
+    async def close(self):
+        raise RuntimeError("socket gone")
+
+
+class ServerConfiguration(AsgiConfigBuilder):
+    def main(self, root):
+        cfg = root.configuration()
+        dbs = cfg.databases(handler_class=LoggingHandler)
+        dbs.database(code="default", log={log!r})
+        dbs.database(code="broken", log={log!r})
+        dbs.database(code="audit", handler_class=PlainHandler)
+        dbs.database(code="dated", log={log!r})
+'''
+
+FAILING_CLOSE_LINE = '''        dbs.database(code="flaky", handler_class=FailingCloseHandler, log={log!r})
+'''
+
+
+class TestDbCommand:
+    """``kajenn db plan|apply SOURCE NAME`` on a config.py: the server is built, never started."""
+
+    def write_recipe(self, tmp_path: Path) -> tuple[Path, Path]:
+        log = tmp_path / "events.log"
+        module = tmp_path / "config.py"
+        module.write_text(DB_RECIPE.format(log=str(log)))
+        return module, log
+
+    def events(self, log: Path) -> list[str]:
+        return log.read_text().splitlines()
+
+    def test_plan_prints_the_handler_result_between_open_and_close(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        module, log = self.write_recipe(tmp_path)
+        cli = Cli(registry=SitesRegistry(base_dir=tmp_path))
+        assert cli.run(["db", "plan", str(module), "default"]) == 0
+        assert json.loads(capsys.readouterr().out) == {
+            "name": "default",
+            "result": {"sql": ["CREATE TABLE default"], "empty": False},
+        }
+        assert self.events(log) == ["open", "migration_plan default", "close"]
+
+    def test_apply_prints_the_handler_result_between_open_and_close(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        module, log = self.write_recipe(tmp_path)
+        cli = Cli(registry=SitesRegistry(base_dir=tmp_path))
+        assert cli.run(["db", "apply", str(module), "default"]) == 0
+        assert json.loads(capsys.readouterr().out) == {
+            "name": "default",
+            "result": {"applied": "default"},
+        }
+        assert self.events(log) == ["open", "migrate default", "close"]
+
+    def test_a_registered_site_name_is_a_source(self, tmp_path: Path, capsys) -> None:
+        module, log = self.write_recipe(tmp_path)
+        cli = Cli(registry=SitesRegistry(base_dir=tmp_path))
+        cli.registry.save("demo", {"source": str(module)})
+        assert cli.run(["db", "plan", "demo", "default"]) == 0
+        assert json.loads(capsys.readouterr().out)["result"]["sql"] == ["CREATE TABLE default"]
+
+    def test_an_incapable_database_exits_1_and_opens_nothing(self, tmp_path: Path, capsys) -> None:
+        module, log = self.write_recipe(tmp_path)
+        cli = Cli(registry=SitesRegistry(base_dir=tmp_path))
+        assert cli.run(["db", "apply", str(module), "audit"]) == 1
+        assert "PlainHandler does not offer migrate" in capsys.readouterr().err
+        assert not log.exists()
+
+    def test_an_unknown_database_exits_1_and_opens_nothing(self, tmp_path: Path, capsys) -> None:
+        module, log = self.write_recipe(tmp_path)
+        cli = Cli(registry=SitesRegistry(base_dir=tmp_path))
+        assert cli.run(["db", "plan", str(module), "ghost"]) == 1
+        assert "no database registered as 'ghost'" in capsys.readouterr().err
+        assert not log.exists()
+
+    def test_a_failing_operation_exits_1_and_still_closes(self, tmp_path: Path, capsys) -> None:
+        module, log = self.write_recipe(tmp_path)
+        cli = Cli(registry=SitesRegistry(base_dir=tmp_path))
+        assert cli.run(["db", "apply", str(module), "broken"]) == 1
+        assert "LoggingHandler.migrate failed: connection refused" in capsys.readouterr().err
+        assert self.events(log) == ["open", "migrate broken", "close"]
+
+    def test_dates_and_decimals_print_as_strings(self, tmp_path: Path, capsys) -> None:
+        module, log = self.write_recipe(tmp_path)
+        cli = Cli(registry=SitesRegistry(base_dir=tmp_path))
+        assert cli.run(["db", "plan", str(module), "dated"]) == 0
+        assert json.loads(capsys.readouterr().out) == {
+            "name": "dated",
+            "result": {"at": "2026-10-27", "size": "1.5"},
+        }
+
+    def test_a_failing_close_is_reported_and_the_next_handler_still_closes(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        log = tmp_path / "events.log"
+        module = tmp_path / "config.py"
+        recipe = DB_RECIPE.format(log=str(log))
+        # The failing handler is declared first, so it is opened and closed first.
+        recipe = recipe.replace(
+            "        dbs.database(code=\"default\"",
+            FAILING_CLOSE_LINE.format(log=str(log)) + "        dbs.database(code=\"default\"",
+            1,
+        )
+        module.write_text(recipe)
+        cli = Cli(registry=SitesRegistry(base_dir=tmp_path))
+        assert cli.run(["db", "apply", str(module), "broken"]) == 1
+        err = capsys.readouterr().err
+        assert "FailingCloseHandler.close failed: socket gone" in err
+        assert "LoggingHandler.migrate failed: connection refused" in err
+        assert self.events(log) == ["open", "migrate broken", "close"]

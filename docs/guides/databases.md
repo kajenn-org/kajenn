@@ -2,8 +2,11 @@
 
 Prerequisites: [configuration](../configuration.md) and
 [request injection](requests.md#access-the-request-and-session).
-kajenn registers a database object and wraps it in a handler. The database driver
-and its query API belong to your application, not to kajenn.
+kajenn mounts databases through handlers. A handler is a `DbHandlerBase`
+subclass that builds each database from its configuration and gives every call
+the object it works on. The core never imports a database driver: the
+handlers for asqueel, SQLAlchemy and Django live in the
+[kajenn-db](https://kajenn-db.readthedocs.io) package.
 
 ## Observe selection and cleanup
 
@@ -85,28 +88,95 @@ once and the handler releases it when the call ends. The sync route uses
 
 ## The contract for a real driver
 
-- The `databases` section names the `handler_class`, a `DbHandlerBase`
-  subclass; a `database` may override it. One handler instance serves every
-  database of its class and receives each one with `add_database(name, params)`:
-  the handler builds the database from the params.
+- The `databases` section names the default `handler_class`, a `DbHandlerBase`
+  subclass; a `database` may override it. Every other keyword of `database` is
+  a param: the core hands them to the handler, it does not read them.
+- One handler instance serves every database of its class. It is built as
+  `handler_class(server)` and receives each database with
+  `add_database(name, params)`: the handler builds the database from the
+  params.
 - Names follow the owner: `main` is a server database, `catalog:main` the
   database `main` that the application `catalog` declares in its own
-  `databases` section.
+  `databases` section. An application section without `handler_class` takes
+  the server section's.
 - `request.db()` resolves `db_name` when set, else the application's own
   `default`, else the server's `default`; `request.db(name)` picks one by name.
   An unknown name raises `LookupError`.
-- The core asks `take(name, call)` once per name per call and calls
-  `release(call)` at the end of every call that took, on a pool thread.
-- An `async def` route uses `request.async_db()`: the methods the handler lists
-  in `terminals` become awaitable and run on the pool.
+- The core asks `take(name, call)` once per name per call and keeps the answer
+  on `call.databases`. It calls `release(call)` at the end of every call that
+  took, on a pool thread: after a sync route, on the thread the route ran on.
+- An `async def` route uses `request.async_db()`: the object `take` returned,
+  passed through the handler's `async_view`. By default the methods the
+  handler lists in `terminals` become awaitable and run on the pool.
+- `open()` runs at lifespan startup, before the applications' `on_startup`;
+  `close()` runs at shutdown, after their `on_shutdown`. A failing `open` stops
+  the boot.
 
 The handler owns connections and transactions: the core adds no connection pool
 and no automatic commit. See the [handler API](../api/config.rst).
 
-```{admonition} In revisione
-:class: warning
+## Use a kajenn-db handler
 
-The selection and cleanup contract is tested with the probe above. A production
-SQL-driver example, including transactions, thread affinity and connection-pool
-behaviour, remains to be verified with the chosen integration.
+Install the package with the extra of your backend, for example
+`pip install "kajenn-db[asqueel]"`, and name its handler in the recipe:
+
+```python
+from kajenn_db.asqueel import AsqueelDbHandler
+
+cfg.databases(handler_class=AsqueelDbHandler).database(
+    code="main", source=EnvResolver("SHOP_DB_SOURCE"),
+)
 ```
+
+The params (`source` here) are the handler's own. What each handler accepts,
+how its async view works and which methods it refuses on an `async def` route
+are documented with the package: see
+[kajenn-db](https://kajenn-db.readthedocs.io).
+
+## Write a handler
+
+A handler for another backend subclasses `DbHandlerBase`:
+
+- `add_database(name, params)` — sync, no I/O: build the database from the
+  params and keep it by name.
+- `take(name, call)` — sync, no I/O: the object the route works on during
+  `call`.
+- `release(call)` — sync, may do I/O: close what `call` took from this handler.
+  `call.databases` maps each name taken to the object `take` returned; it can
+  also hold names of other handlers.
+- `open()` / `close()` — async, optional: start and stop the backend with the
+  lifespan.
+- `terminals` — the method names `async_view` makes awaitable; a natively async
+  backend overrides `async_view` and returns its own object.
+- `capabilities` — the optional operations the handler offers. A handler that
+  supports migration returns `{"migration_plan", "migrate"}` and implements
+  `migration_plan(name)` and `migrate(name)`. Both are sync and open a
+  connection of their own.
+
+## Migrate a database
+
+The server never migrates a database on its own. An operator launches it, from
+the `_server` application or from the command line.
+
+The `_server/databases` routes require the `SERVER_ADMIN` rule:
+
+| Route | Method | Answer |
+|---|---|---|
+| `/_server/databases/list` | GET | every database: `name`, `owner`, `handler_class`, `capabilities` |
+| `/_server/databases/plan?name=NAME` | GET | `{"name": NAME, "result": ...}`: the handler's `migration_plan(NAME)`; changes nothing |
+| `/_server/databases/apply?name=NAME` | POST | `{"name": NAME, "result": ...}`: the handler's `migrate(NAME)` |
+
+An unknown name answers 404. A database whose handler does not offer the
+operation answers 422.
+
+The command line does the same on a server it builds and never starts:
+
+```bash
+kajenn db plan ./config.py main
+kajenn db apply ./config.py catalog:main
+```
+
+`SOURCE` takes the same forms as `kajenn serve`. The command checks the name
+and the capability, opens every handler, runs the operation, closes the
+handlers and prints `{"name": NAME, "result": ...}` as plain JSON. An unknown
+name or a missing capability is an error, never an empty result.
