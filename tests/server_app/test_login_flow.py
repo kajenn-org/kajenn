@@ -322,6 +322,21 @@ class TestLoginHappyPath:
         assert promoted is not None and promoted.avatar() is not None
 
 
+class TestLoginMethod:
+    async def test_get_with_credentials_is_405_and_attaches_no_avatar(self) -> None:
+        server = make_server()
+        anonymous = server.session_store.create()
+        _, sent = await drive(
+            server,
+            "/_server/login?identity=alice&password=wonder",
+            "GET",
+            cookie=f"session_id={anonymous.id}",
+        )
+        assert response_status(sent) == 405
+        assert response_headers(sent)[b"allow"] == b"POST"
+        assert server.session_store.get(anonymous.id).avatar() is None
+
+
 class TestLoginFailures:
     async def test_invalid_credentials_answer_the_error_and_no_cookie(self) -> None:
         server = make_server()
