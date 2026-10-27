@@ -40,7 +40,10 @@ through ``server.run_sync`` — the pool protocol), then answer via
 core exceptions (``ROUTER_ERRORS``: unknown or unavailable path →
 ``HTTPNotFound``; a ruled entry denied with no identity → ``HTTPUnauthorized``,
 with an identity whose tags do not match → ``HTTPForbidden``) that propagate to
-the server's ``ErrorMiddleware``.
+the server's ``ErrorMiddleware``. An HTTP request on a method other than the
+one the entry declares (``openapi_method``) answers 405 with an ``Allow``
+header naming the declared method, and the handler never runs; an entry
+declaring no method answers every method.
 A call the handler cannot take becomes an HTTP answer — never a 500 — on the
 two exception codes genro-routes distinguishes: ``signature_error`` (the bind
 against the handler signature fails: unknown keyword, missing required
@@ -83,6 +86,7 @@ from .exceptions import (
     HTTPNotFound,
     HTTPUnauthorized,
 )
+from .plugins.openapi.plugin import METHOD_NOT_ALLOWED
 from .request import Request
 from .streaming import StreamingResponse
 from .well_known import WELL_KNOWN_ROOT
@@ -234,7 +238,9 @@ class RoutedApplication(BaseApplication, RoutingClass):
         (``authenticate_scope``, the step ``discover`` shares): an invalid
         credential raises ``HTTPUnauthorized`` (401).
 
-        Raises the mapped ``ROUTER_ERRORS`` exception when resolution fails. A
+        Raises the mapped ``ROUTER_ERRORS`` exception when resolution fails,
+        and a 405 ``HTTPException`` with ``Allow`` when the ``openapi`` plugin
+        denies the request method (``method_filters``). A
         call that does not fit the handler signature surfaces as
         ``HTTPBadRequest`` (400); values the handler's pydantic validation
         rejects surface on this application's ``validation_error_status`` (400
@@ -247,7 +253,15 @@ class RoutedApplication(BaseApplication, RoutingClass):
             "signature_error": _HandlerSignatureInvalid,
             "validation_error": _HandlerArgumentsInvalid,
         }
-        node = self.route.node(request.path, errors=errors, **self.auth_filters(request.scope))
+        node = self.route.node(
+            request.path,
+            errors=errors,
+            **self.auth_filters(request.scope),
+            **self.method_filters(request.scope),
+        )
+        if node.error and node.error.startswith(METHOD_NOT_ALLOWED):
+            allow = node.error.removeprefix(METHOD_NOT_ALLOWED)
+            raise HTTPException(405, "Method Not Allowed", headers=[(b"allow", allow.encode())])
         request.node = node
         call = self.make_callable(node, request)
         try:
@@ -310,6 +324,20 @@ class RoutedApplication(BaseApplication, RoutingClass):
         if avatar is not None:
             filters["auth_tags"] = ",".join(avatar.tags)
         return filters
+
+    def method_filters(self, scope: Scope) -> dict[str, str]:
+        """The method filter for node resolution, on HTTP requests only.
+
+        A request on ``http_channel`` that did not come through the KajennBus
+        passes its method as ``openapi_method``: the ``openapi`` plugin denies
+        an entry declaring another one, and ``execute`` answers 405. MCP, WSX
+        and the KajennBus carry a method of their own transport and pass
+        nothing. ``discover`` does not use this filter: the listing shows the
+        routes of every method.
+        """
+        if scope.get("kajenn.kbus") or scope.get("kajenn.channel", self.http_channel) != self.http_channel:
+            return {}
+        return {"openapi_method": scope["method"]}
 
     def make_callable(self, node: RouterNode, request: Request) -> Callable[[], Any]:
         """Package the node invocation as the zero-arg call the dispatcher runs.

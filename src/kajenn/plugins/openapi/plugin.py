@@ -43,7 +43,11 @@ from typing import Any
 
 from genro_routes.plugins._base_plugin import BasePlugin, MethodEntry
 
-__all__ = ["OpenAPIPlugin"]
+__all__ = ["METHOD_NOT_ALLOWED", "OpenAPIPlugin"]
+
+#: Prefix of the deny code for a request on a method the entry does not
+#: declare; the declared method, upper case, follows it.
+METHOD_NOT_ALLOWED = "method_not_allowed:"
 
 
 class OpenAPIPlugin(BasePlugin):
@@ -91,3 +95,18 @@ class OpenAPIPlugin(BasePlugin):
             metadata["security"] = cfg["security"]
 
         return {"openapi": metadata} if metadata else {}
+
+    def deny_reason(self, entry: MethodEntry, **filters: Any) -> str:
+        """Deny a request whose HTTP method is not the one the entry declares.
+
+        ``filters["method"]`` is the request's method: the HTTP face passes it
+        as the ``openapi_method`` resolution filter. An entry declaring a
+        ``method`` is denied on any other one, with ``METHOD_NOT_ALLOWED``
+        followed by the declared method upper case. No filter or no
+        declaration: allowed.
+        """
+        requested = filters.get("method")
+        declared = self.configuration(entry.name).get("method")
+        if not requested or not declared or requested.lower() == declared.lower():
+            return ""
+        return METHOD_NOT_ALLOWED + declared.upper()
