@@ -236,7 +236,7 @@ class TestRegistry:
         server.add_database("late", {"dsn": "late"})
         assert server.databases["late"] is server.databases["default"]
 
-    def test_a_role_process_mounts_the_server_databases_and_its_application_ones(self) -> None:
+    def test_an_application_in_its_dedicated_process_mounts_the_server_databases_and_its_own(self) -> None:
         class TwoApps(AsgiConfigBuilder):
             default_config = False
 

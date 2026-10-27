@@ -64,12 +64,13 @@ The management application ``_server`` (``ServerApplication``) exists in every
 server: when no application of code ``_server`` reached the merged kwargs,
 ``__init__`` appends one with its defaults, on the kwargs road and on the
 configuration road alike. The configuration only customises it
-(``application(code="_server", ...)``: login policy, OIDC, a subclass). The
-process of a ``role`` hosts its application alone and mounts none: its
+(``application(code="_server", ...)``: login policy, OIDC, a subclass). An
+application mounted with ``spawner="subprocess"`` runs in its own dedicated
+process, which hosts that application alone and mounts no ``_server``: its
 ``/_server/...`` calls go to the parent. The configured databases are
 registered at the end of ``__init__``, over the live server: the server's own
-and those of the applications this process serves — in the process of a
-``role``, its application's alone.
+and those of the applications this process serves — in an application's
+dedicated process, its application's alone.
 """
 
 from __future__ import annotations
@@ -232,8 +233,9 @@ class AsgiServer(
 
         Each descriptor goes through ``add_database`` with its resolved handler
         class, under its owner rule name. A database owned by an application
-        this process does not serve is skipped: the process of a ``role``
-        mounts the server's databases and its application's only. It runs
+        this process does not serve is skipped: the dedicated process of an
+        application mounted with ``spawner="subprocess"`` mounts the server's
+        databases and its application's only. It runs
         after the cooperative chain because ``add_database`` needs the server,
         not its kwargs.
         """

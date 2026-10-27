@@ -101,7 +101,7 @@ class KBusMixin:
 
     @property
     def kbus_member(self) -> kbus.Member | None:
-        """This process's member: ``server`` on the server, ``<code>`` in a role process."""
+        """This process's member: ``server`` on the server, ``<code>`` in an application's dedicated process."""
         return self._kbus_member
 
     @property
@@ -433,7 +433,7 @@ class KBusMixin:
             await self.serve_kbus_message(message)
 
     def _goes_to_parent(self, path: str) -> bool:
-        """In a role process, a path outside the hosted application goes to the server."""
+        """In an application's dedicated process, a path outside it goes to the server."""
         if self.kbus_role is None:
             return False
         segment = path.lstrip("/").partition("/")[0]

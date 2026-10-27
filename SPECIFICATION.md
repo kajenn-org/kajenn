@@ -1033,7 +1033,8 @@ inside the core; the former top-level package has no alias.
 
 **D-SA-10 superseded.** The management application is no longer "never
 registered behind the caller": `AsgiServer` mounts `ServerApplication()` itself
-when no application has code `_server`. A role process mounts none, so its
+when no application has code `_server`. The dedicated process of an
+application mounted with `spawner="subprocess"` mounts none, so its
 `/_server/...` calls go to the parent.
 
 **RemoteApplication is a transparent wire.** An application receives a request
