@@ -106,7 +106,7 @@ class OpenAPIPlugin(BasePlugin):
         declaration: allowed.
         """
         requested = filters.get("method")
-        declared = self.configuration(entry.name).get("method")
+        declared: str | None = self.configuration(entry.name).get("method")
         if not requested or not declared or requested.lower() == declared.lower():
             return ""
         return METHOD_NOT_ALLOWED + declared.upper()
