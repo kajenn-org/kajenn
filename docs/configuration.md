@@ -90,22 +90,23 @@ handler; it is not a separate configuration mechanism.
 ```{admonition} In revisione
 :class: warning
 
-This is an integration illustration, not a standalone starter. ShopDatabase
-belongs to your project; its real driver and connection lifecycle must be
-verified there. See the database guide for an executable contract example.
+This is an integration illustration, not a standalone starter. The database
+handler comes from the kajenn-db package and its backend must be installed and
+reachable. See the database guide for an executable contract example.
 ```
 
 This example combines a listener, sessions, tasks, middleware, two storage
 mounts, a database and an application with its own catalog grammar.
 
-`ShopDatabase` is a **project-provided database class**, imported from your own
-package; it is not included in kajenn. The example assumes that its constructor
-accepts `dsn` and `password`. Use the class and parameters required by your actual
-database integration. The core registers and wraps the instance; it does not
-provide a database driver or create tables.
+`AsqueelDbHandler` is a **database handler from the
+[kajenn-db](https://kajenn-db.readthedocs.io) package**
+(`pip install "kajenn-db[asqueel]"`); it is not included in kajenn. Its
+database takes a `source`, which the handler hands to asqueel. Use the handler
+and params of your actual backend. The core gives the handler the params; it
+does not provide a database driver or create tables.
 
 ```python
-from myshop.database import ShopDatabase
+from kajenn_db.asqueel import AsqueelDbHandler
 
 from genro_bag.resolvers import EnvResolver
 from genro_builders.builder import element
@@ -124,7 +125,7 @@ class ShopGrammar(ApplicationGrammar):
 
 class Shop(RoutedApplication):
     grammar = ShopGrammar
-    db_name = "main"  # selects this registration when a handler reads request.db
+    db_name = "main"  # the database request.db() takes when no name is given
 
     @route()
     def index(self) -> dict:
@@ -152,11 +153,9 @@ class ServerConfiguration(AsgiConfigBuilder):
         storage.local(name="media", base_path=EnvResolver("SHOP_MEDIA"))
         storage.local(name="exports", base_path=EnvResolver("SHOP_EXPORTS"))
 
-        cfg.databases().database(
+        cfg.databases(handler_class=AsqueelDbHandler).database(
             code="main",
-            db_class=ShopDatabase,
-            dsn=EnvResolver("SHOP_DB_DSN"),
-            password=EnvResolver("SHOP_DB_PASSWORD"),
+            source=EnvResolver("SHOP_DB_SOURCE"),
         )
 
         shop = cfg.applications().application(
@@ -169,11 +168,10 @@ class ServerConfiguration(AsgiConfigBuilder):
 server = AsgiServer(config=ServerConfiguration)
 ```
 
-Before constructing the server, install your project's database integration,
+Before constructing the server, install kajenn-db with the asqueel extra,
 create the two local storage directories and set `SHOP_MEDIA` and `SHOP_EXPORTS`
-to their absolute paths. Export `SHOP_PORT` (for example `8000`), `SHOP_DB_DSN`
-and `SHOP_DB_PASSWORD` with values for your deployment. Keep credentials outside
-the recipe. The storage mounts here are ordinary local mounts, without encryption.
+to their absolute paths. Export `SHOP_PORT` (for example `8000`) and `SHOP_DB_SOURCE`
+with values for your deployment. Keep credentials outside the recipe. The storage mounts here are ordinary local mounts, without encryption.
 
 The omitted `page_size` is supplied by `ShopGrammar`: reading
 `server.applications["shop"].config("catalog.page_size")` returns `20`.
@@ -193,10 +191,10 @@ Three distinct mechanisms are visible in the example:
   grammar for its children, including `local`. Likewise, `app_class=Shop` mounts
   `ShopGrammar`, making `catalog` a valid child of this application. Another
   application can define a different vocabulary without changing the core.
-- **Constructor parameters:** `database(db_class=ShopDatabase, ...)` passes its
-  additional parameters to the database class. This element does **not** mount
-  a database grammar automatically; the database integration owns validation of
-  those parameters.
+- **Handler parameters:** `database(code="main", source=...)` hands every
+  keyword except `code` and `handler_class` to the handler's
+  `add_database(name, params)`. This element does **not** mount a database
+  grammar; the handler owns validation of those parameters.
 
 A configurable internal object can therefore have a companion grammar, but
 simply adding a `grammar` attribute to an arbitrary object does not register it.

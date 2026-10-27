@@ -305,8 +305,11 @@ One line each; the deep dives live in their own guides.
   `app_class` — and never declares it: a recipe naming no `_server` still has
   one. Without `app_class` it means `ServerApplication`; a class that does not
   subclass it is a `ValueError` at boot.
-- **`databases`** — one descriptor per database: `db_class` and its connection
-  kwargs; the core never imports a driver.
+- **`databases`** — the default `handler_class` (a `DbHandlerBase` subclass)
+  and one `database(code=...)` per database, which may name its own
+  `handler_class`; every other keyword is a param handed to the handler's
+  `add_database`. An application declares its own `databases` the same way.
+  The core never imports a driver (see [Databases](databases.md)).
 - **`plugins`** — the router plugins armed on every routed app.
 - **`openapi`** — accepted by the grammar but not consumed by the core. Set
   schema title, version and description with the `OpenApiApplication`
