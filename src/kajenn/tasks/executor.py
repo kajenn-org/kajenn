@@ -23,9 +23,12 @@ HTTP; it only resolves and runs handlers. (Distributed execution — a worker
 process that rebuilds the server from a config path — belongs to the
 orchestration package, D22, and is out of scope here.)
 
-Running a handler needs NO request context: a ``@route`` handler is a bound
-method, so ``self.server`` / ``self.db`` are already reachable from the app
-instance. The executor resolves the callable with ``app.route.node(node_path)``
+Running a handler needs NO ``Request``: a ``@route`` handler is a bound
+method, so ``self.server`` / ``self.db()`` are already reachable from the app
+instance. The executor registers the task as a call in the server's request
+registry (scope type ``task``) for the span of its run, so ``self.db()`` takes
+once per name and what it took is released at the end — and the shutdown drain
+waits for it like any other call. The executor resolves the callable with ``app.route.node(node_path)``
 (a ``RouterNode``, callable, no HTTP) and invokes it with the task's params —
 the same async/sync split the dispatcher uses: an async handler stays on the
 loop, a sync handler goes through ``server.run_sync`` (the pool protocol
@@ -113,6 +116,9 @@ class LocalTaskExecutor:
         params = await asyncio.to_thread(self.spool.read_params, task_id)
         outcome, error = "ok", None
         self._publish(descriptor, {"type": "started"})
+        item = self.server.requests.register(
+            {"type": "task", "path": f"{descriptor['mount']}/{descriptor['node_path']}"}
+        )
         try:
             node = self.resolve(descriptor)
             if asyncio.iscoroutinefunction(node):
@@ -123,6 +129,11 @@ class LocalTaskExecutor:
         except Exception as exc:
             outcome, error = "error", f"{type(exc).__name__}: {exc}"
             logging.getLogger(__name__).exception("batch task %r failed", task_id)
+        finally:
+            try:
+                await item.run_cleanups()
+            finally:
+                self.server.requests.unregister(item)
         await asyncio.to_thread(self.spool.settle, task_id, worker_id, outcome, error=error)
         self._publish(descriptor, {"type": "settled", "outcome": outcome, "error": error})
         return outcome

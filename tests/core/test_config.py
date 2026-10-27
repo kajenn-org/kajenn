@@ -38,6 +38,7 @@ from kajenn import (
     BaseApplication,
     ConfigError,
     ConfigurationHandler,
+    DbHandlerBase,
 )
 from kajenn.__main__ import SitesRegistry
 from kajenn.config import HOME_ENV, BaseConfiguration, DefaultConfig
@@ -424,6 +425,13 @@ class TestGrammarValidation:
             ConfigurationHandler(TwiceConfig)
 
 
+class StubDbHandler(DbHandlerBase):
+    """A handler that accepts any database and takes nothing."""
+
+    def add_database(self, name: str, params: dict[str, Any]) -> None:
+        pass
+
+
 class TestSkippedSections:
     def test_openapi_and_databases_boot_without_error(self) -> None:
         class OrchestrationConfig(AsgiConfigBuilder):
@@ -433,7 +441,7 @@ class TestSkippedSections:
                 cfg.applications(default="shop").application(
                     code="shop", mount="", app_class=ShopApp
                 )
-                cfg.databases().database(code="default", db_class=object)
+                cfg.databases().database(code="default", handler_class=StubDbHandler)
                 cfg.openapi(title="Demo", version="1.0")
 
         server = AsgiServer(config=OrchestrationConfig)

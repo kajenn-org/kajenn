@@ -20,11 +20,14 @@ async ``init()``, reads the request once and by itself: headers and cookies
 off the scope, the query string, and the whole body pumped from ``receive``
 until ``more_body`` is false — always, whatever the content-type, so a
 request never leaves unread ASGI messages behind. genro-tytx is used ONLY as
-a serializer: header values, query values and multipart fields are hydrated
-with ``from_tytx``, an urlencoded body with ``from_qs``, a json/xml/msgpack
-body with ``from_tytx(transport=...)``. The transport → media type map lives
-in ``media_types``, the inbound content-type is resolved here in
-``get_transport``; the protocol reading lives here and nowhere else.
+a serializer: header values, query values, urlencoded form fields and
+multipart fields are hydrated with ``from_tytx``, a json/xml/msgpack body
+with ``from_tytx(transport=...)``. Query strings and urlencoded bodies are
+split and percent-decoded (UTF-8, ``+`` as space) by ``urllib.parse`` first:
+TYTX ``from_qs`` reads its own unescaped QS format, not a URL encoding. The
+transport → media type map lives in ``media_types``, the inbound
+content-type is resolved here in ``get_transport``; the protocol reading
+lives here and nowhere else.
 
 The owning application decides whether the body is decoded at all
 (``request(body=...)`` in its own grammar, ``decoded`` by default). Decoded,
@@ -32,7 +35,8 @@ it is decoded by content-type:
 
 - json / xml / msgpack (standard or ``application/vnd.tytx+*`` media type) →
   the hydrated value;
-- ``application/x-www-form-urlencoded`` → a dict via ``from_qs``;
+- ``application/x-www-form-urlencoded`` → a dict split like the query string
+  (UTF-8 percent-decoding, values hydrated, a repeated key gives a list);
 - ``multipart/form-data`` → a dict: text parts hydrated with ``from_tytx``,
   file parts (those carrying a ``filename``) as ``UploadedFile``; a field
   name repeated across parts collects its values in a list;
@@ -64,10 +68,8 @@ the base; a form body — urlencoded OR multipart — is merged field by field
 ``doc`` as an ``UploadedFile``); a hydrated body is passed whole as
 ``body_data``; an undecoded body as ``body_raw``; an empty body adds nothing.
 
-``db`` resolves, on first access, the server's registered handler for the
-owning app's ``db_name`` (else ``"default"``) and registers its
-``closeConnection`` as a request cleanup (drained by the server at end of
-request). ``get_db(name)`` is a plain lookup with no cleanup registration.
+``db(name=None)`` and ``async_db(name=None)`` are the owning application's:
+the object the current call took for that database, and its awaitable face.
 Auth and session ride the scope (``scope["auth"]`` — an ``Avatar`` or ``None``
 — and ``scope["session"]``), set by the middleware chain.
 """
@@ -83,7 +85,7 @@ from http.cookies import SimpleCookie
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import parse_qs
 
-from genro_tytx import from_qs, from_tytx
+from genro_tytx import from_tytx
 
 from .exceptions import HTTPBadRequest, HTTPException, HTTPUnsupportedMediaType
 from .response import Response
@@ -123,7 +125,6 @@ class Request:
         "_receive",
         "_server",
         "_application",
-        "_db",
         "_headers",
         "_cookies",
         "_query",
@@ -149,7 +150,6 @@ class Request:
         self._receive = receive
         self._server = server
         self._application = application
-        self._db: Any = None
         self._headers: dict[str, Any] = {}
         self._cookies: dict[str, str] = {}
         self._query: dict[str, Any] = {}
@@ -275,7 +275,7 @@ class Request:
             if transport == "json":
                 return self.decode_json(body.decode("utf-8"))
             if "x-www-form-urlencoded" in media:
-                return from_qs(body.decode("latin-1"))
+                return self.decode_query(body.decode("utf-8"))
             if "multipart/form-data" in media:
                 return self.decode_multipart(body, content_type)
         except HTTPException:
@@ -429,41 +429,24 @@ class Request:
         """The session object attached by ``SessionMiddleware``, or ``None``."""
         return self._scope.get("session")
 
-    @property
-    def db(self) -> Any:
-        """The default db handler for the owning app, or ``None`` (lazy).
+    def db(self, name: str | None = None) -> Any:
+        """The object database ``name`` gives this call, for a sync handler.
 
-        Resolves ``server.databases[name]`` where ``name`` is the owning
-        application's ``db_name`` attribute if set, else ``"default"``. On the
-        first successful resolution it registers ``handler.closeConnection`` as
-        a cleanup of the registry's current request, when there is one (drained
-        by the server at end of request). Returns ``None`` when there is no
-        server or no handler under that name.
-
-        The handler comes from the configuration as it is: this property adds
-        no pooling, no transaction and no per-application registry.
+        The owning application's ``db``: its name rule, one take per name per
+        call, the release at the end of the call.
         """
-        if self._db is not None:
-            return self._db
-        server = self.server
-        if server is None:
-            return None
-        name = getattr(self._application, "db_name", None) or "default"
-        handler = server.databases.get(name)
-        if handler is None:
-            return None
-        self._db = handler
-        current = server.requests.current
-        if current is not None:
-            current.add_cleanup(handler.closeConnection)
-        return handler
+        return self.bound_application().db(name)
 
-    def get_db(self, name: str) -> Any:
-        """Look up a registered db handler by ``name`` (no cleanup registration)."""
-        server = self.server
-        if server is None:
-            return None
-        return server.databases.get(name)
+    def async_db(self, name: str | None = None) -> Any:
+        """The awaitable face of ``db(name)``, for an ``async def`` handler."""
+        return self.bound_application().async_db(name)
+
+    def bound_application(self) -> BaseApplication:
+        """The owning application; a ``Request`` bound to none raises ``RuntimeError``."""
+        application = self.application
+        if application is None:
+            raise RuntimeError("this Request is bound to no application: it has no databases")
+        return application
 
     def handler_kwargs(self) -> dict[str, Any]:
         """Build the kwargs a route handler is called with (query + body).

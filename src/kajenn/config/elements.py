@@ -47,7 +47,7 @@ Sections:
   the server's ``StorageManager``, plus the section's ``storage_key``.
 - ``applications`` — the app collection keyed by ``code``; each entry MOUNTS
   the grammar its ``app_class`` carries.
-- ``databases`` — one descriptor per database handler.
+- ``databases`` — the server's databases and their default ``handler_class``.
 - ``plugins`` — the router plugins armed on every routed app.
 - ``openapi`` — the OpenAPI metadata, declared by the grammar and read by no
   core consumer.
@@ -76,21 +76,18 @@ from typing import Annotated, Any
 from genro_bag import BagResolver
 from genro_builders.builder import Regex, element
 
+from ..application import CODE_PATTERN, DatabaseGrammar
 from ..tasks.mixin import TaskGrammar
 
-# A collection key is a Bag label and a path segment: an identifier, never
-# empty, no dots and no spaces. The grammar refuses anything else before
-# the node is written.
-CODE_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
 
-
-class AsgiServerGrammar(TaskGrammar):
+class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
     """Configuration grammar of ``AsgiServer``: the site layout, reading elsewhere.
 
     Grammar only — the runtime reads the built tree through
     ``ConfigurationHandler``, never through this class. Capability-owned
     companions are composed explicitly (``TaskGrammar`` — the ``tasks`` child of
-    ``server``, owned by ``TaskMixin``).
+    ``server``, owned by ``TaskMixin``; ``DatabaseGrammar`` — the ``databases``
+    section, shared with every application's grammar).
     """
 
     @element(
@@ -432,25 +429,6 @@ class AsgiServerGrammar(TaskGrammar):
         open — the envelope's attributes belong to THIS grammar, only its
         children live in the mounted one.
         """
-
-    @element(parent_tags="configuration", sub_tags="database", collection_key="code")
-    def databases(self) -> None:
-        """Collection of database descriptors, each labelled by its ``code``."""
-
-    @element(parent_tags="databases", sub_tags="")
-    def database(
-        self,
-        db_class: type,
-        code: Annotated[str, Regex(CODE_PATTERN)] = None,
-        db_handler_class: type = None,
-        **params: Any,
-    ) -> None:
-        """One database: ``code`` (the registry key, an identifier per
-        ``CODE_PATTERN``), ``db_class`` (REQUIRED —
-        the grammar rejects a database without it), the optional
-        ``db_handler_class`` (``AsgiDbHandlerBase`` when omitted) and the
-        connection kwargs handed to ``db_class(**params)``. The ``db_class`` is
-        user-provided — the core never imports db drivers."""
 
     @element(parent_tags="configuration", sub_tags="plugin", collection_key="code")
     def plugins(self, **extra: bool | dict) -> None:

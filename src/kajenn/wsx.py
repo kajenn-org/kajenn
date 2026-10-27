@@ -48,12 +48,12 @@ text is not a message of ours — and the read loop logs and moves on.
 
 ``WsxConnection`` is one live connection speaking that protocol: ``serve()`` is
 its whole life. It gates the handshake, accepts, reads messages until the
-client leaves, and waits for what is still in flight. Every message with an
-``id`` becomes a synthetic HTTP request with the method ``WSK``, handed to the
-application its ``path`` names through the server's own demux — so an
-application learns no new method and a websocket message travels the road a
-request travels. A message with no ``id`` is an event: served, answered by
-nothing.
+client leaves, and waits for what is still in flight. Every message becomes
+a synthetic HTTP request with the method ``WSK``, registered in the server's
+request registry and handed to the application its ``path`` names through the
+server's own demux — so an application learns no new method and a websocket
+message travels the road a request travels. A message with no ``id`` is an
+event: served the same way, answered by nothing.
 
 **The gate answers in one shape: accept, then close with a readable code.** A
 handshake on a path no application serves, or one missing the cookie its home
@@ -348,19 +348,21 @@ class WsxConnection:
     async def _serve_message(self, envelope: WsxEnvelope) -> None:
         """Serve one message as a request, and answer it when it asked to be.
 
-        A message with an ``id`` is registered in the server's request registry
-        — the shutdown waits for it, and it shows in the picture — and answered
-        with its status. A message without one is an event: served the same
-        way, answered by nothing, its failure logged.
+        Every message is registered in the server's request registry — the
+        shutdown waits for it, it shows in the picture, and what it took is
+        released at its end. A message with an ``id`` is answered with its
+        status; one without is an event: served the same way, answered by
+        nothing, its failure logged.
         """
         scope = self._request_scope(envelope)
-        item = self.server.requests.register(scope) if envelope.id else None
+        item = self.server.requests.register(scope)
         try:
             async with self._slots:
                 status, data = await self._call_application(envelope, scope)
         finally:
-            if item is not None:
-                item.run_cleanups()
+            try:
+                await item.run_cleanups()
+            finally:
                 self.server.requests.unregister(item)
         if envelope.id is not None:
             await self._answer(envelope, status, data)

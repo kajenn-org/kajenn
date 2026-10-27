@@ -67,7 +67,9 @@ configuration road alike. The configuration only customises it
 (``application(code="_server", ...)``: login policy, OIDC, a subclass). The
 process of a ``role`` hosts its application alone and mounts none: its
 ``/_server/...`` calls go to the parent. The configured databases are
-registered at the end of ``__init__``, over the live server.
+registered at the end of ``__init__``, over the live server: the server's own
+and those of the applications this process serves — in the process of a
+``role``, its application's alone.
 """
 
 from __future__ import annotations
@@ -87,7 +89,7 @@ from .config.templates import (
     DEFAULT_TEMPLATE,
     ShortcutConfiguration,
 )
-from .db import AsgiDbHandlerBase
+from .db import DbHandlerBase
 from .middleware import MiddlewareMixin
 from .plugin_mixin import PluginMixin
 from .remote_application import PROXY_OPTIONS, RemoteApplication
@@ -226,19 +228,27 @@ class AsgiServer(
         return kwargs
 
     def _register_configured_databases(self, config: ConfigurationHandler) -> None:
-        """Build and register the configured database handlers over the live server.
+        """Mount the configured databases over the live server.
 
-        Each descriptor becomes ``db_handler_class(db_class(**params))``,
-        registered by its ``code``; the default handler class is
-        ``AsgiDbHandlerBase``. It runs after the cooperative chain because
-        ``add_database`` needs the server, not its kwargs.
+        Each descriptor goes through ``add_database`` with its resolved handler
+        class, under its owner rule name. A database owned by an application
+        this process does not serve is skipped: the process of a ``role``
+        mounts the server's databases and its application's only. It runs
+        after the cooperative chain because ``add_database`` needs the server,
+        not its kwargs.
         """
         for descriptor in config.databases():
-            db_class = descriptor["db_class"]
-            handler_class = descriptor["db_handler_class"] or AsgiDbHandlerBase
+            owner = descriptor["owner"]
+            if owner is not None and owner not in self.applications:
+                continue
             self.add_database(
-                descriptor["code"], handler_class(db_class(**descriptor["params"]))
+                descriptor["name"], descriptor["params"], descriptor["handler_class"]
             )
+
+    @property
+    def db_handler_class(self) -> type[DbHandlerBase] | None:
+        """The ``databases(handler_class=...)`` default of the configuration."""
+        return self.config("databases.handler_class", default=None)
 
     @property
     def config(self) -> ConfigurationHandler:

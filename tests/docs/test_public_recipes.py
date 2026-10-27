@@ -292,11 +292,11 @@ def test_storage_roundtrip(recipes, serve_recipe, tmp_path):
         assert (tmp_path / "data" / "note.txt").read_text() == "hello"
 
 
-def test_database_selection_and_cleanup(recipes, serve_recipe):
+def test_database_selection_and_release(recipes, serve_recipe):
     with serve_recipe(recipes.get_code("guides/databases.md", "class ExampleDatabase")) as server:
-        for path, expected in (("database", 0), ("database", 1), ("lookup", 2), ("lookup", 2)):
+        for path, expected in (("database", 0), ("database", 1), ("lookup", 2), ("lookup", 3)):
             assert json.loads(server.get_response("/" + path)[1]) == {
-                "label": "catalog", "previous_cleanups": expected,
+                "label": "catalog", "previous_releases": expected,
             }
 
 

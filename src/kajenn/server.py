@@ -38,6 +38,12 @@ reverse shutdown, error isolation). Each http dispatch is registered in the
 ``RequestRegistry`` (``requests``) for the span of the request — the current
 request and the in-flight picture. ``serve()`` boots uvicorn programmatically.
 
+The server also holds the mounted databases (``databases``, name → handler):
+one ``DbHandlerBase`` per handler class, fed by ``add_database``. A call takes
+each name at most once (``take_database``, the answer kept on the call's
+``RegisteredRequest``) and the first take queues the release of everything the
+call took as an async cleanup, run on a pool thread (``release_databases``).
+
 Cooperative init (D16): peels its own kwargs (``applications``,
 ``max_threads``) and, as the end of the chain, raises ``TypeError`` naming any
 leftover kwargs. Mixins go BEFORE ``BaseServer`` in the MRO.
@@ -61,14 +67,16 @@ not guaranteed.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Iterable
 
 import uvicorn
 
 from .application import BaseApplication
+from .db import DbHandlerBase
 from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
-from .request_registry import RequestRegistry
+from .request_registry import RegisteredRequest, RequestRegistry
 from .response import Response
 from .websocket import WebSocket, WebSocketRegistry
 from .well_known import HIDDEN_SEGMENT_PREFIX, WELL_KNOWN_ROOT, WELL_KNOWN_SEGMENT
@@ -163,7 +171,8 @@ class BaseServer:
         self._applications: dict[str, BaseApplication] = {}
         self._by_mount: dict[str, BaseApplication] = {}
         self._well_known: dict[str, BaseApplication] = {}
-        self._databases: dict[str, Any] = {}
+        self._databases: dict[str, DbHandlerBase] = {}
+        self._db_handlers: dict[type[DbHandlerBase], DbHandlerBase] = {}
         self._uvicorn: UvicornServer | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._pool = WorkPool(self, max_threads=max_threads)
@@ -265,15 +274,84 @@ class BaseServer:
             self._well_known[name] = app
 
     @property
-    def databases(self) -> dict[str, Any]:
-        """Database handlers keyed by their config ``code`` (may be empty)."""
+    def databases(self) -> dict[str, DbHandlerBase]:
+        """The handler serving each database, by name (``foo``, ``chat:foo``)."""
         return self._databases
 
-    def add_database(self, code: str, handler: Any) -> None:
-        """Register ``handler`` under ``code``. A claimed code raises ``ValueError``."""
-        if code in self.databases:
-            raise ValueError(f"database code already registered: {code}")
-        self.databases[code] = handler
+    @property
+    def db_handlers(self) -> dict[type[DbHandlerBase], DbHandlerBase]:
+        """The handler instances by class, one per class, in the order they were built."""
+        return self._db_handlers
+
+    @property
+    def db_handler_class(self) -> type[DbHandlerBase] | None:
+        """The handler class a database added without one gets: none at the base."""
+        return None
+
+    def add_database(
+        self, name: str, params: dict[str, Any], handler_class: type[DbHandlerBase] | None = None
+    ) -> None:
+        """Mount database ``name`` with its ``params`` through its handler.
+
+        ``name`` follows the owner rule (``foo`` server, ``chat:foo`` the
+        application ``chat``). ``handler_class`` defaults to
+        ``db_handler_class``; the first database of a class builds its handler,
+        ``handler_class(server)``, and the next ones reuse it. A claimed name
+        and a database with no handler class raise ``ValueError``.
+        """
+        if name in self.databases:
+            raise ValueError(f"database already registered: {name}")
+        handler_class = handler_class or self.db_handler_class
+        if handler_class is None:
+            raise ValueError(f"database {name!r} has no handler_class")
+        handler = self.db_handlers.get(handler_class)
+        if handler is None:
+            handler = self.db_handlers[handler_class] = handler_class(self)
+        handler.add_database(name, params)
+        self.databases[name] = handler
+
+    def take_database(self, name: str) -> Any:
+        """The object database ``name`` gives the current call, taken once per call.
+
+        The first take of a call queues ``release_databases`` as the call's
+        async cleanup; it goes to the pool only when something is still taken
+        (``route_cleanup`` has already released a sync handler's). An unknown
+        name raises ``LookupError``; a take outside a registered call raises
+        ``RuntimeError``.
+        """
+        call = self.requests.current
+        if call is None:
+            raise RuntimeError(f"database {name!r} taken outside a registered call")
+        taken = call.databases
+        if name in taken:
+            return taken[name]
+        handler = self.databases.get(name)
+        if handler is None:
+            raise LookupError(f"no database registered as {name!r}")
+        if not taken:
+
+            async def release() -> None:
+                if call.databases:
+                    await self.run_sync(self.release_databases, call)
+
+            call.add_cleanup(release)
+        taken[name] = handler.take(name, call)
+        return taken[name]
+
+    def release_databases(self, call: RegisteredRequest) -> None:
+        """Release, on the calling thread, every handler ``call`` took from.
+
+        Each handler's ``release`` runs once, a raise logged without stopping
+        the next; then the call's takes are forgotten, so a later take opens
+        anew. The core calls it on a pool thread: from ``route_cleanup`` after a
+        sync handler, and from the cleanup ``take_database`` queued.
+        """
+        for handler in dict.fromkeys(self.databases[name] for name in call.databases):
+            try:
+                handler.release(call)
+            except Exception:
+                logging.getLogger(__name__).exception("Database release by %r failed", handler)
+        call.databases.clear()
 
     @property
     def lifespan(self) -> Lifespan:
@@ -413,8 +491,10 @@ class BaseServer:
                 app, target = self.demux(scope)
                 await app(target, receive, send)
             finally:
-                item.run_cleanups()
-                self.requests.unregister(item)
+                try:
+                    await item.run_cleanups()
+                finally:
+                    self.requests.unregister(item)
         elif scope_type == "websocket":
             await self.on_websocket(scope, receive, send)
         elif scope_type == "lifespan":

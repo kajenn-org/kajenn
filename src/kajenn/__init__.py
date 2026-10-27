@@ -50,7 +50,7 @@ from .config import (
     ConfigurationHandler,
     DefaultConfig,
 )
-from .db import AsgiDbHandlerBase
+from .db import DbHandlerBase
 from .exceptions import (
     HTTPBadRequest,
     HTTPException,
@@ -88,7 +88,6 @@ __all__ = [
     "ApiKeyStore",
     "ApplicationGrammar",
     "AsgiConfigBuilder",
-    "AsgiDbHandlerBase",
     "AsgiServer",
     "AsgiServerGrammar",
     "AuthCore",
@@ -102,6 +101,7 @@ __all__ = [
     "KBusMixin",
     "ConfigError",
     "ConfigurationHandler",
+    "DbHandlerBase",
     "DefaultConfig",
     "FileApiKeyStore",
     "FileUserStore",

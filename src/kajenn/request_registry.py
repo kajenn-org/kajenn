@@ -16,13 +16,14 @@
 
 ``RequestRegistry`` is held by the server as a dual parent-child
 (``self.server``, SPECIFICATION.md §4) and is the SINGLE writer of the
-in-flight set (D12 spirit): the server registers a request on entry and
-unregisters it on exit, around the http dispatch. Each registration is a
-lightweight ``RegisteredRequest`` record (D18: slotted, high cardinality)
-carrying a monotonic id, the scope type, the path, the start time, and the
-request's cleanup callbacks. The server drains those cleanups in the http
-``finally`` (``run_cleanups``) so any app — routed or bare — gets end-of-request
-teardown (e.g. ``request.db`` closing its connection) for free.
+in-flight set (D12 spirit): the core registers a call on entry and
+unregisters it on exit — an http dispatch, a kbus frame, a WSX message, a task.
+Each registration is a lightweight ``RegisteredRequest`` record (D18: slotted,
+high cardinality) carrying a monotonic id, the scope type, the path, the start
+time, the databases the call took, and the call's cleanup callbacks. The core
+awaits those cleanups in the ``finally`` around the call (``run_cleanups``) so
+any app — routed or bare — gets end-of-call teardown (e.g. the release of the
+databases the call took) for free.
 
 The "current request" is exposed through a ContextVar that lives on the
 registry INSTANCE (never at module level): ``register`` sets it and keeps the
@@ -36,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import time
 from collections.abc import Callable
@@ -52,24 +54,31 @@ __all__ = ["RegisteredRequest", "RequestRegistry"]
 class RegisteredRequest:
     """One in-flight request tracked by the registry (D18: slotted record).
 
-    A snapshot taken at registration: the monotonic ``request_id``, the ASGI
-    ``scope_type``, the ``path``, and ``started_at`` (``time.monotonic()``).
-    Slotted because requests are high cardinality.
+    A snapshot taken at registration: the monotonic ``request_id``, the
+    ``scope_type`` (``http``, or ``task`` for a task), the ``path``, and
+    ``started_at`` (``time.monotonic()``). Slotted because requests are high
+    cardinality.
 
-    It also owns the request's end-of-life cleanups: ``add_cleanup(fn)`` queues
+    ``databases`` holds what the call took, name → object: the core takes each
+    name once per call and releases them all at its end.
+
+    It also owns the call's end-of-life cleanups: ``add_cleanup(fn)`` queues
     a zero-arg callback and ``run_cleanups()`` drains them LIFO at the end of the
-    dispatch (the server calls it in the http ``finally``). The ``_cleanups``
-    list is lazy — allocated only when the first callback is queued — so a
-    request that registers none pays nothing.
+    call (the core awaits it in the ``finally`` around the call). The
+    ``_cleanups`` list is lazy — allocated only when the first callback is
+    queued — so a request that registers none pays nothing.
     """
 
-    __slots__ = ("_request_id", "_scope_type", "_path", "_started_at", "_cleanups")
+    __slots__ = (
+        "_request_id", "_scope_type", "_path", "_started_at", "_databases", "_cleanups",
+    )
 
     def __init__(self, request_id: int, scope_type: str, path: str) -> None:
         self._request_id = request_id
         self._scope_type = scope_type
         self._path = path
         self._started_at = time.monotonic()
+        self._databases: dict[str, Any] = {}
         self._cleanups: list[Callable[[], Any]] | None = None
 
     @property
@@ -79,7 +88,7 @@ class RegisteredRequest:
 
     @property
     def scope_type(self) -> str:
-        """ASGI scope type of the request (``http``)."""
+        """Scope type of the call (``http``, ``task``)."""
         return self._scope_type
 
     @property
@@ -92,25 +101,38 @@ class RegisteredRequest:
         """``time.monotonic()`` captured at registration."""
         return self._started_at
 
+    @property
+    def databases(self) -> dict[str, Any]:
+        """The databases this call took, name → the object the handler gave."""
+        return self._databases
+
     def add_cleanup(self, callback: Callable[[], Any]) -> None:
-        """Queue a zero-arg ``callback`` to run at end of request (LIFO)."""
+        """Queue a zero-arg ``callback`` to run at end of call (LIFO).
+
+        A coroutine function is awaited; any other callable is called.
+        """
         if self._cleanups is None:
             self._cleanups = []
         self._cleanups.append(callback)
 
-    def run_cleanups(self, error: BaseException | None = None) -> None:
+    async def run_cleanups(self, error: BaseException | None = None) -> None:
         """Run queued cleanups LIFO, isolating and logging each one's exception.
 
-        Called by the server in the http ``finally``, so the cleanups run
-        whether the request succeeded or failed. Every callback runs, and one
-        that raises is logged and does not stop the next. ``error`` is accepted
-        and not read: the drain does not depend on how the request ended.
+        Awaited by the core in the ``finally`` around the call, so the cleanups
+        run whether the call succeeded, failed or was cancelled. Every callback
+        runs, and one that raises is logged and does not stop the next. A
+        coroutine function is awaited on the loop; a sync callback is called on
+        the loop, as before. ``error`` is accepted and not read: the drain does
+        not depend on how the call ended.
         """
         if self._cleanups is None:
             return
         for callback in reversed(self._cleanups):
             try:
-                callback()
+                if inspect.iscoroutinefunction(callback):
+                    await callback()
+                else:
+                    callback()
             except Exception:
                 logging.getLogger(__name__).exception("Request cleanup %r failed", callback)
 

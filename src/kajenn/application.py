@@ -48,6 +48,13 @@ so the app declares its own vocabulary and the site dialect never validates it.
 ``ApplicationGrammar`` is the minimal one every app inherits — a single
 ``parameters`` element for free options — and a richer app subclasses it.
 
+An application reaches its databases with ``db(name=None)`` (the object the
+current call took) and ``async_db(name=None)`` (its awaitable face, for an
+``async def`` handler). Names follow the owner rule: ``foo`` is a server
+database, ``chat:foo`` the database ``foo`` of the application ``chat``. With
+no name, ``db_name`` decides; without it the application's own ``default``
+when it declares one, else the server's ``default``.
+
 An app READS that subtree back through ``self.config(path)``, which prefixes
 ``applications.<code>.`` and delegates to the server's own read door: the app
 never holds a slice of the tree, only an address in it.
@@ -55,9 +62,9 @@ never holds a slice of the tree, only an address in it.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
-from genro_builders.builder import element
+from genro_builders.builder import Regex, element
 
 if TYPE_CHECKING:
     from .server import BaseServer
@@ -73,15 +80,50 @@ BODY_MODES: dict[str, bool] = {"decoded": False, "raw": True}
 ERROR_CODES: dict[str, int] = {"strict": 400, "fastapi": 422}
 """The ``request(error_codes=...)`` words, as the status a rejected value answers."""
 
+# A collection key is a Bag label and a path segment: an identifier, never
+# empty, no dots and no spaces. The grammar refuses anything else before
+# the node is written.
+CODE_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
 
-class ApplicationGrammar:
+
+class DatabaseGrammar:
+    """The ``databases`` section, composed by the server's grammar and by every
+    application's (``ApplicationGrammar``): the same two elements at both levels.
+    """
+
+    @element(node_label="databases", sub_tags="database", collection_key="code")
+    def databases(self, handler_class: type = None) -> None:
+        """Collection of databases, each labelled by its ``code``.
+
+        ``handler_class`` is the default of every ``database`` below. At server
+        level it is also the default of an application's databases whose own
+        section declares none; a database ``foo`` of the application ``chat`` is
+        ``chat:foo`` in the server's registry.
+        """
+
+    @element(parent_tags="databases", sub_tags="")
+    def database(
+        self,
+        code: Annotated[str, Regex(CODE_PATTERN)] = None,
+        handler_class: type = None,
+        **params: Any,
+    ) -> None:
+        """One database: ``code`` (the registry name, an identifier per
+        ``CODE_PATTERN``), an optional ``handler_class`` overriding the section
+        default (a ``DbHandlerBase`` subclass) and the ``params`` handed to the
+        handler's ``add_database``. The handler builds the database — the core
+        never imports db drivers."""
+
+
+class ApplicationGrammar(DatabaseGrammar):
     """The configuration grammar every application inherits.
 
-    Two elements: ``parameters``, for the free options a plain app needs — an
+    Three elements: ``parameters``, for the free options a plain app needs — an
     application with nothing of its own still has a mountable grammar (an EMPTY
-    grammar class is rejected by builders) — and ``request``, the two options
-    every application has about the requests the core serves for it. A richer
-    app subclasses this to add its own vocabulary.
+    grammar class is rejected by builders) — ``request``, the two options
+    every application has about the requests the core serves for it, and
+    ``databases``, the application's own databases (from ``DatabaseGrammar``).
+    A richer app subclasses this to add its own vocabulary.
     """
 
     @element(node_label="parameters")
@@ -109,19 +151,23 @@ class BaseApplication:
     """Base class for applications attached to a ``BaseServer``.
 
     Constructor kwargs peeled here: ``code`` — the application's identity,
-    empty meaning the class name lowercased — and ``mount`` — the URL prefix
-    it answers under, ``None`` meaning the same as the code. Both default to
-    the class attributes below, so a subclass can set them declaratively.
+    empty meaning the class name lowercased — ``mount`` — the URL prefix
+    it answers under, ``None`` meaning the same as the code — and ``db_name``
+    — the database ``db()`` answers without a name, ``None`` meaning the
+    default rule. All three default to the class attributes below, so a
+    subclass can set them declaratively.
     """
 
     code: str = ""
     mount: str | None = None
+    db_name: str | None = None
     grammar: type = ApplicationGrammar
 
     def __init__(self, **kwargs: Any) -> None:
         cls = type(self)
         code: str = kwargs.pop("code", cls.code) or cls.__name__.lower()
         mount: str | None = kwargs.pop("mount", cls.mount)
+        self.db_name = kwargs.pop("db_name", cls.db_name)
         self.code = code
         # ``is None`` and never truthiness: ``mount=""`` IS the site root, and
         # ``mount or code`` would silently move a root app to ``/code``.
@@ -170,6 +216,34 @@ class BaseApplication:
         if default is _MISSING:
             return handler(full_path)
         return handler(full_path, default=default)
+
+    def database_name(self, name: str | None = None) -> str:
+        """The registry name ``db(name)`` resolves to.
+
+        A given ``name`` stands as it is (``foo`` server, ``chat:foo``
+        application). ``None`` is ``db_name`` when set, else ``<code>:default``
+        when this application declares a ``default``, else ``default``.
+        """
+        if name is not None:
+            return name
+        if self.db_name is not None:
+            return self.db_name
+        own = f"{self.code}:default"
+        return own if own in self.server.databases else "default"
+
+    def db(self, name: str | None = None) -> Any:
+        """The object database ``name`` gives the current call (``database_name`` rule).
+
+        Taken once per name per call and released at the end of the call; for
+        a sync handler. An ``async def`` handler uses ``async_db``.
+        """
+        return self.server.take_database(self.database_name(name))
+
+    def async_db(self, name: str | None = None) -> Any:
+        """The awaitable face of ``db(name)``: the same taken object, through its handler."""
+        resolved = self.database_name(name)
+        taken = self.server.take_database(resolved)
+        return self.server.databases[resolved].async_view(taken)
 
     @property
     def raw_body(self) -> bool:

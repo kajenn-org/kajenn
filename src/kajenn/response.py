@@ -150,7 +150,11 @@ class Response:
         ]
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """ASGI interface: send exactly ``http.response.start`` + one body."""
+        """ASGI interface: send exactly ``http.response.start`` + one body.
+
+        A ``HEAD`` request gets the same headers as ``GET``, content-length
+        included, and an empty body.
+        """
         await send(
             {
                 "type": "http.response.start",
@@ -158,7 +162,8 @@ class Response:
                 "headers": self._build_headers(),
             }
         )
-        await send({"type": "http.response.body", "body": self.body})
+        body = b"" if scope.get("method") == "HEAD" else self.body
+        await send({"type": "http.response.body", "body": body})
 
     def set_header(self, name: str, value: str) -> None:
         """Append a response header. Usable before ``set_result``."""
