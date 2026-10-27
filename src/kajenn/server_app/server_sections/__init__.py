@@ -20,13 +20,15 @@ Each section is a ``RoutingClass`` the ``ServerApplication`` attaches through
 the login methods), ``UsersSection`` (SUPERADMIN-gated user management at
 ``users``), ``TokensSection`` (issued credentials — api keys and JWTs — at
 ``tokens``), ``TasksSection`` (the task backbone — schedules and spool — at
-``tasks``) and ``MonitorSection`` (the live view of the running server at
-``monitor``, gated SERVER_ADMIN).
+``tasks``), ``MonitorSection`` (the live view of the running server at
+``monitor``, gated SERVER_ADMIN) and ``DatabasesSection`` (the declared
+databases and their migration at ``databases``, gated SERVER_ADMIN).
 """
 
 from __future__ import annotations
 
 from .auth_section import AuthSection
+from .databases_section import DatabasesSection
 from .monitor_section import MonitorSection
 from .tasks_section import TasksSection
 from .tokens_section import TokensSection
@@ -34,6 +36,7 @@ from .users_section import UsersSection
 
 __all__ = [
     "AuthSection",
+    "DatabasesSection",
     "MonitorSection",
     "TasksSection",
     "TokensSection",
