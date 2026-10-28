@@ -64,11 +64,14 @@ class FakeSession:
     def table(self, name: str) -> str:
         return f"table {name}"
 
+    def hold(self, work: Any) -> None:
+        work()
+
 
 class RecordingHandler(DbHandlerBase):
     """A handler that records every operation: what, on which thread, for which call."""
 
-    terminals = ("fetch",)
+    terminals = ("fetch", "hold")
 
     def __init__(self, server: BaseServer) -> None:
         super().__init__(server)
@@ -111,6 +114,14 @@ class Shop(RoutedApplication):
         super().__init__(**kwargs)
         self.seen: dict[str, Any] = {}
         self.taken = asyncio.Event()
+        self.held = threading.Event()
+        self.gate = threading.Event()
+
+    def hold(self) -> None:
+        """Blocking work on the pool: held until the test opens ``gate``."""
+        self.held.set()
+        self.gate.wait()
+        self.server.databases["default"].events.append(("work_end", thread_name()))
 
     @route()
     def sync_take(self, _request=None) -> dict[str, Any]:
@@ -141,6 +152,15 @@ class Shop(RoutedApplication):
         _request.db()
         self.taken.set()
         await asyncio.Event().wait()
+
+    @route()
+    def sync_hold(self, _request=None) -> None:
+        _request.db()
+        self.hold()
+
+    @route()
+    async def async_hold(self, _request=None) -> None:
+        await _request.async_db().hold(self.hold)
 
     @route()
     def task_sync(self) -> str:
@@ -363,6 +383,26 @@ class TestRelease:
             await call
         [release] = server.databases["default"].of("release")
         assert on_pool(release)
+        assert server.requests.in_flight == 0
+
+    @pytest.mark.parametrize("path", ["/sync_hold", "/async_hold"])
+    async def test_a_cancelled_call_releases_only_after_its_pool_work_ends(self, path) -> None:
+        """#89: the release never overlaps the blocking work still using the session."""
+        server = configured()
+        app = shop(server)
+        handler = server.databases["default"]
+        call = asyncio.create_task(drive_http(server, path))
+        try:
+            assert await asyncio.to_thread(app.held.wait, 2)
+            call.cancel()
+            done, _ = await asyncio.wait({call}, timeout=0.1)
+            assert not done
+            assert handler.of("release") == []
+        finally:
+            app.gate.set()
+        with pytest.raises(asyncio.CancelledError):
+            await call
+        assert [event[0] for event in handler.events] == ["take", "work_end", "release"]
         assert server.requests.in_flight == 0
 
     @pytest.mark.parametrize("message_id", ["m1", None])

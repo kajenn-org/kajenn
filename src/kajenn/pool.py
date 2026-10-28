@@ -17,7 +17,7 @@
 ``WorkPool`` wraps one ``concurrent.futures.ThreadPoolExecutor`` and is held by
 the server as a dual parent-child (``self.server``). Async handlers stay on the
 event loop; only sync handlers reach the pool, dispatched through
-``BaseServer.run_sync`` via ``loop.run_in_executor``.
+``BaseServer.run_sync`` via ``executor.submit``.
 
 Lazily provisioned: the executor is created on the first dispatch, on the
 running loop and never at boot, and torn down at lifespan shutdown only if it
@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable
@@ -105,12 +106,37 @@ class WorkPool:
         The caller's context is copied into the worker thread (what
         ``asyncio.to_thread`` does), so a sync handler sees the loop-side
         ContextVars — e.g. the registry's current request.
+
+        Cancellation (#89): work still queued is withdrawn and the
+        ``CancelledError`` propagates at once. Work already running cannot be
+        stopped, so ``run`` waits for it to end — further cancellations while
+        waiting are absorbed — and only then re-raises the original
+        ``CancelledError``: the call's cleanups never overlap the thread still
+        using its resources, and ``busy`` keeps counting it until it ends. The
+        cancellation wins: the worker's result is dropped, its exception logged.
         """
-        loop = asyncio.get_running_loop()
         ctx = contextvars.copy_context()
         self._busy += 1
         try:
-            return await loop.run_in_executor(self.executor, ctx.run, fn, *args)
+            work = self.executor.submit(ctx.run, fn, *args)
+            outcome = asyncio.wrap_future(work)
+            try:
+                return await asyncio.shield(outcome)
+            except asyncio.CancelledError:
+                if work.cancel():
+                    raise
+                while not outcome.done():
+                    try:
+                        await asyncio.wait({outcome})
+                    except asyncio.CancelledError:
+                        pass
+                if outcome.exception() is not None:
+                    logging.getLogger(__name__).error(
+                        "Pool work %r raised after its caller was cancelled",
+                        fn,
+                        exc_info=outcome.exception(),
+                    )
+                raise
         finally:
             self._busy -= 1
 
