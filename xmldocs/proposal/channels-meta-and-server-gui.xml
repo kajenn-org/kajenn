@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<proposal id="proposal/channels-meta-and-server-gui" title="Channel faces on every routed application, one _meta segment, and the server GUI as a separate component" date="2026-10-28" lang="en" author="Giovanni Porcari" status="review">
+
+  <problem>
+    <p>Three application classes expose the same router on different channels: <c>OpenApiApplication</c> (REST and OpenAPI), <c>McpOpenApiApplication</c> (REST, OpenAPI and MCP) and <c>McpApplication</c> (MCP only). <c>McpOpenApiApplication</c> is the most common base, and its name is long.</p>
+    <p>Each class reserves its own path segments inside the application: <c>_meta</c>, <c>mcp</c>, <c>_well_known</c>. The rule for what an application may name its own routes is not written anywhere.</p>
+    <p>The server application <c>_server</c> extends <c>OpenApiApplication</c>, so it has no MCP face. A browser interface for <c>_server</c> is being built on gramlot. If it lives in kajenn, gramlot becomes a required dependency of the core.</p>
+  </problem>
+
+  <current>
+    <fact source="src/kajenn/routed_application.py:128" method="read" verified="2026-10-28"><c>RoutedApplication</c> is <c>BaseApplication</c> plus the genro-routes <c>RoutingClass</c>. Its <c>execute</c> is the single execution point that REST, MCP, WSX and the KajennBus reach.</fact>
+    <fact source="src/kajenn/applications/openapi.py:89" method="read" verified="2026-10-28"><c>OpenApiApplication</c> attaches <c>_meta</c> with <c>schema_json</c>, <c>docs</c> (Swagger UI) and <c>index</c>.</fact>
+    <fact source="src/kajenn/applications/mcp.py:387" method="read" verified="2026-10-28"><c>McpOpenApiApplication</c> adds the MCP JSON-RPC face under the segment <c>mcp</c> (<c>mcp_name_segment</c>). The <c>channel</c> plugin decides visibility: the MCP face lists only entries declared for channel <c>mcp</c>, and an undeclared method is REST only.</fact>
+    <fact source="src/kajenn/applications/mcp.py:323" method="read" verified="2026-10-28"><c>McpApplication</c> makes the whole application one JSON-RPC endpoint over an external <c>RoutingClass</c>, with no REST face.</fact>
+    <fact source="src/kajenn/well_known.py:39" method="read" verified="2026-10-28">Discovery documents are served from the application branch <c>_well_known</c>. The server maps <c>/.well-known/&lt;name&gt;</c> onto it.</fact>
+    <fact source="src/kajenn/server_app/server_app.py:153" method="read" verified="2026-10-28"><c>ServerApplication</c> extends <c>OpenApiApplication</c>.</fact>
+    <fact source="src/kajenn/asgi_server.py:138" method="read" verified="2026-10-28">The server mounts <c>ServerApplication</c> under <c>_server</c> when no declared application has that code.</fact>
+    <fact source="src/kajenn/server.py:546" method="read" verified="2026-10-28">The server demux picks an application by the first path segment only. A mount is always one segment.</fact>
+  </current>
+
+  <solution>
+    <section title="Channel faces on RoutedApplication">
+      <list>
+        <item>The REST/OpenAPI face and the MCP face move into <c>RoutedApplication</c>. Every application with routes has both, with no switch to turn them off.</item>
+        <item>The <c>channel</c> plugin keeps deciding visibility. Turning MCP on everywhere exposes nothing that is not declared for channel <c>mcp</c>.</item>
+        <item><c>OpenApiApplication</c>, <c>McpOpenApiApplication</c> and <c>McpApplication</c> become deprecated aliases, then are removed. No new class name is needed.</item>
+        <item><c>BaseApplication</c> stays for applications without routes: <c>RemoteApplication</c> and raw ASGI applications.</item>
+      </list>
+    </section>
+
+    <section title="One reserved segment: _meta">
+      <p>Inside a <c>RoutedApplication</c> the only reserved segment is <c>_meta</c>. It holds the administrative routes of the application. Application routes are never under it: a route <c>pippo</c> is reached as <c>/&lt;app&gt;/pippo</c> over REST and as tool <c>pippo</c> over MCP.</p>
+      <table title="_meta layout">
+        <row head="true"><cell>Path</cell><cell>Content</cell><cell>Today</cell></row>
+        <row><cell><c>_meta/index</c></cell><cell>Application page with links to the channel descriptions</cell><cell><c>_meta/index</c></cell></row>
+        <row><cell><c>_meta/openapi/schema_json</c></cell><cell>OpenAPI 3.1 document</cell><cell><c>_meta/schema_json</c></cell></row>
+        <row><cell><c>_meta/openapi/docs</c></cell><cell>Swagger UI</cell><cell><c>_meta/docs</c></cell></row>
+        <row><cell><c>POST _meta/mcp</c></cell><cell>MCP JSON-RPC entry</cell><cell><c>mcp</c></cell></row>
+        <row><cell><c>GET _meta/mcp/tools</c></cell><cell>List of the MCP tools, readable without speaking MCP</cell><cell>none</cell></row>
+        <row><cell><c>_meta/well_known/...</c></cell><cell>Discovery documents; <c>/.well-known/</c> is unchanged</cell><cell><c>_well_known/...</c></cell></row>
+      </table>
+      <p>The names <c>mcp</c>, <c>api</c> and <c>_well_known</c> become free for application routes.</p>
+    </section>
+
+    <section title="SpaConsole in kajenn-orchestra">
+      <p><c>SpaConsoleMcpApplication</c> becomes a <c>RoutedApplication</c>. The routes of <c>SpaConsole</c> are declared for channel <c>mcp</c>, so the REST face refuses them. Its MCP client moves from <c>/&lt;mount&gt;/</c> to <c>/&lt;mount&gt;/_meta/mcp</c>.</p>
+    </section>
+
+    <section title="Server application: API in kajenn, GUI in its own repository">
+      <list>
+        <item><c>ServerApplication</c> stays in kajenn and serves REST and MCP only. It gains MCP by inheriting from <c>RoutedApplication</c>. kajenn does not depend on gramlot.</item>
+        <item>The GUI is a component in the repository <c>kajenn-serverapp-gui</c>, which depends on kajenn and gramlot.</item>
+        <item>The recipe enables it on the server element: <c>gui(gui_class=...)</c>. Without the element there is no GUI. The core never names the GUI package.</item>
+        <item><c>ServerApplication</c> builds the component as <c>gui_class(self)</c> (dual relationship) and passes every request on <c>ui/...</c> to it. The component releases its resources in <c>on_shutdown</c>. The URL is <c>/_server/ui/</c>.</item>
+        <item>The GUI reads and writes only through the REST routes of <c>_server</c>, like any other client.</item>
+      </list>
+    </section>
+
+    <section title="Extension pages">
+      <list>
+        <item>The REST routes of an extension keep using <c>attach_section(section, name)</c> of the core.</item>
+        <item>The GUI pages of an extension register on the GUI component, only when the component exists. <c>ServerApplication</c> exposes the component, or <c>None</c>.</item>
+        <item>gramlot is an optional extra of the extension, for example <c>kajenn-orchestra[gui]</c>.</item>
+        <item>Pages generated from the OpenAPI description of each section are a future direction. They are not designed here.</item>
+      </list>
+    </section>
+  </solution>
+
+  <decisions>
+    <decision id="d-faces" status="decided">
+      <question>Where do the REST/OpenAPI and MCP faces live?</question>
+      <option id="d-faces-routed" title="In RoutedApplication, always on"/>
+      <option id="d-faces-classes" title="In dedicated subclasses, as today"/>
+      <choice option="d-faces-routed" by="GP" date="2026-10-28">Every routed application answers network calls on every channel; visibility stays with the channel plugin.</choice>
+    </decision>
+    <decision id="d-switch" status="decided">
+      <question>Can an application turn the faces off?</question>
+      <option id="d-switch-no" title="No"/>
+      <option id="d-switch-yes" title="Yes, with a flag"/>
+      <choice option="d-switch-no" by="GP" date="2026-10-28">A schema lists only routes already exposed; a switch would be code without a verified use.</choice>
+    </decision>
+    <decision id="d-segment" status="decided">
+      <question>Which segments does the kernel reserve inside an application?</question>
+      <option id="d-segment-underscore" title="Every segment starting with an underscore"/>
+      <option id="d-segment-bare" title="The bare segment _"/>
+      <option id="d-segment-meta" title="_meta only"/>
+      <choice option="d-segment-meta" by="GP" date="2026-10-28">One segment for every administrative route; reserving every underscore name takes too much from the application.</choice>
+    </decision>
+    <decision id="d-mcpapp" status="decided">
+      <question>Does McpApplication stay?</question>
+      <option id="d-mcpapp-remove" title="Deprecated, then removed"/>
+      <option id="d-mcpapp-keep" title="Kept"/>
+      <choice option="d-mcpapp-remove" by="GP" date="2026-10-28">A RoutedApplication with routes declared for channel mcp gives the same result.</choice>
+    </decision>
+    <decision id="d-gui-switch" status="decided">
+      <question>How does a recipe enable the server GUI?</question>
+      <option id="d-gui-import" title="Optional import of the GUI package"/>
+      <option id="d-gui-appclass" title="app_class on the _server application"/>
+      <option id="d-gui-flag" title="A boolean flag on the server"/>
+      <option id="d-gui-element" title="A gui element on the server naming the class"/>
+      <choice option="d-gui-element" by="GP" date="2026-10-28">The recipe names the class; the core holds neither a dependency nor the name of the GUI package.</choice>
+    </decision>
+    <decision id="d-gui-shape" status="decided">
+      <question>What is the class named by gui?</question>
+      <option id="d-gui-composed" title="A composed server application replacing _server"/>
+      <option id="d-gui-component" title="A component built by ServerApplication and called for ui/..."/>
+      <choice option="d-gui-component" by="GP" date="2026-10-28">It works with any _server class and needs no mixin.</choice>
+    </decision>
+    <decision id="d-ext-pages" status="decided">
+      <question>How do extensions add GUI pages?</question>
+      <option id="d-ext-component" title="Register on the GUI component when present"/>
+      <option id="d-ext-package" title="A separate GUI package per extension"/>
+      <option id="d-ext-generated" title="Pages generated from the REST description"/>
+      <choice option="d-ext-component" by="GP" date="2026-10-28">Generated pages remain the direction for later.</choice>
+    </decision>
+    <decision id="d-gui-name" status="proposed">
+      <question>What is the attribute of the gui element called?</question>
+      <option id="d-gui-name-class" title="gui_class"><p><c>class</c> is a Python keyword; other elements use <c>app_class</c> and <c>handler_class</c>.</p></option>
+    </decision>
+  </decisions>
+
+  <consequences>
+    <list>
+      <item>Two URLs change: <c>/&lt;app&gt;/_meta/schema_json</c> becomes <c>/&lt;app&gt;/_meta/openapi/schema_json</c>, and <c>/&lt;app&gt;/mcp</c> becomes <c>/&lt;app&gt;/_meta/mcp</c>. The old URLs answer with a deprecation warning for one minor release.</item>
+      <item>MCP clients and links to the docs must be updated.</item>
+      <item>Every routed application reserves <c>_meta</c>. A route named <c>_meta</c> must fail at registration.</item>
+      <item><c>ServerApplication</c> gains an MCP face.</item>
+      <item>genropy-kajenn uses <c>OpenApiApplication</c> through <c>GenropyProxyOpenApiApplication</c>; it keeps working on the alias and must move before the removal.</item>
+      <item>kajenn-orchestra moves <c>SpaConsoleMcpApplication</c> and registers its pool pages on the GUI component.</item>
+    </list>
+  </consequences>
+</proposal>
