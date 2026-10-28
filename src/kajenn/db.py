@@ -35,6 +35,10 @@ The core calls the handler at fixed points and never imports a driver:
   natively async handler returns its own object.
 - ``capabilities`` — the optional operations the handler offers
   (``migration_plan(name)`` / ``migrate(name)``).
+
+The core adds no connection pool and commits nothing: connections and
+transactions are the handler's. Backend handlers (asqueel, SQLAlchemy, Django)
+ship apart, in the kajenn-db package: https://kajenn-db.readthedocs.io.
 """
 
 from __future__ import annotations

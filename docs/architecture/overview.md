@@ -305,8 +305,9 @@ monitoring under `/_server/`. Its OpenAPI schema lives at
 
 It is always present: the server mounts it with code `_server` when the
 configuration names none, and the configuration may only customise it
-(`login`, `oidc`, a subclass). A role process mounts none and sends `/_server/`
-calls to its parent.
+(`login`, `oidc`, a subclass). The dedicated process of an application mounted
+with `spawner="subprocess"` mounts none and sends `/_server/` calls to its
+parent.
 
 ## Source map
 

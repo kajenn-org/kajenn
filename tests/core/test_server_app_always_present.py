@@ -199,9 +199,10 @@ class Recipe(CONFIGURATION_TEMPLATES["default"]):
 
 
 class TestTheRoleProcess:
-    def test_a_role_process_mounts_no_server_application(self, tmp_path: Path) -> None:
-        # wf:contract: the process of an external application (role=application:<code>) hosts
-        # wf:contract: only its application: no _server, so /_server/... goes to the parent.
+    def test_an_application_in_its_dedicated_process_mounts_no_server_application(self, tmp_path: Path) -> None:
+        # wf:contract: the dedicated process of an application mounted with spawner="subprocess"
+        # wf:contract: (role=application:<code>) hosts only its application: no _server, so
+        # wf:contract: /_server/... goes to the parent.
         recipe = tmp_path / "config.py"
         recipe.write_text(ROLE_RECIPE)
         child = AsgiServer(config=str(recipe), role="application:billing")
