@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<!-- generated from channels-meta-and-server-gui.xml by xmldocs: do not edit, edit the XML -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Channel faces on every routed application, one _meta segment, and the server GUI as a separate component</title><style>
+:root {
+  --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e2dfd8; --panel: #f3f1ec;
+  --code-bg: #f0eee8; --accent: #2f5d8a;
+  --ok: #2e7d4f; --warn: #a86b00; --bad: #b23b3b; --info: #2f5d8a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #18181a; --fg: #e8e6e1; --muted: #9a9890; --line: #33332f; --panel: #212123;
+    --code-bg: #26262a; --accent: #8fb4dc;
+    --ok: #6cc28f; --warn: #e0a940; --bad: #e57373; --info: #8fb4dc;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #18181a; --fg: #e8e6e1; --muted: #9a9890; --line: #33332f; --panel: #212123;
+  --code-bg: #26262a; --accent: #8fb4dc;
+  --ok: #6cc28f; --warn: #e0a940; --bad: #e57373; --info: #8fb4dc;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 4px 0 8px; }
+h2 { font-size: 1.35rem; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.12rem; margin: 28px 0 8px; }
+h4 { font-size: 1rem; margin: 20px 0 6px; }
+a { color: var(--accent); }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg);
+  padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { margin: 0; overflow-x: auto; }
+pre code { display: block; padding: 12px 14px; background: none; }
+figure { margin: 16px 0; }
+figure.code { background: var(--code-bg); border-radius: 8px; }
+figure.code figcaption { font-size: 0.8rem; color: var(--muted); padding: 8px 14px 0; }
+figure.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+figure.embed { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+figure.embed figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 8px; }
+figure.embed svg { max-width: 100%; height: auto; }
+.tag-script { color: var(--bad); }
+figure.diagram figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 8px; }
+.doc-type { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: var(--muted); }
+.doc-meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 0.9rem; }
+.muted { color: var(--muted); font-size: 0.9em; }
+.box { border: 1px solid var(--line); border-left: 4px solid var(--line); background: var(--panel);
+  border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+.box-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.box-foot { margin-top: 6px; }
+.box.fact { border-left-color: var(--info); }
+.box.rule-must { border-left-color: var(--ok); }
+.box.rule-must-not { border-left-color: var(--bad); }
+.box.rule-should { border-left-color: var(--warn); }
+.box.limit { border-left-color: var(--warn); }
+.box.decision-open, .box.decision-proposed { border-left-color: var(--warn); }
+.box.decision-decided { border-left-color: var(--ok); }
+.box.decision-rejected { border-left-color: var(--bad); }
+.box.example { border-left-color: var(--accent); }
+.box.done { border-left-color: var(--ok); }
+.tag-done { color: var(--ok); }
+.tag-doing, .tag-in-progress { color: var(--info); }
+.tag-todo { color: var(--muted); }
+.tag-approved { color: var(--ok); }
+.source { font-size: 0.8rem; }
+.why { margin-top: 4px; }
+.tag { display: inline-block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 1px 7px; border-radius: 10px; border: 1px solid currentColor; color: var(--muted); }
+.tag-test, .tag-run, .tag-must, .tag-decided, .tag-accepted { color: var(--ok); }
+.tag-read, .tag-review { color: var(--info); }
+.tag-should, .tag-open, .tag-proposed, .tag-draft { color: var(--warn); }
+.tag-must-not, .tag-rejected { color: var(--bad); }
+.options li { margin: 6px 0; }
+.options li.chosen b { color: var(--ok); }
+.choice { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.step-num { color: var(--muted); font-weight: 400; margin-right: 6px; }
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+caption { text-align: left; color: var(--muted); padding-bottom: 6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--panel); }
+  </style></head><body><main><header class="doc-head"><div class="doc-type">Proposal</div><h1>Channel faces on every routed application, one _meta segment, and the server GUI as a separate component</h1><div class="doc-meta"><span>proposal/channels-meta-and-server-gui</span><span>2026-10-28</span><span>Giovanni Porcari</span><span class="tag tag-review">review</span></div></header><section class="part problem"><h2>Problem</h2>
+    <p>Three application classes expose the same router on different channels: <code>OpenApiApplication</code> (REST and OpenAPI), <code>McpOpenApiApplication</code> (REST, OpenAPI and MCP) and <code>McpApplication</code> (MCP only). <code>McpOpenApiApplication</code> is the most common base, and its name is long.</p>
+    <p>Each class reserves its own path segments inside the application: <code>_meta</code>, <code>mcp</code>, <code>_well_known</code>. The rule for what an application may name its own routes is not written anywhere.</p>
+    <p>The server application <code>_server</code> extends <code>OpenApiApplication</code>, so it has no MCP face. A browser interface for <code>_server</code> is being built on gramlot. If it lives in kajenn, gramlot becomes a required dependency of the core.</p>
+  </section><section class="part current"><h2>Current state</h2>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/routed_application.py:128</code><span class="muted">2026-10-28</span></div><div><code>RoutedApplication</code> is <code>BaseApplication</code> plus the genro-routes <code>RoutingClass</code>. Its <code>execute</code> is the single execution point that REST, MCP, WSX and the KajennBus reach.</div></div>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/applications/openapi.py:89</code><span class="muted">2026-10-28</span></div><div><code>OpenApiApplication</code> attaches <code>_meta</code> with <code>schema_json</code>, <code>docs</code> (Swagger UI) and <code>index</code>.</div></div>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/applications/mcp.py:387</code><span class="muted">2026-10-28</span></div><div><code>McpOpenApiApplication</code> adds the MCP JSON-RPC face under the segment <code>mcp</code> (<code>mcp_name_segment</code>). The <code>channel</code> plugin decides visibility: the MCP face lists only entries declared for channel <code>mcp</code>, and an undeclared method is REST only.</div></div>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/applications/mcp.py:323</code><span class="muted">2026-10-28</span></div><div><code>McpApplication</code> makes the whole application one JSON-RPC endpoint over an external <code>RoutingClass</code>, with no REST face.</div></div>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/well_known.py:39</code><span class="muted">2026-10-28</span></div><div>Discovery documents are served from the application branch <code>_well_known</code>. The server maps <code>/.well-known/&lt;name&gt;</code> onto it.</div></div>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server_app/server_app.py:153</code><span class="muted">2026-10-28</span></div><div><code>ServerApplication</code> extends <code>OpenApiApplication</code>.</div></div>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/asgi_server.py:138</code><span class="muted">2026-10-28</span></div><div>The server mounts <code>ServerApplication</code> under <code>_server</code> when no declared application has that code.</div></div>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:546</code><span class="muted">2026-10-28</span></div><div>The server demux picks an application by the first path segment only. A mount is always one segment.</div></div>
+  </section><section class="part solution"><h2>Proposed solution</h2>
+    <section class="section"><h3>Channel faces on RoutedApplication</h3>
+      <ul>
+        <li>The REST/OpenAPI face and the MCP face move into <code>RoutedApplication</code>. Every application with routes has both, with no switch to turn them off.</li>
+        <li>The <code>channel</code> plugin keeps deciding visibility. Turning MCP on everywhere exposes nothing that is not declared for channel <code>mcp</code>.</li>
+        <li><code>OpenApiApplication</code>, <code>McpOpenApiApplication</code> and <code>McpApplication</code> become deprecated aliases, then are removed. No new class name is needed.</li>
+        <li><code>BaseApplication</code> stays for applications without routes: <code>RemoteApplication</code> and raw ASGI applications.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>One reserved segment: _meta</h3>
+      <p>Inside a <code>RoutedApplication</code> the only reserved segment is <code>_meta</code>. It holds the administrative routes of the application. Application routes are never under it: a route <code>pippo</code> is reached as <code>/&lt;app&gt;/pippo</code> over REST and as tool <code>pippo</code> over MCP.</p>
+      <div class="table-wrap"><table><caption>_meta layout</caption>
+        <tr><th>Path</th><th>Content</th><th>Today</th></tr>
+        <tr><td><code>_meta/index</code></td><td>Application page with links to the channel descriptions</td><td><code>_meta/index</code></td></tr>
+        <tr><td><code>_meta/openapi/schema_json</code></td><td>OpenAPI 3.1 document</td><td><code>_meta/schema_json</code></td></tr>
+        <tr><td><code>_meta/openapi/docs</code></td><td>Swagger UI</td><td><code>_meta/docs</code></td></tr>
+        <tr><td><code>POST _meta/mcp</code></td><td>MCP JSON-RPC entry</td><td><code>mcp</code></td></tr>
+        <tr><td><code>GET _meta/mcp/tools</code></td><td>List of the MCP tools, readable without speaking MCP</td><td>none</td></tr>
+        <tr><td><code>_meta/well_known/...</code></td><td>Discovery documents; <code>/.well-known/</code> is unchanged</td><td><code>_well_known/...</code></td></tr>
+      </table></div>
+      <p>The names <code>mcp</code>, <code>api</code> and <code>_well_known</code> become free for application routes.</p>
+    </section>
+
+    <section class="section"><h3>SpaConsole in kajenn-orchestra</h3>
+      <p><code>SpaConsoleMcpApplication</code> becomes a <code>RoutedApplication</code>. The routes of <code>SpaConsole</code> are declared for channel <code>mcp</code>, so the REST face refuses them. Its MCP client moves from <code>/&lt;mount&gt;/</code> to <code>/&lt;mount&gt;/_meta/mcp</code>.</p>
+    </section>
+
+    <section class="section"><h3>Server application: API in kajenn, GUI in its own repository</h3>
+      <ul>
+        <li><code>ServerApplication</code> stays in kajenn and serves REST and MCP only. It gains MCP by inheriting from <code>RoutedApplication</code>. kajenn does not depend on gramlot.</li>
+        <li>The GUI is a component in the repository <code>kajenn-serverapp-gui</code>, which depends on kajenn and gramlot.</li>
+        <li>The recipe enables it on the server element: <code>gui(gui_class=...)</code>. Without the element there is no GUI. The core never names the GUI package.</li>
+        <li><code>ServerApplication</code> builds the component as <code>gui_class(self)</code> (dual relationship) and passes every request on <code>ui/...</code> to it. The component releases its resources in <code>on_shutdown</code>. The URL is <code>/_server/ui/</code>.</li>
+        <li>The GUI reads and writes only through the REST routes of <code>_server</code>, like any other client.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>Extension pages</h3>
+      <ul>
+        <li>The REST routes of an extension keep using <code>attach_section(section, name)</code> of the core.</li>
+        <li>The GUI pages of an extension register on the GUI component, only when the component exists. <code>ServerApplication</code> exposes the component, or <code>None</code>.</li>
+        <li>gramlot is an optional extra of the extension, for example <code>kajenn-orchestra[gui]</code>.</li>
+        <li>Pages generated from the OpenAPI description of each section are a future direction. They are not designed here.</li>
+      </ul>
+    </section>
+  </section><section class="part decisions"><h2>Decisions</h2>
+    <div class="box decision decision-decided" id="d-faces"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-faces</span></div><div class="question">Where do the REST/OpenAPI and MCP faces live?</div><ol class="options"><li id="d-faces-routed" class="chosen"><b>In RoutedApplication, always on</b></li><li id="d-faces-classes"><b>In dedicated subclasses, as today</b></li></ol><div class="choice"><b>Choice: In RoutedApplication, always on</b><span class="muted"> (GP, 2026-10-28)</span><div>Every routed application answers network calls on every channel; visibility stays with the channel plugin.</div></div></div>
+    <div class="box decision decision-decided" id="d-switch"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-switch</span></div><div class="question">Can an application turn the faces off?</div><ol class="options"><li id="d-switch-no" class="chosen"><b>No</b></li><li id="d-switch-yes"><b>Yes, with a flag</b></li></ol><div class="choice"><b>Choice: No</b><span class="muted"> (GP, 2026-10-28)</span><div>A schema lists only routes already exposed; a switch would be code without a verified use.</div></div></div>
+    <div class="box decision decision-decided" id="d-segment"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-segment</span></div><div class="question">Which segments does the kernel reserve inside an application?</div><ol class="options"><li id="d-segment-underscore"><b>Every segment starting with an underscore</b></li><li id="d-segment-bare"><b>The bare segment _</b></li><li id="d-segment-meta" class="chosen"><b>_meta only</b></li></ol><div class="choice"><b>Choice: _meta only</b><span class="muted"> (GP, 2026-10-28)</span><div>One segment for every administrative route; reserving every underscore name takes too much from the application.</div></div></div>
+    <div class="box decision decision-decided" id="d-mcpapp"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-mcpapp</span></div><div class="question">Does McpApplication stay?</div><ol class="options"><li id="d-mcpapp-remove" class="chosen"><b>Deprecated, then removed</b></li><li id="d-mcpapp-keep"><b>Kept</b></li></ol><div class="choice"><b>Choice: Deprecated, then removed</b><span class="muted"> (GP, 2026-10-28)</span><div>A RoutedApplication with routes declared for channel mcp gives the same result.</div></div></div>
+    <div class="box decision decision-decided" id="d-gui-switch"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-gui-switch</span></div><div class="question">How does a recipe enable the server GUI?</div><ol class="options"><li id="d-gui-import"><b>Optional import of the GUI package</b></li><li id="d-gui-appclass"><b>app_class on the _server application</b></li><li id="d-gui-flag"><b>A boolean flag on the server</b></li><li id="d-gui-element" class="chosen"><b>A gui element on the server naming the class</b></li></ol><div class="choice"><b>Choice: A gui element on the server naming the class</b><span class="muted"> (GP, 2026-10-28)</span><div>The recipe names the class; the core holds neither a dependency nor the name of the GUI package.</div></div></div>
+    <div class="box decision decision-decided" id="d-gui-shape"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-gui-shape</span></div><div class="question">What is the class named by gui?</div><ol class="options"><li id="d-gui-composed"><b>A composed server application replacing _server</b></li><li id="d-gui-component" class="chosen"><b>A component built by ServerApplication and called for ui/...</b></li></ol><div class="choice"><b>Choice: A component built by ServerApplication and called for ui/...</b><span class="muted"> (GP, 2026-10-28)</span><div>It works with any _server class and needs no mixin.</div></div></div>
+    <div class="box decision decision-decided" id="d-ext-pages"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-ext-pages</span></div><div class="question">How do extensions add GUI pages?</div><ol class="options"><li id="d-ext-component" class="chosen"><b>Register on the GUI component when present</b></li><li id="d-ext-package"><b>A separate GUI package per extension</b></li><li id="d-ext-generated"><b>Pages generated from the REST description</b></li></ol><div class="choice"><b>Choice: Register on the GUI component when present</b><span class="muted"> (GP, 2026-10-28)</span><div>Generated pages remain the direction for later.</div></div></div>
+    <div class="box decision decision-proposed" id="d-gui-name"><div class="box-head"><span class="tag tag-proposed">proposed</span><span class="muted">d-gui-name</span></div><div class="question">What is the attribute of the gui element called?</div><ol class="options"><li id="d-gui-name-class"><b>gui_class</b><p><code>class</code> is a Python keyword; other elements use <code>app_class</code> and <code>handler_class</code>.</p></li></ol></div>
+  </section><section class="part consequences"><h2>Consequences</h2>
+    <ul>
+      <li>Two URLs change: <code>/&lt;app&gt;/_meta/schema_json</code> becomes <code>/&lt;app&gt;/_meta/openapi/schema_json</code>, and <code>/&lt;app&gt;/mcp</code> becomes <code>/&lt;app&gt;/_meta/mcp</code>. The old URLs answer with a deprecation warning for one minor release.</li>
+      <li>MCP clients and links to the docs must be updated.</li>
+      <li>Every routed application reserves <code>_meta</code>. A route named <code>_meta</code> must fail at registration.</li>
+      <li><code>ServerApplication</code> gains an MCP face.</li>
+      <li>genropy-kajenn uses <code>OpenApiApplication</code> through <code>GenropyProxyOpenApiApplication</code>; it keeps working on the alias and must move before the removal.</li>
+      <li>kajenn-orchestra moves <code>SpaConsoleMcpApplication</code> and registers its pool pages on the GUI component.</li>
+    </ul>
+  </section></main></body></html>
