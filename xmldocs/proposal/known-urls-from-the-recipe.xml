@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<proposal id="proposal/known-urls-from-the-recipe" title="Known URLs answered from the recipe" date="2026-11-02" lang="en" author="Giovanni Porcari" status="draft">
+
+  <problem>
+    <p>External clients read some documents at fixed paths of a site. Examples: <c>/.well-known/security.txt</c> (RFC 9116), <c>/robots.txt</c>, <c>/.well-known/apple-app-site-association</c> (iOS universal links), <c>/.well-known/assetlinks.json</c> (Android app links).</p>
+    <p>The content of these documents depends on the deployment, not on the code: a contact address, the crawler rules, the identifiers of a mobile app. The same application code runs on sites that need different values.</p>
+    <p>In kajenn an application serves a <c>/.well-known/</c> document only by declaring it in its code. A fixed path outside <c>/.well-known/</c>, such as <c>/robots.txt</c>, has no mechanism of its own. A site cannot declare these documents in its recipe.</p>
+    <p>genropy legacy answers these four documents from the instance configuration, with no code per site.</p>
+  </problem>
+
+  <current>
+    <section title="kajenn today">
+      <fact source="src/kajenn/server.py:561" method="read" verified="2026-11-02">A first path segment starting with a dot gets 404 from the server demux and reaches no application. The one exception is <c>.well-known</c> followed by a name in <c>well_known_applications</c>: the request goes to that application with its path rebuilt as <c>/_well_known/&lt;name&gt;/&lt;rest&gt;</c>.</fact>
+      <fact source="src/kajenn/routed_application.py:187" method="read" verified="2026-11-02">A <c>RoutedApplication</c> declares its documents as the children of a <c>_well_known</c> branch of its router. <c>well_known_names</c> returns those children. <c>BaseApplication.well_known_names</c> returns <c>()</c>.</fact>
+      <fact source="src/kajenn/server.py:262" method="read" verified="2026-11-02"><c>index_well_known</c> keeps one index name → application. A name declared by two applications belongs to the last registered.</fact>
+      <fact source="src/kajenn/kbus_mixin.py:295" method="read" verified="2026-11-02">An external application presents its names in <c>meta["well_known"]</c> when its process joins the KajennBus. The server re-indexes them.</fact>
+      <fact source="src/kajenn/server.py:525" method="read" verified="2026-11-02">A path without a leading dot, <c>/robots.txt</c> and <c>/favicon.ico</c> included, is demuxed like any other path: it reaches the application mounted on that first segment, else the root application, else 404.</fact>
+      <fact source="src/kajenn/site_home.py:82" method="read" verified="2026-11-02"><c>SiteHome.static</c> names a folder for favicon, robots and sitemap. No code under <c>src/</c> serves that folder.</fact>
+      <fact source="src/kajenn/asgi_server.py:138" method="read" verified="2026-11-02">The server always mounts a <c>ServerApplication</c> under <c>_server</c> when no declared application has that code.</fact>
+      <p>The proposal <ref doc="proposal/channels-meta-and-server-gui" to="d-segment">channels-meta-and-server-gui</ref> moves the branch <c>_well_known</c> to <c>_meta/well_known</c>. The public path <c>/.well-known/</c> does not change. This proposal holds for both locations.</p>
+    </section>
+
+    <section title="genropy legacy">
+      <fact source="genropy:gnr/web/gnrwsgisite.py:499" method="read" verified="2026-11-02">At startup the site reads <c>alias_url</c> from the <c>__call__</c> of every webtool found by <c>find_webtools()</c>. It builds <c>webtools_static_routes</c>, a dict absolute path → webtool name.</fact>
+      <fact source="genropy:gnr/web/gnrwsgisite.py:1230" method="read" verified="2026-11-02"><c>_dispatcher</c> looks up <c>request.path</c> in that dict before every other rule. On a match it serves the webtool through <c>serve_tool(['_tools', &lt;name&gt;])</c>. The match is on the exact whole path.</fact>
+      <fact source="genropy:wku.py:32" method="read" verified="2026-11-02">A webtool declares its path with <c>@metadata(alias_url=...)</c> on <c>__call__</c>. The path may be outside <c>/.well-known/</c>: <c>RobotsTxt</c> uses <c>/robots.txt</c>.</fact>
+      <table title="Documents served by wku.py">
+        <row head="true"><cell>Webtool</cell><cell>Path</cell><cell>Configuration read</cell><cell>Output</cell></row>
+        <row><cell><c>SecurityTxt</c></cell><cell><c>/.well-known/security.txt</c></cell><cell><c>wku.security_txt</c></cell><cell>One <c>Field: value</c> line per child</cell></row>
+        <row><cell><c>RobotsTxt</c></cell><cell><c>/robots.txt</c></cell><cell><c>wku.robots_txt</c></cell><cell><c>User-agent</c> blocks with their rules, plus global lines</cell></row>
+        <row><cell><c>DeepLinkIOS</c></cell><cell><c>/.well-known/apple-app-site-association</c></cell><cell><c>mobile_app.ios</c></cell><cell>JSON <c>applinks</c> and <c>webcredentials</c>, with excluded paths</cell></row>
+        <row><cell><c>DeepLinkAndroid</c></cell><cell><c>/.well-known/assetlinks.json</c></cell><cell><c>mobile_app.android</c></cell><cell>JSON with package name and certificate fingerprints</cell></row>
+      </table>
+      <fact source="genropy:wku.py:14" method="read" verified="2026-11-02">A document whose configuration is missing raises an exception at request time.</fact>
+    </section>
+  </current>
+
+  <solution>
+    <section title="Behaviour">
+      <list>
+        <item>The recipe declares, at site level, the documents the site answers at fixed paths. Each declaration carries the data of the document, not its text.</item>
+        <item>kajenn generates the body from that data, with the media type the standard requires. No application code is needed.</item>
+        <item>The first set is the legacy one: <c>security.txt</c>, <c>robots.txt</c>, <c>apple-app-site-association</c>, <c>assetlinks.json</c>.</item>
+        <item>A document not declared in the recipe does not exist: its path follows today's rules (404 under <c>/.well-known/</c>, normal demux elsewhere). There is no runtime exception for a missing configuration.</item>
+        <item>Wrong data is refused at boot, not at request time.</item>
+        <item>Applications keep declaring their own <c>/.well-known/</c> documents in code, as today.</item>
+      </list>
+    </section>
+
+    <section title="Where the recipe documents are answered">
+      <p><c>ServerApplication</c> is always mounted. It can carry the recipe documents as children of its own <c>_well_known</c> branch. <c>/.well-known/&lt;name&gt;</c> then reaches it through the index that exists today, with no change to <c>demux_hidden</c>. Decision <ref to="d-owner">d-owner</ref> compares this with the alternatives.</p>
+      <p>A root path such as <c>/robots.txt</c> has no existing mechanism. Decision <ref to="d-root">d-root</ref> covers it.</p>
+    </section>
+
+    <section title="Example recipe shape">
+      <p>Element and attribute names are placeholders until the decisions below are taken.</p>
+      <code lang="python"><![CDATA[
+def main(self, root):
+    site = root.site(name="acme")
+    known = site.known_urls()
+    known.security_txt(contact="mailto:security@acme.example",
+                       expires="2027-11-01T00:00:00Z")
+    known.robots_txt(rules=[{"user_agent": "*", "disallow": ["/_server/"]}])
+    known.ios_app(team_id="ABCDE12345", bundle_id="example.acme.app",
+                  excluded_paths=["/_server/*"])
+    known.android_app(package_name="example.acme.app",
+                      fingerprints=["AA:BB:..."])
+]]></code>
+    </section>
+  </solution>
+
+  <decisions>
+    <decision id="d-scope" status="open">
+      <question>Which documents are in the first cut?</question>
+      <option id="d-scope-legacy" title="The four legacy documents">
+        <p>Pro: parity with genropy legacy; every format is already known. Con: none known.</p>
+      </option>
+      <option id="d-scope-wider" title="The legacy four plus openid-configuration, change-password and sitemap.xml">
+        <p>Pro: covers more probes. Con: code for documents no site asks for today.</p>
+      </option>
+    </decision>
+
+    <decision id="d-owner" status="open">
+      <question>Which component answers the recipe documents?</question>
+      <option id="d-owner-server-app" title="ServerApplication, in its _well_known branch">
+        <p>Pro: <c>ServerApplication</c> is always mounted; the existing index routes <c>/.well-known/</c> with no demux change. Con: <c>_server</c> gains a role that is not administration.</p>
+      </option>
+      <option id="d-owner-demux" title="The server demux, before the application index">
+        <p>Pro: works with no application at all. Con: the demux generates content, which today it never does.</p>
+      </option>
+      <option id="d-owner-app" title="An application the site declares in the recipe">
+        <p>Pro: explicit; uses only today's mechanism. Con: every site that wants one document must add an application.</p>
+      </option>
+    </decision>
+
+    <decision id="d-root" status="open">
+      <question>How is a root path outside /.well-known/ (/robots.txt) answered?</question>
+      <option id="d-root-exact" title="An exact-path index in the demux, checked before the mount lookup">
+        <p>Pro: same rule as legacy; one dict lookup. Con: a site path shadows a mount with the same first segment.</p>
+      </option>
+      <option id="d-root-rootapp" title="Left to the root application, as today">
+        <p>Pro: no change. Con: a site with no root application cannot answer <c>/robots.txt</c>.</p>
+      </option>
+      <option id="d-root-none" title="Only /.well-known/ documents are in scope">
+        <p>Pro: smallest change. Con: <c>robots.txt</c>, part of the legacy set, is left out.</p>
+      </option>
+    </decision>
+
+    <decision id="d-conflict" status="open">
+      <question>What happens when an application declares a name the recipe also declares?</question>
+      <option id="d-conflict-refuse" title="Boot fails with FatalBootError">
+        <p>Pro: no silent winner. Con: an external application that joins later cannot be refused at boot.</p>
+      </option>
+      <option id="d-conflict-recipe" title="The recipe wins">
+        <p>Pro: the site has the last word over application code. Con: changes today's rule (the last registered wins).</p>
+      </option>
+      <option id="d-conflict-last" title="Today's rule: the last registered wins">
+        <p>Pro: no new rule. Con: the result depends on registration order.</p>
+      </option>
+    </decision>
+
+    <decision id="d-static" status="open">
+      <question>Does SiteHome.static also serve files at fixed paths (favicon.ico, sitemap.xml)?</question>
+      <option id="d-static-no" title="No, out of this proposal">
+        <p>Pro: keeps generated documents and static files apart. Con: <c>SiteHome.static</c> stays a folder nobody serves.</p>
+      </option>
+      <option id="d-static-yes" title="Yes, through the same exact-path index">
+        <p>Pro: one place for every fixed path. Con: depends on <ref to="d-root">d-root</ref>.</p>
+      </option>
+    </decision>
+  </decisions>
+
+  <consequences>
+    <list>
+      <item>The recipe grammar gains a site-level element and one child per document type.</item>
+      <item>No new dependency: every format is plain text or JSON.</item>
+      <item>A genropy site moved to kajenn writes the same data in the recipe instead of <c>wku.*</c> and <c>mobile_app.*</c>.</item>
+      <item>With <ref to="d-root-exact">d-root-exact</ref>, the demux gains one lookup before the mount lookup.</item>
+    </list>
+  </consequences>
+
+  <related>
+    <doc id="proposal/channels-meta-and-server-gui">Moves the _well_known branch under _meta</doc>
+  </related>
+</proposal>

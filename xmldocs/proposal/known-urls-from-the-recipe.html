@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<!-- generated from known-urls-from-the-recipe.xml by xmldocs: do not edit, edit the XML -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Known URLs answered from the recipe</title><style>
+:root {
+  --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e2dfd8; --panel: #f3f1ec;
+  --code-bg: #f0eee8; --accent: #2f5d8a;
+  --ok: #2e7d4f; --warn: #a86b00; --bad: #b23b3b; --info: #2f5d8a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #18181a; --fg: #e8e6e1; --muted: #9a9890; --line: #33332f; --panel: #212123;
+    --code-bg: #26262a; --accent: #8fb4dc;
+    --ok: #6cc28f; --warn: #e0a940; --bad: #e57373; --info: #8fb4dc;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #18181a; --fg: #e8e6e1; --muted: #9a9890; --line: #33332f; --panel: #212123;
+  --code-bg: #26262a; --accent: #8fb4dc;
+  --ok: #6cc28f; --warn: #e0a940; --bad: #e57373; --info: #8fb4dc;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 4px 0 8px; }
+h2 { font-size: 1.35rem; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.12rem; margin: 28px 0 8px; }
+h4 { font-size: 1rem; margin: 20px 0 6px; }
+a { color: var(--accent); }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg);
+  padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { margin: 0; overflow-x: auto; }
+pre code { display: block; padding: 12px 14px; background: none; }
+figure { margin: 16px 0; }
+figure.code { background: var(--code-bg); border-radius: 8px; }
+figure.code figcaption { font-size: 0.8rem; color: var(--muted); padding: 8px 14px 0; }
+figure.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+figure.embed { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+figure.embed figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 8px; }
+figure.embed svg { max-width: 100%; height: auto; }
+.tag-script { color: var(--bad); }
+figure.diagram figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 8px; }
+.doc-type { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: var(--muted); }
+.doc-meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 0.9rem; }
+.muted { color: var(--muted); font-size: 0.9em; }
+.box { border: 1px solid var(--line); border-left: 4px solid var(--line); background: var(--panel);
+  border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+.box-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.box-foot { margin-top: 6px; }
+.box.fact { border-left-color: var(--info); }
+.box.rule-must { border-left-color: var(--ok); }
+.box.rule-must-not { border-left-color: var(--bad); }
+.box.rule-should { border-left-color: var(--warn); }
+.box.limit { border-left-color: var(--warn); }
+.box.decision-open, .box.decision-proposed { border-left-color: var(--warn); }
+.box.decision-decided { border-left-color: var(--ok); }
+.box.decision-rejected { border-left-color: var(--bad); }
+.box.example { border-left-color: var(--accent); }
+.box.done { border-left-color: var(--ok); }
+.tag-done { color: var(--ok); }
+.tag-doing, .tag-in-progress { color: var(--info); }
+.tag-todo { color: var(--muted); }
+.tag-approved { color: var(--ok); }
+.source { font-size: 0.8rem; }
+.why { margin-top: 4px; }
+.tag { display: inline-block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 1px 7px; border-radius: 10px; border: 1px solid currentColor; color: var(--muted); }
+.tag-test, .tag-run, .tag-must, .tag-decided, .tag-accepted { color: var(--ok); }
+.tag-read, .tag-review { color: var(--info); }
+.tag-should, .tag-open, .tag-proposed, .tag-draft { color: var(--warn); }
+.tag-must-not, .tag-rejected { color: var(--bad); }
+.options li { margin: 6px 0; }
+.options li.chosen b { color: var(--ok); }
+.choice { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.step-num { color: var(--muted); font-weight: 400; margin-right: 6px; }
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+caption { text-align: left; color: var(--muted); padding-bottom: 6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--panel); }
+  </style></head><body><main><header class="doc-head"><div class="doc-type">Proposal</div><h1>Known URLs answered from the recipe</h1><div class="doc-meta"><span>proposal/known-urls-from-the-recipe</span><span>2026-11-02</span><span>Giovanni Porcari</span><span class="tag tag-draft">draft</span></div></header><section class="part problem"><h2>Problem</h2>
+    <p>External clients read some documents at fixed paths of a site. Examples: <code>/.well-known/security.txt</code> (RFC 9116), <code>/robots.txt</code>, <code>/.well-known/apple-app-site-association</code> (iOS universal links), <code>/.well-known/assetlinks.json</code> (Android app links).</p>
+    <p>The content of these documents depends on the deployment, not on the code: a contact address, the crawler rules, the identifiers of a mobile app. The same application code runs on sites that need different values.</p>
+    <p>In kajenn an application serves a <code>/.well-known/</code> document only by declaring it in its code. A fixed path outside <code>/.well-known/</code>, such as <code>/robots.txt</code>, has no mechanism of its own. A site cannot declare these documents in its recipe.</p>
+    <p>genropy legacy answers these four documents from the instance configuration, with no code per site.</p>
+  </section><section class="part current"><h2>Current state</h2>
+    <section class="section"><h3>kajenn today</h3>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:561</code><span class="muted">2026-11-02</span></div><div>A first path segment starting with a dot gets 404 from the server demux and reaches no application. The one exception is <code>.well-known</code> followed by a name in <code>well_known_applications</code>: the request goes to that application with its path rebuilt as <code>/_well_known/&lt;name&gt;/&lt;rest&gt;</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/routed_application.py:187</code><span class="muted">2026-11-02</span></div><div>A <code>RoutedApplication</code> declares its documents as the children of a <code>_well_known</code> branch of its router. <code>well_known_names</code> returns those children. <code>BaseApplication.well_known_names</code> returns <code>()</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:262</code><span class="muted">2026-11-02</span></div><div><code>index_well_known</code> keeps one index name → application. A name declared by two applications belongs to the last registered.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/kbus_mixin.py:295</code><span class="muted">2026-11-02</span></div><div>An external application presents its names in <code>meta["well_known"]</code> when its process joins the KajennBus. The server re-indexes them.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:525</code><span class="muted">2026-11-02</span></div><div>A path without a leading dot, <code>/robots.txt</code> and <code>/favicon.ico</code> included, is demuxed like any other path: it reaches the application mounted on that first segment, else the root application, else 404.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/site_home.py:82</code><span class="muted">2026-11-02</span></div><div><code>SiteHome.static</code> names a folder for favicon, robots and sitemap. No code under <code>src/</code> serves that folder.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/asgi_server.py:138</code><span class="muted">2026-11-02</span></div><div>The server always mounts a <code>ServerApplication</code> under <code>_server</code> when no declared application has that code.</div></div>
+      <p>The proposal <a class="ref" href="../proposal/channels-meta-and-server-gui.html#d-segment">channels-meta-and-server-gui</a> moves the branch <code>_well_known</code> to <code>_meta/well_known</code>. The public path <code>/.well-known/</code> does not change. This proposal holds for both locations.</p>
+    </section>
+
+    <section class="section"><h3>genropy legacy</h3>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">genropy:gnr/web/gnrwsgisite.py:499</code><span class="muted">2026-11-02</span></div><div>At startup the site reads <code>alias_url</code> from the <code>__call__</code> of every webtool found by <code>find_webtools()</code>. It builds <code>webtools_static_routes</code>, a dict absolute path → webtool name.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">genropy:gnr/web/gnrwsgisite.py:1230</code><span class="muted">2026-11-02</span></div><div><code>_dispatcher</code> looks up <code>request.path</code> in that dict before every other rule. On a match it serves the webtool through <code>serve_tool(['_tools', &lt;name&gt;])</code>. The match is on the exact whole path.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">genropy:wku.py:32</code><span class="muted">2026-11-02</span></div><div>A webtool declares its path with <code>@metadata(alias_url=...)</code> on <code>__call__</code>. The path may be outside <code>/.well-known/</code>: <code>RobotsTxt</code> uses <code>/robots.txt</code>.</div></div>
+      <div class="table-wrap"><table><caption>Documents served by wku.py</caption>
+        <tr><th>Webtool</th><th>Path</th><th>Configuration read</th><th>Output</th></tr>
+        <tr><td><code>SecurityTxt</code></td><td><code>/.well-known/security.txt</code></td><td><code>wku.security_txt</code></td><td>One <code>Field: value</code> line per child</td></tr>
+        <tr><td><code>RobotsTxt</code></td><td><code>/robots.txt</code></td><td><code>wku.robots_txt</code></td><td><code>User-agent</code> blocks with their rules, plus global lines</td></tr>
+        <tr><td><code>DeepLinkIOS</code></td><td><code>/.well-known/apple-app-site-association</code></td><td><code>mobile_app.ios</code></td><td>JSON <code>applinks</code> and <code>webcredentials</code>, with excluded paths</td></tr>
+        <tr><td><code>DeepLinkAndroid</code></td><td><code>/.well-known/assetlinks.json</code></td><td><code>mobile_app.android</code></td><td>JSON with package name and certificate fingerprints</td></tr>
+      </table></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">genropy:wku.py:14</code><span class="muted">2026-11-02</span></div><div>A document whose configuration is missing raises an exception at request time.</div></div>
+    </section>
+  </section><section class="part solution"><h2>Proposed solution</h2>
+    <section class="section"><h3>Behaviour</h3>
+      <ul>
+        <li>The recipe declares, at site level, the documents the site answers at fixed paths. Each declaration carries the data of the document, not its text.</li>
+        <li>kajenn generates the body from that data, with the media type the standard requires. No application code is needed.</li>
+        <li>The first set is the legacy one: <code>security.txt</code>, <code>robots.txt</code>, <code>apple-app-site-association</code>, <code>assetlinks.json</code>.</li>
+        <li>A document not declared in the recipe does not exist: its path follows today's rules (404 under <code>/.well-known/</code>, normal demux elsewhere). There is no runtime exception for a missing configuration.</li>
+        <li>Wrong data is refused at boot, not at request time.</li>
+        <li>Applications keep declaring their own <code>/.well-known/</code> documents in code, as today.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>Where the recipe documents are answered</h3>
+      <p><code>ServerApplication</code> is always mounted. It can carry the recipe documents as children of its own <code>_well_known</code> branch. <code>/.well-known/&lt;name&gt;</code> then reaches it through the index that exists today, with no change to <code>demux_hidden</code>. Decision <a class="ref" href="#d-owner">d-owner</a> compares this with the alternatives.</p>
+      <p>A root path such as <code>/robots.txt</code> has no existing mechanism. Decision <a class="ref" href="#d-root">d-root</a> covers it.</p>
+    </section>
+
+    <section class="section"><h3>Example recipe shape</h3>
+      <p>Element and attribute names are placeholders until the decisions below are taken.</p>
+      <figure class="code"><figcaption>python</figcaption><pre><code>def main(self, root):
+    site = root.site(name="acme")
+    known = site.known_urls()
+    known.security_txt(contact="mailto:security@acme.example",
+                       expires="2027-11-01T00:00:00Z")
+    known.robots_txt(rules=[{"user_agent": "*", "disallow": ["/_server/"]}])
+    known.ios_app(team_id="ABCDE12345", bundle_id="example.acme.app",
+                  excluded_paths=["/_server/*"])
+    known.android_app(package_name="example.acme.app",
+                      fingerprints=["AA:BB:..."])</code></pre></figure>
+    </section>
+  </section><section class="part decisions"><h2>Decisions</h2>
+    <div class="box decision decision-open" id="d-scope"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-scope</span></div><div class="question">Which documents are in the first cut?</div><ol class="options"><li id="d-scope-legacy"><b>The four legacy documents</b>
+        <p>Pro: parity with genropy legacy; every format is already known. Con: none known.</p>
+      </li><li id="d-scope-wider"><b>The legacy four plus openid-configuration, change-password and sitemap.xml</b>
+        <p>Pro: covers more probes. Con: code for documents no site asks for today.</p>
+      </li></ol></div>
+
+    <div class="box decision decision-open" id="d-owner"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-owner</span></div><div class="question">Which component answers the recipe documents?</div><ol class="options"><li id="d-owner-server-app"><b>ServerApplication, in its _well_known branch</b>
+        <p>Pro: <code>ServerApplication</code> is always mounted; the existing index routes <code>/.well-known/</code> with no demux change. Con: <code>_server</code> gains a role that is not administration.</p>
+      </li><li id="d-owner-demux"><b>The server demux, before the application index</b>
+        <p>Pro: works with no application at all. Con: the demux generates content, which today it never does.</p>
+      </li><li id="d-owner-app"><b>An application the site declares in the recipe</b>
+        <p>Pro: explicit; uses only today's mechanism. Con: every site that wants one document must add an application.</p>
+      </li></ol></div>
+
+    <div class="box decision decision-open" id="d-root"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-root</span></div><div class="question">How is a root path outside /.well-known/ (/robots.txt) answered?</div><ol class="options"><li id="d-root-exact"><b>An exact-path index in the demux, checked before the mount lookup</b>
+        <p>Pro: same rule as legacy; one dict lookup. Con: a site path shadows a mount with the same first segment.</p>
+      </li><li id="d-root-rootapp"><b>Left to the root application, as today</b>
+        <p>Pro: no change. Con: a site with no root application cannot answer <code>/robots.txt</code>.</p>
+      </li><li id="d-root-none"><b>Only /.well-known/ documents are in scope</b>
+        <p>Pro: smallest change. Con: <code>robots.txt</code>, part of the legacy set, is left out.</p>
+      </li></ol></div>
+
+    <div class="box decision decision-open" id="d-conflict"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-conflict</span></div><div class="question">What happens when an application declares a name the recipe also declares?</div><ol class="options"><li id="d-conflict-refuse"><b>Boot fails with FatalBootError</b>
+        <p>Pro: no silent winner. Con: an external application that joins later cannot be refused at boot.</p>
+      </li><li id="d-conflict-recipe"><b>The recipe wins</b>
+        <p>Pro: the site has the last word over application code. Con: changes today's rule (the last registered wins).</p>
+      </li><li id="d-conflict-last"><b>Today's rule: the last registered wins</b>
+        <p>Pro: no new rule. Con: the result depends on registration order.</p>
+      </li></ol></div>
+
+    <div class="box decision decision-open" id="d-static"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-static</span></div><div class="question">Does SiteHome.static also serve files at fixed paths (favicon.ico, sitemap.xml)?</div><ol class="options"><li id="d-static-no"><b>No, out of this proposal</b>
+        <p>Pro: keeps generated documents and static files apart. Con: <code>SiteHome.static</code> stays a folder nobody serves.</p>
+      </li><li id="d-static-yes"><b>Yes, through the same exact-path index</b>
+        <p>Pro: one place for every fixed path. Con: depends on <a class="ref" href="#d-root">d-root</a>.</p>
+      </li></ol></div>
+  </section><section class="part consequences"><h2>Consequences</h2>
+    <ul>
+      <li>The recipe grammar gains a site-level element and one child per document type.</li>
+      <li>No new dependency: every format is plain text or JSON.</li>
+      <li>A genropy site moved to kajenn writes the same data in the recipe instead of <code>wku.*</code> and <code>mobile_app.*</code>.</li>
+      <li>With <a class="ref" href="#d-root-exact">d-root-exact</a>, the demux gains one lookup before the mount lookup.</li>
+    </ul>
+  </section><section class="part related"><h2>Related documents</h2><ul>
+    <li><a href="../proposal/channels-meta-and-server-gui.html">proposal/channels-meta-and-server-gui</a> — Moves the _well_known branch under _meta</li>
+  </ul></section></main></body></html>
