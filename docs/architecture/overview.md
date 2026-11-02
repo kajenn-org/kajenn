@@ -71,7 +71,8 @@ flowchart TD
 | No mount matches, but a root application exists | Dispatch to the root application |
 | The path is `/`, with a default application and no root application | Redirect to the default mount with 307 |
 | No application can handle the path | Return 404 |
-| A hidden, dotted segment is requested | Return 404, except for a declared .well-known document |
+| A well-known path is requested (`/.well-known/...`, `/robots.txt`, `/favicon.ico`) | Dispatch to the application that declares it in `well_known`, else return 404 "unimplemented well-known URL" ([guide](../guides/hidden-paths.md)) |
+| Another hidden, dotted segment is requested | Return 404 |
 
 Once selected, a routed application builds the request and calls the decorated
 handler. Its result becomes a normal or streaming response. The request registry

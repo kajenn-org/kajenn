@@ -12,29 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The three names the hidden-path rule is written in.
+"""The hidden-path rule and the well-known pattern.
 
 A path whose first segment starts with ``HIDDEN_SEGMENT_PREFIX`` is hidden or
-of service: nothing of the site lives there. The one exception is the segment
-``WELL_KNOWN_SEGMENT``, reserved by RFC 8615 for discovery documents, which an
-application serves by declaring them as children of its ``WELL_KNOWN_ROOT``
-branch — a routing class attached like any other reserved branch:
+of service: nothing of the site lives there, and the server answers 404. A
+path matching ``WELL_KNOWN_PATTERN`` — ``/.well-known/...`` (RFC 8615),
+``/robots.txt`` or ``/favicon.ico`` — is a well-known path: it is answered
+only when an application declares it in its class dict ``well_known``
+(public path → route), and otherwise answers 404 "unimplemented well-known
+URL", whatever the root application is:
 
-    self.route.add_branches({"name": WELL_KNOWN_ROOT, "instance": Discovery()})
+    class Site(RoutedApplication):
+        well_known = {"/robots.txt": "robots"}
 
-The server reads those children at mount time; ``/.well-known/<name>/<rest>``
-then resolves on that application as ``_well_known/<name>/<rest>``.
+The pattern is fixed, not configurable.
 """
 
 from __future__ import annotations
 
-__all__ = ["HIDDEN_SEGMENT_PREFIX", "WELL_KNOWN_ROOT", "WELL_KNOWN_SEGMENT"]
+import re
+
+__all__ = ["HIDDEN_SEGMENT_PREFIX", "WELL_KNOWN_PATTERN", "as_list"]
 
 HIDDEN_SEGMENT_PREFIX = "."
 """What a first path segment starts with to be hidden."""
 
-WELL_KNOWN_SEGMENT = ".well-known"
-"""The one hidden first segment a site may answer on (RFC 8615)."""
+WELL_KNOWN_PATTERN = re.compile(r"^/(\.well-known/.+|robots\.txt|favicon\.ico)$")
+"""The public paths an application may declare in ``well_known``."""
 
-WELL_KNOWN_ROOT = "_well_known"
-"""The branch an application declares its discovery documents under."""
+
+def as_list(value: str | list | None) -> list:
+    """A recipe value written as a string or a list of strings, as a list (``None`` → empty).
+
+    The words of the well-known documents (``security_txt``, ``robots``,
+    ``ios``, ``android``) take one value or several in the same attribute.
+    """
+    if value is None:
+        return []
+    return [value] if isinstance(value, str) else list(value)

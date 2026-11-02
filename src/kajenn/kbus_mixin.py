@@ -292,19 +292,24 @@ class KBusMixin:
             environment={}, pid=pid)
 
     def _external_joined(self, code: str, meta: dict[str, Any]) -> None:
-        """Index the discovery names of a process that joined and record its pid.
+        """Index the well-known paths of a process that joined and record its pid.
 
-        ``meta["well_known"]`` — the names its application answers — replaces
-        the names a previous process presented. A value that is not a list of
-        non-empty strings is refused with ``kbus.Refused``.
+        ``meta["well_known"]`` — the paths its application answers, public
+        path → route — replaces the paths a previous process presented. A value
+        that is not a dict of non-empty strings, and a path another application
+        holds, are refused with ``kbus.Refused``.
         """
-        names = meta.get("well_known")
-        if not (isinstance(names, list)
-                and all(isinstance(name, str) and name for name in names)):
+        routes = meta.get("well_known")
+        if not (isinstance(routes, dict)
+                and all(isinstance(item, str) and item
+                        for pair in routes.items() for item in pair)):
             raise kbus.Refused(
-                f"application {code!r} refused: well_known is not a list of non-empty strings")
+                f"application {code!r} refused: well_known is not a dict of non-empty strings")
         app = self.external_applications[code]
-        self.index_well_known(app, names)
+        try:
+            self.claim_well_known(app, routes)
+        except ValueError as exc:
+            raise kbus.Refused(f"application {code!r} refused: {exc}") from exc
         self.kbus_spawners[app.spawner].joined(f"application:{code}")
         self.kbus_pids[code] = meta["pid"]
 
@@ -343,7 +348,8 @@ class KBusMixin:
         No HTTP listener is opened. The URL is popped from
         ``KAJENN_KBUS_PARENT``; the member connects after the hosted
         application's ``on_startup`` returned, then calls ``server.joined``
-        with the discovery names that application answers and the pid.
+        with the well-known paths that application answers
+        (``active_well_known()``, public path → route) and the pid.
         SIGTERM, SIGINT or the loss of the connection to the server closes the
         member and runs the shutdown.
         """
@@ -369,7 +375,7 @@ class KBusMixin:
                 cafile=self.kbus_options.get("cafile")) if scheme == "wss" else None)
             self._kbus_member = member
             await member.call(f"{SERVER_MEMBER}.joined", kbus.Message({
-                "well_known": list(self.applications[code].well_known_names),
+                "well_known": self.applications[code].active_well_known(),
                 "pid": os.getpid()}))
             ended = asyncio.create_task(member.connected.wait_closed())
             stopped = asyncio.create_task(stop.wait())

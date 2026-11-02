@@ -59,7 +59,7 @@ configuration
 ## Configure and extend
 
 - [Middleware](middleware.md): shared request behaviour and custom stages.
-- [Hidden paths](hidden-paths.md): protected path segments and well-known documents.
+- [Hidden paths and well-known URLs](hidden-paths.md): dotted path segments, the `well_known` class dict, the `_server` documents and the mobile mixin.
 - [Configuration reference](configuration.md): defaults, resolvers and grammar composition.
 - [Architecture](../architecture/overview.md): how the components fit together.
 
