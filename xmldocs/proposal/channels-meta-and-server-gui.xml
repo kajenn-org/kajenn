@@ -37,9 +37,9 @@
         <row><cell><c>_meta/openapi/docs</c></cell><cell>Swagger UI</cell><cell><c>_meta/docs</c></cell></row>
         <row><cell><c>POST _meta/mcp</c></cell><cell>MCP JSON-RPC entry</cell><cell><c>mcp</c></cell></row>
         <row><cell><c>GET _meta/mcp/tools</c></cell><cell>List of the MCP tools, readable without speaking MCP</cell><cell>none</cell></row>
-        <row><cell><c>_meta/well_known/...</c></cell><cell>Discovery documents; <c>/.well-known/</c> is unchanged</cell><cell><c>_well_known/...</c></cell></row>
       </table>
       <p>The names <c>mcp</c>, <c>api</c> and <c>_well_known</c> become free for application routes.</p>
+      <p>Discovery documents are not under <c>_meta</c>: an application declares its well-known URLs in a class dict, and the <c>_well_known</c> branch is removed (<ref doc="proposal/well-known-urls" to="d-declare">well-known-urls</ref>, 2026-11-02).</p>
     </section>
 
     <section title="SpaConsole in kajenn-orchestra">

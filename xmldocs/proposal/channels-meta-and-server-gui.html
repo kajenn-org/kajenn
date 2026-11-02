@@ -110,9 +110,9 @@ th { background: var(--panel); }
         <tr><td><code>_meta/openapi/docs</code></td><td>Swagger UI</td><td><code>_meta/docs</code></td></tr>
         <tr><td><code>POST _meta/mcp</code></td><td>MCP JSON-RPC entry</td><td><code>mcp</code></td></tr>
         <tr><td><code>GET _meta/mcp/tools</code></td><td>List of the MCP tools, readable without speaking MCP</td><td>none</td></tr>
-        <tr><td><code>_meta/well_known/...</code></td><td>Discovery documents; <code>/.well-known/</code> is unchanged</td><td><code>_well_known/...</code></td></tr>
       </table></div>
       <p>The names <code>mcp</code>, <code>api</code> and <code>_well_known</code> become free for application routes.</p>
+      <p>Discovery documents are not under <code>_meta</code>: an application declares its well-known URLs in a class dict, and the <code>_well_known</code> branch is removed (<a class="ref" href="../proposal/well-known-urls.html#d-declare">well-known-urls</a>, 2026-11-02).</p>
     </section>
 
     <section class="section"><h3>SpaConsole in kajenn-orchestra</h3>

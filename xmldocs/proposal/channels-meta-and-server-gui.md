@@ -44,9 +44,10 @@ Inside a `RoutedApplication` the only reserved segment is `_meta`. It holds the 
 | `_meta/openapi/docs` | Swagger UI | `_meta/docs` |
 | `POST _meta/mcp` | MCP JSON-RPC entry | `mcp` |
 | `GET _meta/mcp/tools` | List of the MCP tools, readable without speaking MCP | none |
-| `_meta/well_known/...` | Discovery documents; `/.well-known/` is unchanged | `_well_known/...` |
 
 The names `mcp`, `api` and `_well_known` become free for application routes.
+
+Discovery documents are not under `_meta`: an application declares its well-known URLs in a class dict, and the `_well_known` branch is removed (well-known-urls (→ proposal/well-known-urls#d-declare), 2026-11-02).
 
 #### SpaConsole in kajenn-orchestra
 
