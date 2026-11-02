@@ -9,15 +9,27 @@
   </problem>
 
   <current>
-    <section title="kajenn today">
+    <section title="kajenn today: routing">
       <fact source="src/kajenn/server.py:561" method="read" verified="2026-11-02">A first path segment starting with a dot gets 404 from the server demux and reaches no application. The one exception is <c>.well-known</c> followed by a name in <c>well_known_applications</c>: the request goes to that application with its path rebuilt as <c>/_well_known/&lt;name&gt;/&lt;rest&gt;</c>.</fact>
       <fact source="src/kajenn/routed_application.py:187" method="read" verified="2026-11-02">A <c>RoutedApplication</c> declares its documents as the children of a <c>_well_known</c> branch of its router. <c>well_known_names</c> returns those children. <c>BaseApplication.well_known_names</c> returns <c>()</c>.</fact>
+      <fact source="src/kajenn/server.py:257" method="read" verified="2026-11-02"><c>register_application</c> first sets <c>app.server = self</c>, then calls <c>index_well_known(app, app.well_known_names)</c>. The names are read once, at that moment.</fact>
       <fact source="src/kajenn/server.py:262" method="read" verified="2026-11-02"><c>index_well_known</c> keeps one index name → application. A name declared by two applications belongs to the last registered.</fact>
       <fact source="src/kajenn/kbus_mixin.py:295" method="read" verified="2026-11-02">An external application presents its names in <c>meta["well_known"]</c> when its process joins the KajennBus. The server re-indexes them.</fact>
       <fact source="src/kajenn/server.py:525" method="read" verified="2026-11-02">A path without a leading dot, <c>/robots.txt</c> and <c>/favicon.ico</c> included, is demuxed like any other path: it reaches the application mounted on that first segment, else the root application, else 404.</fact>
-      <fact source="src/kajenn/site_home.py:82" method="read" verified="2026-11-02"><c>SiteHome.static</c> names a folder for favicon, robots and sitemap. No code under <c>src/</c> serves that folder.</fact>
-      <fact source="src/kajenn/asgi_server.py:138" method="read" verified="2026-11-02">The server always mounts a <c>ServerApplication</c> under <c>_server</c> when no declared application has that code.</fact>
       <p>The proposal <ref doc="proposal/channels-meta-and-server-gui" to="d-segment">channels-meta-and-server-gui</ref> moves the branch <c>_well_known</c> to <c>_meta/well_known</c>. The public path <c>/.well-known/</c> does not change. This proposal holds for both locations.</p>
+    </section>
+
+    <section title="kajenn today: the _server application and its recipe words">
+      <fact source="src/kajenn/asgi_server.py:138" method="read" verified="2026-11-02">The server always mounts a <c>ServerApplication</c> under <c>_server</c> when no declared application has that code.</fact>
+      <fact source="src/kajenn/server_app/server_app.py:104" method="read" verified="2026-11-02"><c>ServerApplicationGrammar</c> holds the recipe words of <c>_server</c>. The recipe writes them under <c>applications.application(app_class=ServerApplication, code="_server")</c>: today <c>login(...)</c> and <c>oidc().provider(...)</c>. The words live in the application that owns the function, not in the site dialect.</fact>
+      <fact source="src/kajenn/server_app/server_app.py:201" method="read" verified="2026-11-02">The <c>server</c> setter of <c>ServerApplication</c> calls <c>read_declared_login_surface</c>, which reads the <c>login</c> and <c>oidc</c> nodes of the recipe. The setter runs inside <c>register_application</c>, before the well-known names are indexed.</fact>
+      <fact source="src/kajenn/server_app/server_app.py:290" method="read" verified="2026-11-02"><c>attach_section</c> asks extensions to register their sections during startup, after the application is registered. A <c>_well_known</c> child added at that time is not in the index.</fact>
+    </section>
+
+    <section title="kajenn today: static files and the proxy">
+      <fact source="src/kajenn/site_home.py:82" method="read" verified="2026-11-02"><c>SiteHome.static</c> names a folder for favicon, robots and sitemap. No code under <c>src/</c> serves that folder.</fact>
+      <fact source="src/kajenn/storage_mixin.py:68" method="read" verified="2026-11-02">The default storage mount <c>home:</c> is the space the site keeps its own things in, statics included. It is anchored on the folder of the site card.</fact>
+      <fact source="deploy/local-https/Caddyfile:9" method="read" verified="2026-11-02">The local HTTPS deployment puts Caddy in front of kajenn with <c>reverse_proxy kajenn:8080</c>. A reverse proxy can answer a fixed path before kajenn sees the request.</fact>
     </section>
 
     <section title="genropy legacy">
@@ -38,7 +50,7 @@
   <solution>
     <section title="Behaviour">
       <list>
-        <item>The recipe declares, at site level, the documents the site answers at fixed paths. Each declaration carries the data of the document, not its text.</item>
+        <item>The recipe declares the documents the site answers at fixed paths. Each declaration carries the data of the document, not its text.</item>
         <item>kajenn generates the body from that data, with the media type the standard requires. No application code is needed.</item>
         <item>The first set is the legacy one: <c>security.txt</c>, <c>robots.txt</c>, <c>apple-app-site-association</c>, <c>assetlinks.json</c>.</item>
         <item>A document not declared in the recipe does not exist: its path follows today's rules (404 under <c>/.well-known/</c>, normal demux elsewhere). There is no runtime exception for a missing configuration.</item>
@@ -47,24 +59,23 @@
       </list>
     </section>
 
-    <section title="Where the recipe documents are answered">
-      <p><c>ServerApplication</c> is always mounted. It can carry the recipe documents as children of its own <c>_well_known</c> branch. <c>/.well-known/&lt;name&gt;</c> then reaches it through the index that exists today, with no change to <c>demux_hidden</c>. Decision <ref to="d-owner">d-owner</ref> compares this with the alternatives.</p>
-      <p>A root path such as <c>/robots.txt</c> has no existing mechanism. Decision <ref to="d-root">d-root</ref> covers it.</p>
+    <section title="Recipe words on the _server application">
+      <p>The declarations are words of <c>ServerApplicationGrammar</c>, written under the <c>_server</c> application element like <c>login</c> and <c>oidc</c>. No site-level element is added.</p>
+      <p><c>ServerApplication</c> reads them in its <c>server</c> setter, where it already reads <c>login</c> and <c>oidc</c>, and builds the children of its <c>_well_known</c> branch there. The setter runs before <c>register_application</c> indexes the names, so <c>/.well-known/&lt;name&gt;</c> reaches <c>_server</c> through the existing index. <c>demux_hidden</c> does not change.</p>
+      <p>Decision <ref to="d-owner">d-owner</ref> compares this with the alternatives. A root path such as <c>/robots.txt</c> has no existing mechanism: decision <ref to="d-root">d-root</ref> covers it.</p>
     </section>
 
     <section title="Example recipe shape">
-      <p>Element and attribute names are placeholders until the decisions below are taken.</p>
+      <p>The element names below do not exist in the code. They are placeholders until the decisions below are taken.</p>
       <code lang="python"><![CDATA[
-def main(self, root):
-    site = root.site(name="acme")
-    known = site.known_urls()
-    known.security_txt(contact="mailto:security@acme.example",
-                       expires="2027-11-01T00:00:00Z")
-    known.robots_txt(rules=[{"user_agent": "*", "disallow": ["/_server/"]}])
-    known.ios_app(team_id="ABCDE12345", bundle_id="example.acme.app",
-                  excluded_paths=["/_server/*"])
-    known.android_app(package_name="example.acme.app",
-                      fingerprints=["AA:BB:..."])
+server_app = applications.application(app_class=ServerApplication, code="_server")
+server_app.security_txt(contact="mailto:security@acme.example",
+                        expires="2027-11-01T00:00:00Z")
+server_app.robots_txt(rules=[{"user_agent": "*", "disallow": ["/_server/"]}])
+server_app.ios_app(team_id="ABCDE12345", bundle_id="example.acme.app",
+                   excluded_paths=["/_server/*"])
+server_app.android_app(package_name="example.acme.app",
+                       fingerprints=["AA:BB:..."])
 ]]></code>
     </section>
   </solution>
@@ -82,14 +93,17 @@ def main(self, root):
 
     <decision id="d-owner" status="open">
       <question>Which component answers the recipe documents?</question>
-      <option id="d-owner-server-app" title="ServerApplication, in its _well_known branch">
-        <p>Pro: <c>ServerApplication</c> is always mounted; the existing index routes <c>/.well-known/</c> with no demux change. Con: <c>_server</c> gains a role that is not administration.</p>
+      <option id="d-owner-server-app" title="ServerApplication, from its own recipe words">
+        <p>Pro: <c>_server</c> is always mounted; its grammar already holds recipe words; the branch is built before indexing, so neither the demux nor the index changes. Con: <c>_server</c> gains a role that is not administration.</p>
       </option>
       <option id="d-owner-demux" title="The server demux, before the application index">
-        <p>Pro: works with no application at all. Con: the demux generates content, which today it never does.</p>
+        <p>Pro: works with no application at all. Con: the demux generates content, which today it never does; the words would go in the site dialect.</p>
       </option>
       <option id="d-owner-app" title="An application the site declares in the recipe">
         <p>Pro: explicit; uses only today's mechanism. Con: every site that wants one document must add an application.</p>
+      </option>
+      <option id="d-owner-proxy" title="The reverse proxy (Caddy, Traefik)">
+        <p>Pro: no kajenn code. Con: the data lives outside the recipe; every deployment writes it again in its proxy syntax; a site without a proxy has nothing.</p>
       </option>
     </decision>
 
@@ -100,6 +114,9 @@ def main(self, root):
       </option>
       <option id="d-root-rootapp" title="Left to the root application, as today">
         <p>Pro: no change. Con: a site with no root application cannot answer <c>/robots.txt</c>.</p>
+      </option>
+      <option id="d-root-proxy" title="Left to the reverse proxy">
+        <p>Pro: no kajenn code. Con: same as <ref to="d-owner-proxy">d-owner-proxy</ref>; <c>robots.txt</c> data and <c>/.well-known/</c> data end up in two places.</p>
       </option>
       <option id="d-root-none" title="Only /.well-known/ documents are in scope">
         <p>Pro: smallest change. Con: <c>robots.txt</c>, part of the legacy set, is left out.</p>
@@ -120,21 +137,22 @@ def main(self, root):
     </decision>
 
     <decision id="d-static" status="open">
-      <question>Does SiteHome.static also serve files at fixed paths (favicon.ico, sitemap.xml)?</question>
+      <question>Are files kept by the site (favicon.ico, sitemap.xml) also served at fixed paths?</question>
       <option id="d-static-no" title="No, out of this proposal">
-        <p>Pro: keeps generated documents and static files apart. Con: <c>SiteHome.static</c> stays a folder nobody serves.</p>
+        <p>Pro: keeps generated documents and files apart. Con: <c>SiteHome.static</c> stays a folder nobody serves.</p>
       </option>
-      <option id="d-static-yes" title="Yes, through the same exact-path index">
-        <p>Pro: one place for every fixed path. Con: depends on <ref to="d-root">d-root</ref>.</p>
+      <option id="d-static-storage" title="Yes, read through the home: storage mount">
+        <p>Pro: uses the mount that already holds the site's statics; the same code works on a non-local backend. Con: depends on <ref to="d-root">d-root</ref>.</p>
       </option>
     </decision>
   </decisions>
 
   <consequences>
     <list>
-      <item>The recipe grammar gains a site-level element and one child per document type.</item>
+      <item><c>ServerApplicationGrammar</c> gains one element per document type. The site dialect does not change.</item>
       <item>No new dependency: every format is plain text or JSON.</item>
       <item>A genropy site moved to kajenn writes the same data in the recipe instead of <c>wku.*</c> and <c>mobile_app.*</c>.</item>
+      <item>A <c>_well_known</c> child added to <c>_server</c> after registration, for example by an extension through <c>attach_section</c>, is not indexed. Serving it needs a new call to <c>index_well_known</c>. This proposal does not add that call.</item>
       <item>With <ref to="d-root-exact">d-root-exact</ref>, the demux gains one lookup before the mount lookup.</item>
     </list>
   </consequences>

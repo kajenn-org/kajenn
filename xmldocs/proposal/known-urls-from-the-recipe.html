@@ -84,15 +84,27 @@ th { background: var(--panel); }
     <p>In kajenn an application serves a <code>/.well-known/</code> document only by declaring it in its code. A fixed path outside <code>/.well-known/</code>, such as <code>/robots.txt</code>, has no mechanism of its own. A site cannot declare these documents in its recipe.</p>
     <p>genropy legacy answers these four documents from the instance configuration, with no code per site.</p>
   </section><section class="part current"><h2>Current state</h2>
-    <section class="section"><h3>kajenn today</h3>
+    <section class="section"><h3>kajenn today: routing</h3>
       <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:561</code><span class="muted">2026-11-02</span></div><div>A first path segment starting with a dot gets 404 from the server demux and reaches no application. The one exception is <code>.well-known</code> followed by a name in <code>well_known_applications</code>: the request goes to that application with its path rebuilt as <code>/_well_known/&lt;name&gt;/&lt;rest&gt;</code>.</div></div>
       <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/routed_application.py:187</code><span class="muted">2026-11-02</span></div><div>A <code>RoutedApplication</code> declares its documents as the children of a <code>_well_known</code> branch of its router. <code>well_known_names</code> returns those children. <code>BaseApplication.well_known_names</code> returns <code>()</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:257</code><span class="muted">2026-11-02</span></div><div><code>register_application</code> first sets <code>app.server = self</code>, then calls <code>index_well_known(app, app.well_known_names)</code>. The names are read once, at that moment.</div></div>
       <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:262</code><span class="muted">2026-11-02</span></div><div><code>index_well_known</code> keeps one index name → application. A name declared by two applications belongs to the last registered.</div></div>
       <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/kbus_mixin.py:295</code><span class="muted">2026-11-02</span></div><div>An external application presents its names in <code>meta["well_known"]</code> when its process joins the KajennBus. The server re-indexes them.</div></div>
       <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:525</code><span class="muted">2026-11-02</span></div><div>A path without a leading dot, <code>/robots.txt</code> and <code>/favicon.ico</code> included, is demuxed like any other path: it reaches the application mounted on that first segment, else the root application, else 404.</div></div>
-      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/site_home.py:82</code><span class="muted">2026-11-02</span></div><div><code>SiteHome.static</code> names a folder for favicon, robots and sitemap. No code under <code>src/</code> serves that folder.</div></div>
-      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/asgi_server.py:138</code><span class="muted">2026-11-02</span></div><div>The server always mounts a <code>ServerApplication</code> under <code>_server</code> when no declared application has that code.</div></div>
       <p>The proposal <a class="ref" href="../proposal/channels-meta-and-server-gui.html#d-segment">channels-meta-and-server-gui</a> moves the branch <code>_well_known</code> to <code>_meta/well_known</code>. The public path <code>/.well-known/</code> does not change. This proposal holds for both locations.</p>
+    </section>
+
+    <section class="section"><h3>kajenn today: the _server application and its recipe words</h3>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/asgi_server.py:138</code><span class="muted">2026-11-02</span></div><div>The server always mounts a <code>ServerApplication</code> under <code>_server</code> when no declared application has that code.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server_app/server_app.py:104</code><span class="muted">2026-11-02</span></div><div><code>ServerApplicationGrammar</code> holds the recipe words of <code>_server</code>. The recipe writes them under <code>applications.application(app_class=ServerApplication, code="_server")</code>: today <code>login(...)</code> and <code>oidc().provider(...)</code>. The words live in the application that owns the function, not in the site dialect.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server_app/server_app.py:201</code><span class="muted">2026-11-02</span></div><div>The <code>server</code> setter of <code>ServerApplication</code> calls <code>read_declared_login_surface</code>, which reads the <code>login</code> and <code>oidc</code> nodes of the recipe. The setter runs inside <code>register_application</code>, before the well-known names are indexed.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server_app/server_app.py:290</code><span class="muted">2026-11-02</span></div><div><code>attach_section</code> asks extensions to register their sections during startup, after the application is registered. A <code>_well_known</code> child added at that time is not in the index.</div></div>
+    </section>
+
+    <section class="section"><h3>kajenn today: static files and the proxy</h3>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/site_home.py:82</code><span class="muted">2026-11-02</span></div><div><code>SiteHome.static</code> names a folder for favicon, robots and sitemap. No code under <code>src/</code> serves that folder.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/storage_mixin.py:68</code><span class="muted">2026-11-02</span></div><div>The default storage mount <code>home:</code> is the space the site keeps its own things in, statics included. It is anchored on the folder of the site card.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">deploy/local-https/Caddyfile:9</code><span class="muted">2026-11-02</span></div><div>The local HTTPS deployment puts Caddy in front of kajenn with <code>reverse_proxy kajenn:8080</code>. A reverse proxy can answer a fixed path before kajenn sees the request.</div></div>
     </section>
 
     <section class="section"><h3>genropy legacy</h3>
@@ -111,7 +123,7 @@ th { background: var(--panel); }
   </section><section class="part solution"><h2>Proposed solution</h2>
     <section class="section"><h3>Behaviour</h3>
       <ul>
-        <li>The recipe declares, at site level, the documents the site answers at fixed paths. Each declaration carries the data of the document, not its text.</li>
+        <li>The recipe declares the documents the site answers at fixed paths. Each declaration carries the data of the document, not its text.</li>
         <li>kajenn generates the body from that data, with the media type the standard requires. No application code is needed.</li>
         <li>The first set is the legacy one: <code>security.txt</code>, <code>robots.txt</code>, <code>apple-app-site-association</code>, <code>assetlinks.json</code>.</li>
         <li>A document not declared in the recipe does not exist: its path follows today's rules (404 under <code>/.well-known/</code>, normal demux elsewhere). There is no runtime exception for a missing configuration.</li>
@@ -120,23 +132,22 @@ th { background: var(--panel); }
       </ul>
     </section>
 
-    <section class="section"><h3>Where the recipe documents are answered</h3>
-      <p><code>ServerApplication</code> is always mounted. It can carry the recipe documents as children of its own <code>_well_known</code> branch. <code>/.well-known/&lt;name&gt;</code> then reaches it through the index that exists today, with no change to <code>demux_hidden</code>. Decision <a class="ref" href="#d-owner">d-owner</a> compares this with the alternatives.</p>
-      <p>A root path such as <code>/robots.txt</code> has no existing mechanism. Decision <a class="ref" href="#d-root">d-root</a> covers it.</p>
+    <section class="section"><h3>Recipe words on the _server application</h3>
+      <p>The declarations are words of <code>ServerApplicationGrammar</code>, written under the <code>_server</code> application element like <code>login</code> and <code>oidc</code>. No site-level element is added.</p>
+      <p><code>ServerApplication</code> reads them in its <code>server</code> setter, where it already reads <code>login</code> and <code>oidc</code>, and builds the children of its <code>_well_known</code> branch there. The setter runs before <code>register_application</code> indexes the names, so <code>/.well-known/&lt;name&gt;</code> reaches <code>_server</code> through the existing index. <code>demux_hidden</code> does not change.</p>
+      <p>Decision <a class="ref" href="#d-owner">d-owner</a> compares this with the alternatives. A root path such as <code>/robots.txt</code> has no existing mechanism: decision <a class="ref" href="#d-root">d-root</a> covers it.</p>
     </section>
 
     <section class="section"><h3>Example recipe shape</h3>
-      <p>Element and attribute names are placeholders until the decisions below are taken.</p>
-      <figure class="code"><figcaption>python</figcaption><pre><code>def main(self, root):
-    site = root.site(name="acme")
-    known = site.known_urls()
-    known.security_txt(contact="mailto:security@acme.example",
-                       expires="2027-11-01T00:00:00Z")
-    known.robots_txt(rules=[{"user_agent": "*", "disallow": ["/_server/"]}])
-    known.ios_app(team_id="ABCDE12345", bundle_id="example.acme.app",
-                  excluded_paths=["/_server/*"])
-    known.android_app(package_name="example.acme.app",
-                      fingerprints=["AA:BB:..."])</code></pre></figure>
+      <p>The element names below do not exist in the code. They are placeholders until the decisions below are taken.</p>
+      <figure class="code"><figcaption>python</figcaption><pre><code>server_app = applications.application(app_class=ServerApplication, code="_server")
+server_app.security_txt(contact="mailto:security@acme.example",
+                        expires="2027-11-01T00:00:00Z")
+server_app.robots_txt(rules=[{"user_agent": "*", "disallow": ["/_server/"]}])
+server_app.ios_app(team_id="ABCDE12345", bundle_id="example.acme.app",
+                   excluded_paths=["/_server/*"])
+server_app.android_app(package_name="example.acme.app",
+                       fingerprints=["AA:BB:..."])</code></pre></figure>
     </section>
   </section><section class="part decisions"><h2>Decisions</h2>
     <div class="box decision decision-open" id="d-scope"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-scope</span></div><div class="question">Which documents are in the first cut?</div><ol class="options"><li id="d-scope-legacy"><b>The four legacy documents</b>
@@ -145,18 +156,22 @@ th { background: var(--panel); }
         <p>Pro: covers more probes. Con: code for documents no site asks for today.</p>
       </li></ol></div>
 
-    <div class="box decision decision-open" id="d-owner"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-owner</span></div><div class="question">Which component answers the recipe documents?</div><ol class="options"><li id="d-owner-server-app"><b>ServerApplication, in its _well_known branch</b>
-        <p>Pro: <code>ServerApplication</code> is always mounted; the existing index routes <code>/.well-known/</code> with no demux change. Con: <code>_server</code> gains a role that is not administration.</p>
+    <div class="box decision decision-open" id="d-owner"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-owner</span></div><div class="question">Which component answers the recipe documents?</div><ol class="options"><li id="d-owner-server-app"><b>ServerApplication, from its own recipe words</b>
+        <p>Pro: <code>_server</code> is always mounted; its grammar already holds recipe words; the branch is built before indexing, so neither the demux nor the index changes. Con: <code>_server</code> gains a role that is not administration.</p>
       </li><li id="d-owner-demux"><b>The server demux, before the application index</b>
-        <p>Pro: works with no application at all. Con: the demux generates content, which today it never does.</p>
+        <p>Pro: works with no application at all. Con: the demux generates content, which today it never does; the words would go in the site dialect.</p>
       </li><li id="d-owner-app"><b>An application the site declares in the recipe</b>
         <p>Pro: explicit; uses only today's mechanism. Con: every site that wants one document must add an application.</p>
+      </li><li id="d-owner-proxy"><b>The reverse proxy (Caddy, Traefik)</b>
+        <p>Pro: no kajenn code. Con: the data lives outside the recipe; every deployment writes it again in its proxy syntax; a site without a proxy has nothing.</p>
       </li></ol></div>
 
     <div class="box decision decision-open" id="d-root"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-root</span></div><div class="question">How is a root path outside /.well-known/ (/robots.txt) answered?</div><ol class="options"><li id="d-root-exact"><b>An exact-path index in the demux, checked before the mount lookup</b>
         <p>Pro: same rule as legacy; one dict lookup. Con: a site path shadows a mount with the same first segment.</p>
       </li><li id="d-root-rootapp"><b>Left to the root application, as today</b>
         <p>Pro: no change. Con: a site with no root application cannot answer <code>/robots.txt</code>.</p>
+      </li><li id="d-root-proxy"><b>Left to the reverse proxy</b>
+        <p>Pro: no kajenn code. Con: same as <a class="ref" href="#d-owner-proxy">d-owner-proxy</a>; <code>robots.txt</code> data and <code>/.well-known/</code> data end up in two places.</p>
       </li><li id="d-root-none"><b>Only /.well-known/ documents are in scope</b>
         <p>Pro: smallest change. Con: <code>robots.txt</code>, part of the legacy set, is left out.</p>
       </li></ol></div>
@@ -169,16 +184,17 @@ th { background: var(--panel); }
         <p>Pro: no new rule. Con: the result depends on registration order.</p>
       </li></ol></div>
 
-    <div class="box decision decision-open" id="d-static"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-static</span></div><div class="question">Does SiteHome.static also serve files at fixed paths (favicon.ico, sitemap.xml)?</div><ol class="options"><li id="d-static-no"><b>No, out of this proposal</b>
-        <p>Pro: keeps generated documents and static files apart. Con: <code>SiteHome.static</code> stays a folder nobody serves.</p>
-      </li><li id="d-static-yes"><b>Yes, through the same exact-path index</b>
-        <p>Pro: one place for every fixed path. Con: depends on <a class="ref" href="#d-root">d-root</a>.</p>
+    <div class="box decision decision-open" id="d-static"><div class="box-head"><span class="tag tag-open">open</span><span class="muted">d-static</span></div><div class="question">Are files kept by the site (favicon.ico, sitemap.xml) also served at fixed paths?</div><ol class="options"><li id="d-static-no"><b>No, out of this proposal</b>
+        <p>Pro: keeps generated documents and files apart. Con: <code>SiteHome.static</code> stays a folder nobody serves.</p>
+      </li><li id="d-static-storage"><b>Yes, read through the home: storage mount</b>
+        <p>Pro: uses the mount that already holds the site's statics; the same code works on a non-local backend. Con: depends on <a class="ref" href="#d-root">d-root</a>.</p>
       </li></ol></div>
   </section><section class="part consequences"><h2>Consequences</h2>
     <ul>
-      <li>The recipe grammar gains a site-level element and one child per document type.</li>
+      <li><code>ServerApplicationGrammar</code> gains one element per document type. The site dialect does not change.</li>
       <li>No new dependency: every format is plain text or JSON.</li>
       <li>A genropy site moved to kajenn writes the same data in the recipe instead of <code>wku.*</code> and <code>mobile_app.*</code>.</li>
+      <li>A <code>_well_known</code> child added to <code>_server</code> after registration, for example by an extension through <code>attach_section</code>, is not indexed. Serving it needs a new call to <code>index_well_known</code>. This proposal does not add that call.</li>
       <li>With <a class="ref" href="#d-root-exact">d-root-exact</a>, the demux gains one lookup before the mount lookup.</li>
     </ul>
   </section><section class="part related"><h2>Related documents</h2><ul>
