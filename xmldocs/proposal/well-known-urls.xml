@@ -33,7 +33,7 @@
         <item>An application class or a mixin declares the well-known URLs it answers in a class dict <c>well_known</c>: public path → route path inside the application.</item>
         <item>What is well-known is fixed by the standards, not configured: <c>/.well-known/...</c> (RFC 8615), <c>/robots.txt</c> (RFC 9309), <c>/favicon.ico</c> (the HTML default icon). RFC 8615 cites <c>/robots.txt</c> and <c>/favicon.ico</c> as the site-wide metadata that predates the prefix.</item>
         <item>A request whose path is well-known goes to the declared route of the declaring application. A well-known path nobody declared answers 404 with the message "unimplemented well-known URL": for <c>robots.txt</c> a 4xx means "no restrictions" (RFC 9309), for the other documents "not supported".</item>
-        <item>Two applications declaring the same path stop the server at construction. Inside one application the more derived class wins.</item>
+        <item>Two applications declaring the same path stop the server at construction. Inside one application the more derived class wins. A path can also be given as a default (<c>default_well_known</c>): it answers only when no application declares the path, and two applications giving the same default stop the server.</item>
         <item>A path that depends on the mount (OAuth protected resources) is declared once on the class with the marker <c>{mount}</c>.</item>
         <item>The site author is responsible for what a well-known route answers: kajenn does not check that it is public.</item>
       </list>
@@ -75,7 +75,7 @@ class Shop(MobileMixin, OauthApi):
       <list>
         <item><c>/.well-known/security.txt</c> and <c>/robots.txt</c> are generated from words of <c>ServerApplicationGrammar</c>. <c>robots.txt</c> rules are validated at boot.</item>
         <item><c>/favicon.ico</c> is served as a file from <c>home:/static</c>.</item>
-        <item><c>_server</c> registers each path only when its words are configured or its file exists. An application may answer any of them itself, for example a favicon per host; if both do, the server stops with the conflict error.</item>
+        <item><c>_server</c> gives each path as a default, only when its words are configured or its file exists. An application declaring the same path answers it instead, for example a favicon per host.</item>
       </list>
     </section>
 
@@ -125,7 +125,8 @@ class Shop(MobileMixin, OauthApi):
       <option id="d-conflict-raise" title="ValueError at construction; an external join is refused"/>
       <option id="d-conflict-last" title="The last registered wins, as today"/>
       <option id="d-conflict-override" title="An override flag lets one declaration replace the other"/>
-      <choice option="d-conflict-raise" by="GP" date="2026-11-02">No silent winner. The override flag was discussed and not adopted: with _server declaring only what is configured no case needs it, and two overrides would conflict again.</choice>
+      <option id="d-conflict-defaults" title="ValueError between two declarations; a separate default_well_known answers only undeclared paths"/>
+      <choice option="d-conflict-defaults" by="GP" date="2026-11-03">Revised after the merge of the first version: _server giving its documents as defaults lets an application answer them without a conflict, whatever the order of registration. The last-wins rule was discussed again and not adopted: _server is registered last and would always win, and with external applications the winner would change at every relaunch.</choice>
     </decision>
 
     <decision id="d-mount" status="decided">

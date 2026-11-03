@@ -193,7 +193,14 @@ class RoutedApplication(BaseApplication, RoutingClass):
         ``route`` property: the server asks this at registration, and the
         configured plugins are armed later, on the first access a request makes.
         """
-        active = super().active_well_known()
+        return self.check_well_known_routes(super().active_well_known())
+
+    def active_default_well_known(self) -> dict[str, str]:
+        """The default well-known paths, each route checked like ``active_well_known``."""
+        return self.check_well_known_routes(super().active_default_well_known())
+
+    def check_well_known_routes(self, active: dict[str, str]) -> dict[str, str]:
+        """``active`` unchanged, after checking that every route names an entry."""
         router = super().route
         for target in active.values():
             parent, _, name = target.rpartition("/")

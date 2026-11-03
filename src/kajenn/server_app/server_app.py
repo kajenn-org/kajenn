@@ -211,11 +211,13 @@ class ServerApplication(OpenApiApplication):
     the sections attached through ``attach_section``, listed by the ``index``
     descriptor.
 
-    It also answers three well-known documents, each declared only when it is
-    configured (``active_well_known``): ``/.well-known/security.txt`` and
-    ``/robots.txt`` from the ``security_txt`` and ``robots`` words, validated
-    there so a bad value stops the server at construction, and
-    ``/favicon.ico`` from ``static/favicon.ico`` of the site home.
+    It also answers three well-known documents as defaults, each given only
+    when it is configured (``active_default_well_known``):
+    ``/.well-known/security.txt`` and ``/robots.txt`` from the ``security_txt``
+    and ``robots`` words, validated there so a bad value stops the server at
+    construction, and ``/favicon.ico`` from ``static/favicon.ico`` of the site
+    home. An application declaring one of these paths in ``well_known``
+    answers it instead.
     """
 
     openapi_info: ClassVar[dict[str, Any]] = {
@@ -225,7 +227,7 @@ class ServerApplication(OpenApiApplication):
     code = "_server"
     mount = "_server"
     grammar: type = ServerApplicationGrammar
-    well_known = {
+    default_well_known = {
         "/.well-known/security.txt": "security_txt",
         "/robots.txt": "robots_txt",
         "/favicon.ico": "favicon_ico",
@@ -297,15 +299,16 @@ class ServerApplication(OpenApiApplication):
                 OidcMethod(self, self._oidc_method_id(child.label), child.label, provider)
             )
 
-    def active_well_known(self) -> dict[str, str]:
-        """The well-known documents this server has configured.
+    def active_default_well_known(self) -> dict[str, str]:
+        """The well-known documents this server has configured, given as defaults.
 
         Builds ``security.txt`` and ``robots.txt`` from their words — the
         validation raises ``ValueError`` here, at construction — and keeps
         each path only when its word is written; ``/favicon.ico`` only when the
-        site home has ``static/favicon.ico``.
+        site home has ``static/favicon.ico``. An application declaring the same
+        path in ``well_known`` answers it instead.
         """
-        active = super().active_well_known()
+        active = super().active_default_well_known()
         handler = getattr(self.server, "config", None)
         section = f"applications.{self.code}"
         if handler is not None and handler.node(f"{section}.security_txt") is not None:

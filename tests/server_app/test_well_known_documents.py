@@ -222,8 +222,10 @@ class TestFavicon:
         server = AsgiServer(config=recipe(site_class=IconSite))
         assert response_body(await http_request(server, "/favicon.ico")) == b"site-icon"
 
-    def test_both_declaring_it_stops_the_boot(self, tmp_path: Path) -> None:
-        # wf:contract: an application declaring /favicon.ico while static/favicon.ico exists
-        # wf:contract: raises ValueError naming /favicon.ico when the server is built.
-        with pytest.raises(ValueError, match="/favicon.ico"):
-            AsgiServer(config=recipe(site_class=IconSite), site_home=self.home_with_icon(tmp_path))
+    async def test_an_application_declaring_it_wins_over_the_file(
+        self, http_request, response_body, tmp_path: Path
+    ) -> None:
+        # An application declaring /favicon.ico answers it even when
+        # static/favicon.ico exists: _server gives it only as a default.
+        server = AsgiServer(config=recipe(site_class=IconSite), site_home=self.home_with_icon(tmp_path))
+        assert response_body(await http_request(server, "/favicon.ico")) == b"site-icon"

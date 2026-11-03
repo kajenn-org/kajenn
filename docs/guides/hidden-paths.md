@@ -28,18 +28,21 @@ Every other path is ordinary, the conventional probes included:
 | Another dotted first segment (`/.foo`) | The server: 404 `Not Found` | — | never |
 | An ordinary probe (`/sitemap.xml`) | The application mounted there, or the root application | — | never |
 | Two applications declare the same path | — | always: `ValueError` naming the path and both codes | — |
+| One application declares a path another gives as default | The declaring application, in any order of registration | — | — |
+| Two applications give the same default | — | always: `ValueError` naming the path and both codes | — |
 | A declared key does not match the pattern | — | always: `ValueError` naming the key | — |
 | A declared route does not resolve exactly on the application's router | — | always: `ValueError` naming the route | — |
-| `/.well-known/security.txt` | `_server`, from its `security_txt` word | `contact` or `expires` missing, `expires` not ISO 8601 | the word is not written |
-| `/robots.txt` | `_server`, from its `robots` word | no `agent`, an empty `user_agent`, a rule not starting with `/` or `*`, a sitemap not an absolute http(s) URL | the word is not written and no application declares it |
-| `/favicon.ico` | `_server`, the file `static/favicon.ico` of the site home | — | the file does not exist and no application declares it |
+| `/.well-known/security.txt` | `_server` as a default, from its `security_txt` word | `contact` or `expires` missing, `expires` not ISO 8601 | the word is not written |
+| `/robots.txt` | `_server` as a default, from its `robots` word | no `agent`, an empty `user_agent`, a rule not starting with `/` or `*`, a sitemap not an absolute http(s) URL | the word is not written and no application declares it |
+| `/favicon.ico` | `_server` as a default, the file `static/favicon.ico` of the site home | — | the file does not exist and no application declares it |
 | `/.well-known/apple-app-site-association` | An application with `MobileMixin`, from its `ios` word | `ios` written without `paths` | `ios` is not written |
 | `/.well-known/assetlinks.json` | An application with `MobileMixin`, from its `android` word | — | `android` is not written |
 
-A path answered by `_server` is held by `_server`: another application that
-declares it stops the server with the conflict `ValueError`. When `_server`
-does not declare it (its word is not written, its file does not exist), the
-application answers it.
+`_server` gives its three documents as defaults (`default_well_known`): an
+application that declares the same path in `well_known` answers it instead,
+for example a favicon per host. When `_server` does not configure a document
+(its word is not written, its file does not exist), the path answers only if
+an application declares it.
 
 ```console
 $ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/.env
@@ -140,24 +143,45 @@ class Api(RoutedApplication):
 A path left out answers 404 "unimplemented well-known URL". `_server` and
 `MobileMixin` use this method.
 
+### Defaults: `default_well_known`
+
+`default_well_known` has the shape of `well_known` — public path → route, the
+same merge along the MRO, the same `{mount}` marker — and gives a path only as
+a fallback. A default answers a path that no application declares in
+`well_known`, whatever the order in which the applications are registered or
+join over kbus. Two applications giving the same default stop the server, as
+two declaring the same path do.
+
+```python
+class Site(RoutedApplication):
+    default_well_known = {"/robots.txt": "robots"}
+```
+
+The server indexes what `active_default_well_known()` returns; an override
+leaves out what is not configured, as with `active_well_known()`. `_server`
+uses it for its three documents.
+
 ### The index on the server
 
-`server.well_known_routes` is the index: public path → (application, route).
+`server.well_known_routes` is the index of the declared paths: public path →
+(application, route). `server.default_well_known_routes` holds the defaults,
+used when `well_known_routes` has no entry for the path.
 
 ```python
 >>> server.well_known_routes
 {'/.well-known/oauth-protected-resource': (<Api ...>, 'protected_resource')}
 ```
 
-An application with `spawner="subprocess"` sends its `active_well_known()`
-when its process joins over kbus; the server indexes it like any other, and
+An application with `spawner="subprocess"` sends its `active_well_known()` and
+`active_default_well_known()` when its process joins over kbus; the server indexes it like any other, and
 forwards the request to the process as a request on its mount. See the
 [kbus protocol](../design/kbus-protocol.md#joined).
 
 ## The `_server` documents
 
 `_server` answers three documents from its own recipe words and from the site
-home. Each is declared only when configured. The words are written on the
+home, as defaults. Each is given only when configured, and an application
+declaring the same path answers it instead. The words are written on the
 `_server` application node of the recipe:
 
 ```python
@@ -337,7 +361,9 @@ The `_well_known` branch on an application's router is gone, with
 `server.well_known_applications`. Declare the paths in `well_known` instead.
 
 `/favicon.ico` and `/robots.txt` are now well-known paths. A site whose root
-application answered them as ordinary paths must declare them:
+application answered them from its own routes must declare them (a site that
+only served the file `favicon.ico` can move it to `home:/static/favicon.ico`,
+which `_server` serves as a default):
 
 ```python
 class Site(RoutedApplication):

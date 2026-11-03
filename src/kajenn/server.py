@@ -173,6 +173,7 @@ class BaseServer:
         self._applications: dict[str, BaseApplication] = {}
         self._by_mount: dict[str, BaseApplication] = {}
         self._well_known_routes: dict[str, tuple[BaseApplication, str]] = {}
+        self._default_well_known_routes: dict[str, tuple[BaseApplication, str]] = {}
         self._databases: dict[str, DbHandlerBase] = {}
         self._db_handlers: dict[type[DbHandlerBase], DbHandlerBase] = {}
         self._uvicorn: UvicornServer | None = None
@@ -241,12 +242,21 @@ class BaseServer:
         """The declared well-known paths, each with its application and route."""
         return self._well_known_routes
 
+    @property
+    def default_well_known_routes(self) -> dict[str, tuple[BaseApplication, str]]:
+        """The default well-known paths, each with its application and route.
+
+        A default answers a path only when ``well_known_routes`` has none.
+        """
+        return self._default_well_known_routes
+
     def register_application(self, app: BaseApplication) -> None:
         """Register ``app`` under its ``code`` and its ``mount``.
 
         Assigns the ownership channel (``app.server = self``), then indexes the
-        well-known paths the app answers (``active_well_known()``, read after
-        the assignment so the app can read its configuration). Internal: the
+        well-known paths the app answers (``active_well_known()`` and
+        ``active_default_well_known()``, read after the assignment so the app
+        can read its configuration). Internal: the
         set of applications is fixed at construction, so the callers are
         ``__init__`` and the composition layers building a server. A claimed
         code, a claimed mount and a well-known path another application holds
@@ -258,30 +268,43 @@ class BaseServer:
         if mount in self._by_mount:
             raise ValueError(f"mount already claimed: {mount!r}")
         app.server = self
-        self.claim_well_known(app, app.active_well_known())
+        self.claim_well_known(app, app.active_well_known(), app.active_default_well_known())
         self.applications[app.code] = app
         self._by_mount[mount] = app
 
-    def claim_well_known(self, app: BaseApplication, routes: dict[str, str]) -> None:
-        """Make ``routes`` (public path → route) the well-known paths ``app`` answers.
+    def claim_well_known(
+        self, app: BaseApplication, routes: dict[str, str], defaults: dict[str, str]
+    ) -> None:
+        """Make ``routes`` and ``defaults`` (public path → route) the well-known paths of ``app``.
 
-        A path another application holds raises ``ValueError`` naming the path
-        and both application codes, and nothing changes. Otherwise the paths
-        ``app`` held before are dropped and ``routes`` take their place:
-        ``register_application`` calls it once per application, the KajennBus
-        again for an external application each time its process joins.
+        A declared path another application declares, and a default path
+        another application gives as default, raise ``ValueError`` naming the
+        path and both application codes, and nothing changes. A declared path
+        and a default of another application never conflict: the declared one
+        answers. Otherwise the paths ``app`` held before are dropped and the
+        new ones take their place: ``register_application`` calls it once per
+        application, the KajennBus again for an external application each time
+        its process joins.
         """
-        for path in routes:
-            holder = self._well_known_routes.get(path)
-            if holder is not None and holder[0] is not app:
-                raise ValueError(
-                    f"well-known path {path!r} declared by both "
-                    f"{holder[0].code!r} and {app.code!r}"
-                )
-        for path in [path for path, (owner, _) in self._well_known_routes.items() if owner is app]:
-            del self._well_known_routes[path]
-        for path, route in routes.items():
-            self._well_known_routes[path] = (app, route)
+        for index, paths, kind in (
+            (self._well_known_routes, routes, "declared"),
+            (self._default_well_known_routes, defaults, "given as default"),
+        ):
+            for path in paths:
+                holder = index.get(path)
+                if holder is not None and holder[0] is not app:
+                    raise ValueError(
+                        f"well-known path {path!r} {kind} by both "
+                        f"{holder[0].code!r} and {app.code!r}"
+                    )
+        for index, paths in (
+            (self._well_known_routes, routes),
+            (self._default_well_known_routes, defaults),
+        ):
+            for path in [path for path, (owner, _) in index.items() if owner is app]:
+                del index[path]
+            for path, route in paths.items():
+                index[path] = (app, route)
 
     @property
     def databases(self) -> dict[str, DbHandlerBase]:
@@ -575,14 +598,15 @@ class BaseServer:
     def demux_well_known(self, path: str, scope: Scope) -> tuple[ASGIApp, Scope]:
         """What serves a well-known ``path``: its declaring application, else **404**.
 
-        A path in ``well_known_routes`` goes to its application with
+        A path in ``well_known_routes``, else in ``default_well_known_routes``,
+        goes to its application with
         ``scope["path"]`` set to ``/<route>`` and the rest of the scope, query
         string included, unchanged; an external application is reached through
         its mount like any other request. A path nobody declared answers 404
         "unimplemented well-known URL" and no application is reached, the root
         application included.
         """
-        declared = self.well_known_routes.get(path)
+        declared = self.well_known_routes.get(path) or self.default_well_known_routes.get(path)
         if declared is None:
             return Response(
                 content="unimplemented well-known URL", status_code=404, media_type="text/plain"

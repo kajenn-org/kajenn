@@ -55,6 +55,7 @@ class Billing(RoutedApplication):
 
 class Local(RoutedApplication):
     well_known = LOCAL_WELL_KNOWN
+    default_well_known = LOCAL_DEFAULTS
 
     @route()
     def probe(self):
@@ -72,9 +73,10 @@ class Recipe(CONFIGURATION_TEMPLATES["default"]):
 '''
 
 
-def write_recipe(tmp_path, *, local_well_known: str = "{}") -> str:
+def write_recipe(tmp_path, *, local_well_known: str = "{}", local_defaults: str = "{}") -> str:
     path = tmp_path / "config.py"
-    path.write_text(RECIPE.replace("LOCAL_WELL_KNOWN", local_well_known))
+    path.write_text(RECIPE.replace("LOCAL_WELL_KNOWN", local_well_known)
+                    .replace("LOCAL_DEFAULTS", local_defaults))
     return str(path)
 
 
@@ -123,3 +125,13 @@ async def test_a_join_presenting_a_held_path_is_refused(tmp_path):
             if status == 200:
                 pytest.fail(f"billing answered its mount after a refused join: {state}")
             await asyncio.sleep(0.1)
+
+
+async def test_a_spawned_declaration_wins_over_an_inprocess_default(tmp_path):
+    # The in-process local gives /.well-known/probe as a default; the spawned
+    # billing declares it at its join, after the boot, and answers it.
+    recipe = write_recipe(tmp_path, local_defaults='{"/.well-known/probe": "probe"}')
+    async with running(recipe) as server:
+        status, probe = await request(server, "/.well-known/probe")
+    assert (status, probe["served"]) == (200, "probe")
+    assert probe["pid"] != os.getpid()
