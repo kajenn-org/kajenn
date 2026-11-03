@@ -56,6 +56,8 @@ below a threshold.
   capabilities. In the documentation and in discussion it is called env
   capabilities. The names it keeps: `env_requires` on the route,
   `env_capabilities` passed by the caller.
+- A request refused for missing env capabilities answers 503, with an
+  explanation that names the missing capabilities. *(Owner, 2026-11-03.)*
 
 ## Still open
 
