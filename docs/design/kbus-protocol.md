@@ -52,15 +52,17 @@ wrong secret is refused by the dispatcher (`kbus.Rejected`).
 
 The dedicated process of an application mounted with `spawner="subprocess"`
 loads the same configuration and builds only its own application. It connects after that application's `on_startup` returned, then
-calls `server.joined` with `meta = {"well_known": [...], "pid": <pid>}`:
-`well_known` lists the discovery names the application answers under
-`/.well-known/`. The server indexes those names on the mount of that
-application, replacing those of a previous process, tells the spawner the role
-joined and records the pid. A `well_known` that is not a list of non-empty
-strings is refused with `kbus.Refused`: the process ends and is relaunched.
+calls `server.joined` with `meta = {"well_known": {...}, "pid": <pid>}`:
+`well_known` is the application's `active_well_known()`, public path → route.
+The server indexes those paths for that application, replacing those of a
+previous process, tells the spawner the role joined and records the pid. A
+`well_known` that is not a dict of non-empty strings, or that holds a path
+another application declares, is refused with `kbus.Refused`: the process ends
+and is relaunched. See [well-known URLs](../guides/hidden-paths.md).
 
 Until its process has joined, a mount answers 503 and `kbus_call` towards it
-raises `KBusCallError` with status 503; its discovery names answer 404.
+raises `KBusCallError` with status 503; its well-known paths answer 404
+"unimplemented well-known URL".
 
 ## Forget credentials
 

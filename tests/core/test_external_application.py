@@ -53,22 +53,15 @@ from genro_routes import route
 
 from kajenn import RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
-from kajenn.well_known import WELL_KNOWN_ROOT
-from genro_routes import RoutingClass
-
-
-class Discovery(RoutingClass):
-    @route()
-    def probe(self):
-        return {"served": "probe"}
 
 
 class Billing(RoutedApplication):
     prepared = False
+    well_known = {"/.well-known/probe": "probe"}
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.route.add_branches({"name": WELL_KNOWN_ROOT, "instance": Discovery()})
+    @route()
+    def probe(self):
+        return {"served": "probe"}
 
     async def on_startup(self):
         await asyncio.sleep(STARTUP_DELAY)
