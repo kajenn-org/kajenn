@@ -30,6 +30,33 @@ This voice is recorded as given. What it implies for the text of
 [design.md](design.md) is not decided: the lines it contradicts, and the
 questions it leaves open, are the frictions below.
 
+## Capabilities: a fact of the instance and a fact of the request
+
+**Source: Owner, 2026-11-03** (interview on S10, translated from Italian,
+verbatim). The capability is given both by a fact of the instance and by the
+request. The fact of the instance can be static or a callback. This is what
+should be feasible; tests must exercise the various capability strategies.
+
+Example given by the owner: service X is available only if the overall load is
+below a threshold.
+
+## Env capabilities: the route declares, the caller supplies, genro-routes compares
+
+**Source: Owner, 2026-11-03** (interview, translated from Italian, verbatim).
+
+- Certain routes have specific needs of external resources: they know their code
+  uses module x or calls service y. So, in the route's plugin, they write
+  `xxxx_required='foo,bar'`. Who calls routes without `xxxx_available` should be
+  told: route spam requires foo and bar, but you have not assured that they are
+  there in this use case.
+- As for channel and auth, whoever uses routes and its plugins must take care of
+  computing everything.
+- Whoever calls must state channel, auth and also `xxxx_available`.
+- The plugin keeps the name `env`, explained as the abbreviation of env
+  capabilities. In the documentation and in discussion it is called env
+  capabilities. The names it keeps: `env_requires` on the route,
+  `env_capabilities` passed by the caller.
+
 ## Still open
 
 **S8 [code-past-design] — the declared HTTP method is a filter, and the design
@@ -47,13 +74,6 @@ as the fifth way a request does not reach its handler.
 **S9 [tense] — §5 is written in the tense of the implementation.**
 [design.md](design.md) §5 says "Today there is one, `openapi`" about the dialect
 plugins this package ships. The overview forbids "today" in `design.md`.
-
-**S10 [owner-2026-11-03] — capabilities: a fact of the installation or of the
-request.** [design.md](design.md):112 and :121 say capabilities are "what this
-installation can do" and "what the installation has rather than who is asking".
-The owner statement says routes depend on capabilities and are always computed
-dynamically. Open question: are capabilities carried by each request, or are
-they the installation's and only re-read at every walk?
 
 **S11 [owner-2026-11-03] — plugins configured dynamically: what changes, and
 where.** [design.md](design.md):63 and :249 say a tree is armed once, at the
