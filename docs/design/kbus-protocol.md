@@ -52,13 +52,16 @@ wrong secret is refused by the dispatcher (`kbus.Rejected`).
 
 The dedicated process of an application mounted with `spawner="subprocess"`
 loads the same configuration and builds only its own application. It connects after that application's `on_startup` returned, then
-calls `server.joined` with `meta = {"well_known": {...}, "pid": <pid>}`:
-`well_known` is the application's `active_well_known()`, public path → route.
-The server indexes those paths for that application, replacing those of a
-previous process, tells the spawner the role joined and records the pid. A
-`well_known` that is not a dict of non-empty strings, or that holds a path
-another application declares, is refused with `kbus.Refused`: the process ends
-and is relaunched. See [well-known URLs](../guides/hidden-paths.md).
+calls `server.joined` with
+`meta = {"well_known": {...}, "default_well_known": {...}, "pid": <pid>}`:
+the two dicts are the application's `active_well_known()` and
+`active_default_well_known()`, public path → route. The server indexes those
+paths for that application, replacing those of a previous process, tells the
+spawner the role joined and records the pid. A dict that is not made of
+non-empty strings, a declared path another application declares, or a default
+another application gives, is refused with `kbus.Refused`: the process ends
+and is relaunched. A declared path never conflicts with another application's
+default: the declared one answers. See [well-known URLs](../guides/hidden-paths.md).
 
 Until its process has joined, a mount answers 503 and `kbus_call` towards it
 raises `KBusCallError` with status 503; its well-known paths answer 404

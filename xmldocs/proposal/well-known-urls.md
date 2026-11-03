@@ -38,7 +38,7 @@ genropy legacy answers these documents with webtools that declare their public p
 - An application class or a mixin declares the well-known URLs it answers in a class dict `well_known`: public path → route path inside the application.
 - What is well-known is fixed by the standards, not configured: `/.well-known/...` (RFC 8615), `/robots.txt` (RFC 9309), `/favicon.ico` (the HTML default icon). RFC 8615 cites `/robots.txt` and `/favicon.ico` as the site-wide metadata that predates the prefix.
 - A request whose path is well-known goes to the declared route of the declaring application. A well-known path nobody declared answers 404 with the message "unimplemented well-known URL": for `robots.txt` a 4xx means "no restrictions" (RFC 9309), for the other documents "not supported".
-- Two applications declaring the same path stop the server at construction. Inside one application the more derived class wins.
+- Two applications declaring the same path stop the server at construction. Inside one application the more derived class wins. A path can also be given as a default (`default_well_known`): it answers only when no application declares the path, and two applications giving the same default stop the server.
 - A path that depends on the mount (OAuth protected resources) is declared once on the class with the marker `{mount}`.
 - The site author is responsible for what a well-known route answers: kajenn does not check that it is public.
 
@@ -75,7 +75,7 @@ class Shop(MobileMixin, OauthApi):
 
 - `/.well-known/security.txt` and `/robots.txt` are generated from words of `ServerApplicationGrammar`. `robots.txt` rules are validated at boot.
 - `/favicon.ico` is served as a file from `home:/static`.
-- `_server` registers each path only when its words are configured or its file exists. An application may answer any of them itself, for example a favicon per host; if both do, the server stops with the conflict error.
+- `_server` gives each path as a default, only when its words are configured or its file exists. An application declaring the same path answers it instead, for example a favicon per host.
 
 #### Mobile mixin
 
@@ -111,7 +111,8 @@ class Shop(MobileMixin, OauthApi):
    1. **ValueError at construction; an external join is refused**
    2. **The last registered wins, as today**
    3. **An override flag lets one declaration replace the other**
-   → Choice: **ValueError at construction; an external join is refused** (GP, 2026-11-02) — No silent winner. The override flag was discussed and not adopted: with \_server declaring only what is configured no case needs it, and two overrides would conflict again.
+   4. **ValueError between two declarations; a separate default_well_known answers only undeclared paths**
+   → Choice: **ValueError between two declarations; a separate default_well_known answers only undeclared paths** (GP, 2026-11-03) — Revised after the merge of the first version: \_server giving its documents as defaults lets an application answer them without a conflict, whatever the order of registration. The last-wins rule was discussed again and not adopted: \_server is registered last and would always win, and with external applications the winner would change at every relaunch.
 - **d-mount** `decided` — How is a path that contains the mount declared?
    1. **Added on the instance in __init__**
    2. **Forbid two instances of one class**
