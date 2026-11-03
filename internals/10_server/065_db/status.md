@@ -1,8 +1,8 @@
 # Database — current state
 
-**Version**: 0.3 · **Last Updated**: 2026-10-27 · **Status**: 🟡 rewritten on the shipped contract; design ratification pending
+**Version**: 0.4 · **Last Updated**: 2026-11-03 · **Status**: 🟡 rewritten on the shipped contract; design ratification pending
 
-Verified against source revision `d1be0fc` (develop, migrations merged). Test
+Verified against source revision `63fb326` (develop). Test
 references below identify the executable contracts; they are not a new
 coverage percentage.
 
@@ -22,12 +22,14 @@ databases of applications this process does not serve and hands the rest to
 calls its `add_database` and records the name. A claimed name and a database
 with no handler class raise `ValueError`.
 
-Claim anchors: [`DatabaseGrammar`](../../../src/kajenn/application.py#L89), [`databases`](../../../src/kajenn/config/handler.py#L316), [`_register_configured_databases`](../../../src/kajenn/asgi_server.py#L230), [`db_handler_class`](../../../src/kajenn/asgi_server.py#L249), [`add_database`](../../../src/kajenn/server.py#L291), [`DbHandlerBase`](../../../src/kajenn/db.py#L51).
+Claim anchors: [`DatabaseGrammar`](../../../src/kajenn/application.py#L102), [`databases`](../../../src/kajenn/config/handler.py#L316), [`_register_configured_databases`](../../../src/kajenn/asgi_server.py#L231), [`db_handler_class`](../../../src/kajenn/asgi_server.py#L251), [`add_database`](../../../src/kajenn/server.py#L301), [`DbHandlerBase`](../../../src/kajenn/db.py#L55).
 
 ## Call boundary
 
 `BaseApplication.database_name` resolves `None` to `db_name`, else
-`<code>:default` when declared, else `default`. `db(name)` and
+`<code>:default` when declared, else `default`. `db_name` is a class attribute
+(`None` on `BaseApplication`, application.py:180) and a constructor keyword
+that overrides it (application.py:210). `db(name)` and
 `Request.db(name)` call `server.take_database`, which asks the handler's
 `take(name, call)` once per name per call and keeps the answer on
 `call.databases`; an unknown name raises `LookupError`, a take outside a
@@ -40,7 +42,44 @@ raise and clears the takes.
 `async_db(name)` returns the taken object through the handler's `async_view`:
 by default an `AsyncDbView`, whose `terminals` run with `server.run_sync`.
 
-Claim anchors: [`database_name`](../../../src/kajenn/application.py#L220), [`db`](../../../src/kajenn/application.py#L234), [`async_db`](../../../src/kajenn/application.py#L242), [`Request.db`](../../../src/kajenn/request.py#L432), [`take_database`](../../../src/kajenn/server.py#L330), [`release_databases`](../../../src/kajenn/server.py#L358), [`route_cleanup`](../../../src/kajenn/routed_application.py#L370), [`async_view`](../../../src/kajenn/db.py#L88), [`AsyncDbView`](../../../src/kajenn/db.py#L93).
+`Request.db(name)` and `Request.async_db(name)` delegate to the owning
+application through `bound_application()` (request.py:432-442). A `Request`
+bound to no application raises `RuntimeError` there (request.py:444-449). Test:
+`test_a_request_bound_to_no_application_has_no_databases`.
+
+Claim anchors: [`database_name`](../../../src/kajenn/application.py#L275), [`db_name`](../../../src/kajenn/application.py#L180), [`db`](../../../src/kajenn/application.py#L289), [`async_db`](../../../src/kajenn/application.py#L297), [`Request.db`](../../../src/kajenn/request.py#L432), [`Request.async_db`](../../../src/kajenn/request.py#L440), [`bound_application`](../../../src/kajenn/request.py#L444), [`take_database`](../../../src/kajenn/server.py#L340), [`release_databases`](../../../src/kajenn/server.py#L368), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374), [`async_view`](../../../src/kajenn/db.py#L92), [`AsyncDbView`](../../../src/kajenn/db.py#L97).
+
+## Threads of take and release
+
+- `take_database` is synchronous and runs on the thread of its caller
+  (server.py:340-366).
+- An `async def` route calls `async_db`, which calls `take_database` on the
+  event-loop thread (application.py:297-301).
+- A sync route runs on a pool thread, and `route_cleanup` releases its takes on
+  that same thread after the handler returns or raises
+  (routed_application.py:366-371, 374-387).
+- The cleanup queued by the first take calls `release_databases` through
+  `server.run_sync`, on whichever pool thread the pool assigns
+  (server.py:359-364). It runs only when something is still taken.
+- No code ties the thread of a call's `release` to the thread of its `take`
+  outside a sync route.
+
+kajenn-org/kajenn#90 records the backends this leaves unserved.
+
+Claim anchors: [`take_database`](../../../src/kajenn/server.py#L340), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374), [`run_sync`](../../../src/kajenn/server.py#L398).
+
+## Distance from the design
+
+**The native-async branch.** The `db.py` module docstring says a natively async
+handler returns its own object from `async_view` (db.py:33-35). `async_db`
+passes `async_view` the object `take` returned for the call
+(application.py:297-301). An object that needs its own engine, separate from
+the one behind the taken object, cannot be that view: kajenn-org/kajenn#91.
+
+**A distinct object per call.** design.md states one `take` per name per call,
+kept on `call.databases`. `take_database` keys the takes by call
+(server.py:349-366); nothing in the core checks or states whether two calls
+receive distinct objects: kajenn-org/kajenn#92.
 
 ## Lifespan
 
@@ -62,7 +101,7 @@ returns the handler of a name, `LookupError` for an unknown name and
 checks the name, opens every handler, runs the operation, closes the handlers
 and prints plain JSON. The server never migrates on its own.
 
-Claim anchors: [`capabilities`](../../../src/kajenn/db.py#L66), [`database_handler`](../../../src/kajenn/server.py#L313), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#L58), [`DatabaseCommand`](../../../src/kajenn/__main__.py#L537), [`operate`](../../../src/kajenn/__main__.py#L552).
+Claim anchors: [`capabilities`](../../../src/kajenn/db.py#L70), [`database_handler`](../../../src/kajenn/server.py#L323), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#L58), [`DatabaseCommand`](../../../src/kajenn/__main__.py#L537), [`operate`](../../../src/kajenn/__main__.py#L552).
 
 ## Source and test evidence
 

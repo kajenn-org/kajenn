@@ -1,6 +1,6 @@
 # Websocket — decisions
 
-**Version**: 0.3 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.3 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
 
 **The websocket, with the work finished.** Read this as a report from the day
 everything described here is running: it says what the transport *is*, and
@@ -98,3 +98,35 @@ an OPTIONAL `page_id`, message by message, in both directions — absent for a
 client that has no pages. The socket belongs to the root page; a subpage sends
 through it and puts its own `page_id` in every message. How the client
 channels that is the page framework's business.
+
+## Still open
+
+**S1 [gate-order] — the identity is judged after the home application and the cookie gate.**
+design.md §1 orders the handshake as state, Origin, accept, identity (step 4),
+then the home application and its `handshake_cookie` (step 5). The code runs
+the Origin, the accept, the home application through `server.demux`, the cookie
+gate, and only then `server.authenticate` (wsx.py:250-276). A handshake on a
+path no application serves, or without the home cookie, is closed before any
+credential is verified.
+
+**S2 [event-registered] — an event is registered like a request.** design.md §2
+says a message with no `id` is executed, unanswered and unregistered. The code
+registers every message in `server.requests`, with or without `id`, and runs
+its cleanups (wsx.py:348-368). The test
+`test_an_event_is_a_registered_request_too` asserts the code's behaviour.
+
+**S3 [session-identity] — a session avatar is resolved per message.** design.md
+§2 says the `auth` of a message is copied from the handshake and an identity is
+not re-derived per message; §5 here says the handshake resolves the header
+first, then the session. At the handshake the scope carries no `session` key,
+so `server.authenticate` resolves only an `Authorization` header
+(auth/mixin.py:225-243, session/mixin.py:108-110); the session is read after
+it (wsx.py:275). A message whose `auth` is `None` reaching a
+`RoutedApplication` is authenticated again by `authenticate_scope` on the
+message scope, which carries the session (routed_application.py:284-298).
+
+**S4 [db-threads] — kajenn-org/kajenn#90, "The thread of take and release is not
+fixed within a call".** The issue names a WSX message without `id` among the
+calls where `take` runs on one pool thread and `release` may run on another. A
+backend whose connection is bound to the thread that opened it cannot be served
+there. The issue records no decision.

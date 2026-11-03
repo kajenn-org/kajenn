@@ -1,6 +1,13 @@
 # Routing system
 
-**Version**: 0.5 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.6 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
+
+*Owner, 2026-11-03: three points moved. The routes a request sees are computed
+for that request, on its tags, the capabilities of its environment and its
+channel (§2). Router plugins are configured while the server runs (§7). A branch
+is removed from a tree as it is attached (§1). The earlier text described
+capabilities as facts of the installation, channel as absent from HTTP dispatch,
+and arming as a single act.*
 
 How a path becomes a method call: what a routing class is, how a tree is walked
 and filtered, and how a capability is added to what a tree does without editing
@@ -26,8 +33,8 @@ somebody who never heard of the application it will end up in, is attached
 below a name and its routes hang there.
 
 **A walk can be filtered.** Resolving a path is not only *does this node
-exist*: it is *does this node exist for this caller, on this installation,
-through this channel*. Three independent filters answer those, and a node the
+exist*: it is *does this node exist for this caller, in the environment this
+request runs in, through this channel*. Three independent filters answer those, and a node the
 walk excludes is not reached at all.
 
 **A tree can be read as well as walked.** It can describe itself — its nodes,
@@ -54,13 +61,13 @@ flowchart TB
 
 | The part | In one line |
 |---|---|
-| the tree | built from the class, grown by attaching others |
+| the tree | built from the class, grown by attaching others, reduced by removing them |
 | the walk | how a path finds a node, and the three filters on it |
 | the description | what a tree can say about itself, and who reads it |
 | what a plugin is | the thing that produces a filter or a description |
 | where plugins come from | three sources, one namespace |
 | the fixed pair | what is structure, and what is a choice |
-| when a tree is armed | once, on the first look after installation |
+| when a tree is armed | on the first look after installation, then changed while the server runs |
 | what a site writes | the section, and the options beside a route |
 | writing one | the base class, the five hooks, and how it is installed |
 
@@ -96,6 +103,12 @@ application is assembled out of parts written independently: a catalogue, an
 ordering API, each of them a plain routing class that knows nothing about where
 it will hang.
 
+**A branch is removed from a tree as it is attached: by its name, while the
+server runs.** The routes below that name are no longer reached by any walk.
+The rest of the tree is untouched. Removal exists because an application is
+mounted and unmounted while the server runs, and a tree assembled from parts
+changes while the server runs too.
+
 ## 2. The walk, and the three filters on it
 
 Resolving a path is a walk from the root, one name at a time, into attached
@@ -103,13 +116,17 @@ branches as it goes. What makes it more than a lookup is that the walk is
 **filtered**, and a node the filter excludes is not reached: the resolution
 fails, and no handler code runs.
 
-There are three filters, they are independent, and each answers a different
-question:
+**The routes a request sees are computed for that request.** The walk filters
+on three facts of the request: the caller's tags (`auth`), the capabilities of
+the environment the request runs in (`env`), and the channel it arrived through
+(`channel`).
+
+The three filters are independent, and each answers a different question:
 
 | Filter | Written at a route as | The question |
 |---|---|---|
 | **tags** | `auth_rule` | *who* is calling |
-| **capabilities** | `env_requires` | *what this installation can do* |
+| **capabilities** | `env_requires` | *what the environment the request runs in can do* |
 | **channel** | `channel_channels` | *through what* the request arrived |
 
 **Tags** are the caller's grants, and the case worth stating is the empty one:
@@ -118,18 +135,17 @@ not the loosest. Every route carrying a rule is closed to them, and what they
 reach is exactly the routes carrying no rule — which is the definition of
 public.
 
-**Capabilities** are what the installation has rather than who is asking: a
-route that needs a cache, a queue, a converter, disappears where that thing is
-absent instead of failing when called. They **accumulate down the tree**, so a
+**Capabilities** are facts of the environment the request runs in, not of who
+is asking. Each request carries its own. A route that needs a cache, a queue, a
+converter, disappears for a request whose environment lacks that thing, instead
+of failing when called. They **accumulate down the tree**, so a
 branch inherits what its parents declared and adds its own.
 
 **Channel** is where the request came from — `rest`, `mcp`, `web`, a bot — and
 it is the mechanism by which one tree presents different surfaces to different
-consumers when those consumers supply a channel. The MCP face supplies its
-channel when walking the tree; HTTP dispatch supplies none. As recorded in
-[the decisions](decisions.md), channel metadata can narrow the tool face but
-does not prevent a browser from calling an HTTP route. HTTP access restrictions
-belong to the route's authorization rules.
+consumers. Every request carries its channel, and every face walks the tree
+with it. A route whose declared channels do not include the request's channel is
+not reached through that channel, neither by a listing nor by a call.
 
 The failure a filter produces is not the failure of a missing path, and the
 distinction survives all the way to the caller: a route withheld for lack of an
@@ -244,11 +260,16 @@ armed if named, absent if not.
 
 ---
 
-## 7. When a tree is armed
+## 7. When a tree is armed, and plugin changes while the server runs
 
-Arming happens **once per application, at the first look at its tree after the
-server has installed it**. Not when the module is imported, not while the
-application is being built, not per request.
+A tree is first armed **at the first look at it after the server has installed
+it**. From then on its plugins are **configured while the server runs**: a
+plugin can be plugged, enabled, disabled or given new options without a
+restart.
+
+The first arming happens neither when the module is imported nor while the
+application is being built. An application mounted while the server runs is
+armed at the first look at its tree, like one mounted at boot.
 
 The lateness is the point. An application is built before it belongs to
 anybody, so at that moment there is no server to ask which plugins to arm.
@@ -266,6 +287,12 @@ plugin does not receive it a second time, and a class already known to the
 routing library is not registered again. So nothing anywhere has to remember
 whether a given look was the first, and a debugging line that touches a tree
 cannot change what an installation does.
+
+**A change to the plugins reaches a tree that is already armed.** A plugin named
+for the first time is plugged on it. A plugin switched off is disabled on it.
+New options replace the old ones for the whole tree. The fixed pair of §6 stays:
+a change that switches one of them off is refused, as it is in the recipe. The
+next request walks the tree with the change in place.
 
 ---
 
@@ -448,8 +475,7 @@ there itself, not because the server did.
 `iter_plugins` on a tree nobody has looked at yet and the answer is `['auth']`.
 
 **`/drop` is published as a `DELETE`** because of the two words beside that one
-route, while `/search` kept the verb guessed from its signature. Guessed or
-declared, neither constrains what the server will actually answer.
+route, while `/search` kept the verb guessed from its signature.
 
 `router_openapi` is the OpenAPI reader of the tree, and it works on any armed
 tree without an OpenAPI application being mounted. It belongs to

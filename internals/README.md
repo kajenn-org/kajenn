@@ -1,6 +1,6 @@
 # Internals — the technical dossier
 
-**Version**: 0.5 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.6 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
 
 kajenn's world, read in order. Start from
 **[00_overview](00_overview/README.md)** — it explains the documents every entry owns,

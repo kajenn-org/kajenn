@@ -1,6 +1,15 @@
 # Routing system — tech notes
 
-**Version**: 0.3 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.4 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
+
+## Renewal evidence — 2026-11-03
+
+[status](status.md) is now verified against `63fb326`. Two archival claims below
+are no longer true. The HTTP dispatch passes the channel filter on every face,
+not only MCP (`auth_filters`, `routed_application.py:315-330`). `POST` on a
+route declaring `openapi_method="get"` answers 405 with `Allow: GET`, not 200
+(`tests/core/test_route_method.py::TestDeclaredMethod::test_post_on_a_get_route_is_405_naming_get`).
+The capabilities filter still has no consumer in the walk.
 
 
 ## Renewal evidence — 2026-09-08
