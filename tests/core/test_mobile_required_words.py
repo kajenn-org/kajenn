@@ -53,6 +53,14 @@ def test_ios_without_its_identifiers_stops_the_boot(missing: str) -> None:
         AsgiServer(config=recipe(lambda node: node.ios(**words)))
 
 
+@pytest.mark.parametrize("route", ["apple_app_site_association", "assetlinks"])
+async def test_an_unconfigured_platform_route_answers_404(
+    http_request, response_status, route: str
+) -> None:
+    server = AsgiServer(config=recipe(lambda node: None))
+    assert response_status(await http_request(server, f"/mobile/{route}")) == 404
+
+
 @pytest.mark.parametrize("missing", ["package_name", "fingerprints"])
 def test_android_without_its_identifiers_stops_the_boot(missing: str) -> None:
     words = {"package_name": "it.example.shop", "fingerprints": FINGERPRINT}

@@ -56,6 +56,12 @@ __all__ = ["MobileMixin", "MobileMixinGrammar", "MobileSection"]
 AASA_PATH = "/.well-known/apple-app-site-association"
 ASSETLINKS_PATH = "/.well-known/assetlinks.json"
 
+PLATFORM_WORDS = {
+    "ios": ("team_id", "bundle_id", "paths", "excluded_paths"),
+    "android": ("package_name", "fingerprints", "paths", "excluded_paths"),
+}
+"""The attributes each platform word can write."""
+
 REQUIRED_WORDS = {
     "ios": ("team_id", "bundle_id", "paths"),
     "android": ("package_name", "fingerprints"),
@@ -77,8 +83,8 @@ class MobileMixinGrammar:
         paths: str | list = None,
         excluded_paths: str | list = None,
     ) -> None:
-        """The iOS app whose universal links this site answers; ``paths`` is
-        required (at least one)."""
+        """The iOS app whose universal links this site answers; ``team_id``,
+        ``bundle_id`` and ``paths`` (at least one) are required."""
 
     @element(sub_tags="", node_label="android")
     def android(
@@ -89,7 +95,7 @@ class MobileMixinGrammar:
         excluded_paths: str | list = None,
     ) -> None:
         """The Android app whose app links this site answers: its package and
-        the SHA-256 fingerprints of its signing certificates."""
+        the SHA-256 fingerprints of its signing certificates, both required."""
 
 
 def link_components(paths: list, excluded_paths: list) -> list[dict[str, Any]]:
@@ -119,13 +125,14 @@ class MobileSection(RoutingClass):
             return None
         return handler.closed_attrs(path, *names)
 
-    def required_words(self, platform: str, *names: str) -> dict[str, Any]:
-        """``platform``'s written attributes, each of ``REQUIRED_WORDS[platform]`` present.
+    def required_words(self, platform: str) -> dict[str, Any]:
+        """``platform``'s written attributes (``PLATFORM_WORDS``), each of
+        ``REQUIRED_WORDS[platform]`` present.
 
         Raises ``HTTPNotFound`` when the word is not written, ``ValueError``
         naming the first required attribute left empty.
         """
-        words = self.words(platform, *names)
+        words = self.words(platform, *PLATFORM_WORDS[platform])
         if words is None:
             raise HTTPNotFound(f"{platform} is not configured")
         for name in REQUIRED_WORDS[platform]:
@@ -142,7 +149,7 @@ class MobileSection(RoutingClass):
         Raises ``ValueError`` naming the attribute when ``team_id``,
         ``bundle_id`` or ``paths`` is missing or empty.
         """
-        words = self.required_words("ios", "team_id", "bundle_id", "paths", "excluded_paths")
+        words = self.required_words("ios")
         app_id = f"{words['team_id']}.{words['bundle_id']}"
         components = link_components(
             as_list(words.get("paths")), as_list(words.get("excluded_paths"))
@@ -159,9 +166,7 @@ class MobileSection(RoutingClass):
         Raises ``ValueError`` naming the attribute when ``package_name`` or
         ``fingerprints`` is missing or empty.
         """
-        words = self.required_words(
-            "android", "package_name", "fingerprints", "paths", "excluded_paths"
-        )
+        words = self.required_words("android")
         statement: dict[str, Any] = {
             "relation": [
                 "delegate_permission/common.handle_all_urls",
