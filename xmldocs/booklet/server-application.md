@@ -21,7 +21,7 @@ kajenn keeps everything that asks a human for a user and a password out of the c
 
 - `READ` `src/kajenn/server_app/__init__.py:15` · 2026-11-03 — The package is the system surface a server exposes under `/_server`. It holds what asks a human for a user and a password; `import kajenn` loads none of it.
 - `READ` `src/kajenn/server_app/server_app.py:207` · 2026-11-03 — `ServerApplication` extends `OpenApiApplication`, which extends `RoutedApplication`: its routes are ordinary routes with an OpenAPI description at `/_server/_meta/schema_json`.
-- `READ` `src/kajenn/server_app/server_app.py:225` · 2026-11-03 — `code` and `mount` are both `_server`, fixed on the class: `PasswordMethod` names `/_server/login` as its form action.
+- `READ` `src/kajenn/server_app/server_app.py:227` · 2026-11-03 — `code` and `mount` are both `_server`, fixed on the class: `PasswordMethod` names `/_server/login` as its form action.
 
 #### 2. Know when it is mounted
 
@@ -60,10 +60,10 @@ Access is decided per route by its `auth_rule`: no identity answers 401, an iden
 | `/_server/login_methods` | any | `{methods: [...]}`: one descriptor per registered login method (id, kind, label, action), so a front-end draws the login screen without knowing the configuration. |
 | `/_server/_meta/schema_json`, `/_server/_meta/docs`, `/_server/_meta/index` | any | OpenAPI 3.1 document, Swagger UI, HTML index (from `OpenApiApplication`). |
 
-- `READ` `src/kajenn/server_app/server_app.py:452` · 2026-11-03 — `index` answers the title and the sorted section names.
-- `READ` `src/kajenn/server_app/server_app.py:460` · 2026-11-03 — `login` is POST, takes `identity` and `password`, and attaches the avatar to the current session; the session id does not change.
-- `READ` `src/kajenn/server_app/server_app.py:535` · 2026-11-03 — `logout` deletes the session it is given.
-- `READ` `src/kajenn/server_app/server_app.py:554` · 2026-11-03 — `login_methods` is public by design: it lists the descriptors of the registered methods.
+- `READ` `src/kajenn/server_app/server_app.py:455` · 2026-11-03 — `index` answers the title and the sorted section names.
+- `READ` `src/kajenn/server_app/server_app.py:463` · 2026-11-03 — `login` is POST, takes `identity` and `password`, and attaches the avatar to the current session; the session id does not change.
+- `READ` `src/kajenn/server_app/server_app.py:538` · 2026-11-03 — `logout` deletes the session it is given.
+- `READ` `src/kajenn/server_app/server_app.py:557` · 2026-11-03 — `login_methods` is public by design: it lists the descriptors of the registered methods.
 
 #### auth: credential check for channels
 
@@ -138,13 +138,16 @@ Access is decided per route by its `auth_rule`: no identity answers 401, an iden
 
 #### Well-known documents
 
-| Public path | Route | Declared when |
+| Public path | Route | Given as default when |
 |---|---|---|
 | `/.well-known/security.txt` | `security_txt` | the `security_txt` word is written |
 | `/robots.txt` | `robots_txt` | the `robots` word is written |
 | `/favicon.ico` | `favicon_ico` | `static/favicon.ico` exists in the site home |
 
-- `READ` `src/kajenn/server_app/server_app.py:300` · 2026-11-03 — `active_well_known` builds and validates the two documents and drops every path whose word or file is absent; the full mechanism is in `docs/guides/hidden-paths.md`.
+The three documents are defaults (`default_well_known`): an application that declares one of these paths in its `well_known` answers it instead, for example a favicon per host.
+
+- `READ` `src/kajenn/server_app/server_app.py:302` · 2026-11-03 — `active_default_well_known` builds and validates the two documents and drops every path whose word or file is absent; the full mechanism is in `docs/guides/hidden-paths.md`.
+- `TEST` `tests/server_app/test_well_known_documents.py` · 2026-11-03 — An application declaring `/favicon.ico` answers it even when `static/favicon.ico` exists.
 
 #### 4. Configure it
 
@@ -189,7 +192,7 @@ robots.agent(user_agent="*", disallow="/admin/")
 | `channels().channel(name, authentication_route=...)` | Replaces `/_server/auth/authenticate` for one channel. |
 
 - `READ` `src/kajenn/server_app/server_app.py:106` · 2026-11-03 — `LOCKOUT_MAX_ATTEMPTS = 5`, `LOCKOUT_BACKOFF_SECONDS = 30.0`.
-- `READ` `src/kajenn/server_app/server_app.py:434` · 2026-11-03 — The lock window is `backoff * 2 ** (failed - max_attempts)` seconds from the last failure; refused attempts while locked do not count, an unknown identity has no counter, a success resets it.
+- `READ` `src/kajenn/server_app/server_app.py:437` · 2026-11-03 — The lock window is `backoff * 2 ** (failed - max_attempts)` seconds from the last failure; refused attempts while locked do not count, an unknown identity has no counter, a success resets it.
 - `READ` `src/kajenn/asgi_server.py:265` · 2026-11-03 — A recipe with an OIDC provider and no `external_url` is refused at boot.
 - `TEST` `tests/server_app/test_config_server_app.py` · 2026-11-03 — The `login` and `oidc` words of a recipe reach the instance; `client_secret` goes through the read stack.
 
@@ -206,8 +209,8 @@ Another package adds routes to `_server` by attaching a section, and adds a logi
 | `app_snapshot`, `app_panel`, `panel_source` on a section | A section declaring them appears in the monitor as `_server/<name>`. |
 | `app_class` subclass on code `_server` | Replaces the whole application with a subclass. |
 
-- `READ` `src/kajenn/server_app/server_app.py:412` · 2026-11-03 — `attach_section(section, name)` adds the branch and records the section.
-- `READ` `src/kajenn/server_app/server_app.py:430` · 2026-11-03 — `register_auth_method` registers on the auth section.
+- `READ` `src/kajenn/server_app/server_app.py:415` · 2026-11-03 — `attach_section(section, name)` adds the branch and records the section.
+- `READ` `src/kajenn/server_app/server_app.py:433` · 2026-11-03 — `register_auth_method` registers on the auth section.
 - `TEST` `tests/server_app/test_server_application.py` · 2026-11-03 — A section attached with `attach_section` answers under `/_server/<name>/`.
 
 #### 6. Know who uses it
@@ -253,7 +256,7 @@ The list of what the GUI must cover is in that repository, in `xmldocs/proposal/
 
 ### Current limits
 
-- The `logout` docstring says POST, but the route declares no method and answers every one; it has no `auth_rule` and deletes any session id it is given. · `src/kajenn/server_app/server_app.py:535`
+- The `logout` docstring says POST, but the route declares no method and answers every one; it has no `auth_rule` and deletes any session id it is given. · `src/kajenn/server_app/server_app.py:538`
 - The package docstring still says nothing is mounted automatically; the server mounts `_server` always. `tests/server_app/test_config_server_app.py` line 15 says the same. · `src/kajenn/server_app/__init__.py:27`
 - The monitor serves data only: no page. The per-application snapshot holds class, code and mount; pools, requests, websockets and databases are not in it. · `src/kajenn/server_app/server_sections/monitor_section.py:27`
 - With tasks disabled the tasks routes answer an error with status 200, not an error status. · `src/kajenn/server_app/server_sections/tasks_section.py:52`
