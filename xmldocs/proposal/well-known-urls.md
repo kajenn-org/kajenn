@@ -1,7 +1,7 @@
 <!-- generated from well-known-urls.xml by xmldocs: do not edit, edit the XML -->
 
 ## Well-known URLs declared by applications
-*Proposal · proposal/well-known-urls · 2026-11-02 · review*
+*Proposal · proposal/well-known-urls · 2026-11-02 · accepted*
 
 ### Problem
 

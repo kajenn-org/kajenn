@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<proposal id="proposal/channels-meta-and-server-gui" title="Channel faces on every routed application, one _meta segment, and the server GUI as a separate component" date="2026-10-28" lang="en" author="Giovanni Porcari" status="review">
+<proposal id="proposal/channels-meta-and-server-gui" title="Channel faces on every routed application, one _meta segment, and the server GUI as a separate component" date="2026-10-28" lang="en" author="Giovanni Porcari" status="accepted">
 
   <problem>
     <p>Three application classes expose the same router on different channels: <c>OpenApiApplication</c> (REST and OpenAPI), <c>McpOpenApiApplication</c> (REST, OpenAPI and MCP) and <c>McpApplication</c> (MCP only). <c>McpOpenApiApplication</c> is the most common base, and its name is long.</p>
-    <p>Each class reserves its own path segments inside the application: <c>_meta</c>, <c>mcp</c>, <c>_well_known</c>. The rule for what an application may name its own routes is not written anywhere.</p>
+    <p>Each class reserves its own path segments inside the application: <c>_meta</c> and <c>mcp</c>. The rule for what an application may name its own routes is not written anywhere.</p>
     <p>The server application <c>_server</c> extends <c>OpenApiApplication</c>, so it has no MCP face. A browser interface for <c>_server</c> is being built on gramlot. If it lives in kajenn, gramlot becomes a required dependency of the core.</p>
   </problem>
 
   <current>
-    <fact source="src/kajenn/routed_application.py:128" method="read" verified="2026-10-28"><c>RoutedApplication</c> is <c>BaseApplication</c> plus the genro-routes <c>RoutingClass</c>. Its <c>execute</c> is the single execution point that REST, MCP, WSX and the KajennBus reach.</fact>
-    <fact source="src/kajenn/applications/openapi.py:89" method="read" verified="2026-10-28"><c>OpenApiApplication</c> attaches <c>_meta</c> with <c>schema_json</c>, <c>docs</c> (Swagger UI) and <c>index</c>.</fact>
-    <fact source="src/kajenn/applications/mcp.py:387" method="read" verified="2026-10-28"><c>McpOpenApiApplication</c> adds the MCP JSON-RPC face under the segment <c>mcp</c> (<c>mcp_name_segment</c>). The <c>channel</c> plugin decides visibility: the MCP face lists only entries declared for channel <c>mcp</c>, and an undeclared method is REST only.</fact>
-    <fact source="src/kajenn/applications/mcp.py:323" method="read" verified="2026-10-28"><c>McpApplication</c> makes the whole application one JSON-RPC endpoint over an external <c>RoutingClass</c>, with no REST face.</fact>
-    <fact source="src/kajenn/well_known.py:39" method="read" verified="2026-10-28">Discovery documents are served from the application branch <c>_well_known</c>. The server maps <c>/.well-known/&lt;name&gt;</c> onto it.</fact>
-    <fact source="src/kajenn/server_app/server_app.py:153" method="read" verified="2026-10-28"><c>ServerApplication</c> extends <c>OpenApiApplication</c>.</fact>
-    <fact source="src/kajenn/asgi_server.py:138" method="read" verified="2026-10-28">The server mounts <c>ServerApplication</c> under <c>_server</c> when no declared application has that code.</fact>
-    <fact source="src/kajenn/server.py:546" method="read" verified="2026-10-28">The server demux picks an application by the first path segment only. A mount is always one segment.</fact>
+    <fact source="src/kajenn/routed_application.py:127" method="read" verified="2026-11-03"><c>RoutedApplication</c> is <c>BaseApplication</c> plus the genro-routes <c>RoutingClass</c>. Its <c>execute</c> is the single execution point that REST, MCP, WSX and the KajennBus reach.</fact>
+    <fact source="src/kajenn/applications/openapi.py:89" method="read" verified="2026-11-03"><c>OpenApiApplication</c> attaches <c>_meta</c> with <c>schema_json</c>, <c>docs</c> (Swagger UI) and <c>index</c>.</fact>
+    <fact source="src/kajenn/applications/mcp.py:387" method="read" verified="2026-11-03"><c>McpOpenApiApplication</c> adds the MCP JSON-RPC face under the segment <c>mcp</c> (<c>mcp_name_segment</c>). The <c>channel</c> plugin decides visibility: the MCP face lists only entries declared for channel <c>mcp</c>, and an undeclared method is REST only.</fact>
+    <fact source="src/kajenn/applications/mcp.py:323" method="read" verified="2026-11-03"><c>McpApplication</c> makes the whole application one JSON-RPC endpoint over an external <c>RoutingClass</c>, with no REST face.</fact>
+    <fact source="src/kajenn/well_known.py:40" method="read" verified="2026-11-03">A path matching <c>WELL_KNOWN_PATTERN</c> goes to the route the application declared for it in its class dict <c>well_known</c>. No segment inside the application is reserved for it.</fact>
+    <fact source="src/kajenn/server_app/server_app.py:207" method="read" verified="2026-11-03"><c>ServerApplication</c> extends <c>OpenApiApplication</c>.</fact>
+    <fact source="src/kajenn/asgi_server.py:139" method="read" verified="2026-11-03">The server mounts <c>ServerApplication</c> under <c>_server</c> when no declared application has that code.</fact>
+    <fact source="src/kajenn/server.py:559" method="read" verified="2026-11-03">After the well-known paths, the server demux picks an application by the first path segment only. A mount is always one segment.</fact>
   </current>
 
   <solution>
@@ -38,8 +38,8 @@
         <row><cell><c>POST _meta/mcp</c></cell><cell>MCP JSON-RPC entry</cell><cell><c>mcp</c></cell></row>
         <row><cell><c>GET _meta/mcp/tools</c></cell><cell>List of the MCP tools, readable without speaking MCP</cell><cell>none</cell></row>
       </table>
-      <p>The names <c>mcp</c>, <c>api</c> and <c>_well_known</c> become free for application routes.</p>
-      <p>Discovery documents are not under <c>_meta</c>: an application declares its well-known URLs in a class dict, and the <c>_well_known</c> branch is removed (<ref doc="proposal/well-known-urls" to="d-declare">well-known-urls</ref>, 2026-11-02).</p>
+      <p>The names <c>mcp</c> and <c>api</c> become free for application routes.</p>
+      <p>Discovery documents are not under <c>_meta</c>: an application declares its well-known URLs in a class dict, and the <c>_well_known</c> branch was removed (<ref doc="proposal/well-known-urls" to="d-declare">well-known-urls</ref>, 2026-11-02).</p>
     </section>
 
     <section title="SpaConsole in kajenn-orchestra">
@@ -113,9 +113,10 @@
       <option id="d-ext-generated" title="Pages generated from the REST description"/>
       <choice option="d-ext-component" by="GP" date="2026-10-28">Generated pages remain the direction for later.</choice>
     </decision>
-    <decision id="d-gui-name" status="proposed">
+    <decision id="d-gui-name" status="decided">
       <question>What is the attribute of the gui element called?</question>
       <option id="d-gui-name-class" title="gui_class"><p><c>class</c> is a Python keyword; other elements use <c>app_class</c> and <c>handler_class</c>.</p></option>
+      <choice option="d-gui-name-class" by="GP" date="2026-11-03">The same shape as app_class and handler_class.</choice>
     </decision>
   </decisions>
 

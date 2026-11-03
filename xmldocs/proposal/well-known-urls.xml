@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<proposal id="proposal/well-known-urls" title="Well-known URLs declared by applications" date="2026-11-02" lang="en" author="Giovanni Porcari" status="review">
+<proposal id="proposal/well-known-urls" title="Well-known URLs declared by applications" date="2026-11-02" lang="en" author="Giovanni Porcari" status="accepted">
 
   <problem>
     <p>External clients read some documents at fixed paths of a site, before they access anything else. Examples: <c>/.well-known/security.txt</c> (RFC 9116), <c>/robots.txt</c> (RFC 9309), <c>/.well-known/apple-app-site-association</c> (iOS universal links), <c>/.well-known/assetlinks.json</c> (Android app links), <c>/.well-known/oauth-protected-resource/&lt;resource&gt;</c> (RFC 9728).</p>
