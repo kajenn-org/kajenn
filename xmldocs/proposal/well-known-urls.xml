@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<proposal id="proposal/well-known-urls" title="Well-known URLs declared by applications" date="2026-11-02" lang="en" author="Giovanni Porcari" status="accepted">
+
+  <problem>
+    <p>External clients read some documents at fixed paths of a site, before they access anything else. Examples: <c>/.well-known/security.txt</c> (RFC 9116), <c>/robots.txt</c> (RFC 9309), <c>/.well-known/apple-app-site-association</c> (iOS universal links), <c>/.well-known/assetlinks.json</c> (Android app links), <c>/.well-known/oauth-protected-resource/&lt;resource&gt;</c> (RFC 9728).</p>
+    <p>In kajenn an application answers a <c>/.well-known/</c> document only as a child of a reserved <c>_well_known</c> branch of its router, built in code before the server registers it. A mixin cannot bring its own documents into an application, a fixed path outside <c>/.well-known/</c> such as <c>/robots.txt</c> has no mechanism, and two applications declaring the same name are resolved silently by registration order.</p>
+    <p>genropy legacy answers these documents with webtools that declare their public path on the class (<c>alias_url</c>). This proposal brings that model to kajenn applications.</p>
+  </problem>
+
+  <current>
+    <section title="kajenn today">
+      <fact source="src/kajenn/server.py:561" method="read" verified="2026-11-02">A first path segment starting with a dot gets 404 from the server demux. The one exception is <c>.well-known</c> followed by a name in <c>well_known_applications</c>: the request goes to that application with its path rewritten as <c>/_well_known/&lt;name&gt;/&lt;rest&gt;</c>.</fact>
+      <fact source="src/kajenn/routed_application.py:187" method="read" verified="2026-11-02">A <c>RoutedApplication</c> declares its documents as the children of a <c>_well_known</c> branch of its router. <c>well_known_names</c> returns those children.</fact>
+      <fact source="src/kajenn/server.py:242" method="read" verified="2026-11-02"><c>register_application</c> sets <c>app.server = self</c>, then indexes <c>app.well_known_names</c> once. A name declared by two applications belongs to the last registered. A claimed code or mount raises <c>ValueError</c>.</fact>
+      <fact source="src/kajenn/kbus_mixin.py:295" method="read" verified="2026-11-02">An external application presents its names in <c>meta["well_known"]</c>, a list of strings, when its process joins the KajennBus.</fact>
+      <fact source="src/kajenn/server.py:540" method="read" verified="2026-11-02">A path without a leading dot, <c>/robots.txt</c> and <c>/favicon.ico</c> included, is demuxed like any other path: the root application if there is one, else 404.</fact>
+      <fact source="src/kajenn/site_home.py:83" method="read" verified="2026-11-02"><c>SiteHome.static</c> names a folder for the site's static files. No code serves it.</fact>
+      <fact source="src/kajenn/application.py:166" method="read" verified="2026-11-02"><c>BaseApplication.__init__</c> receives <c>code</c> and <c>mount</c> from the recipe and sets <c>self.mount</c>. The class does not know its mount.</fact>
+      <fact source="src/kajenn/application.py:45" method="read" verified="2026-11-02">Each application has one class attribute <c>grammar</c>, inherited by MRO and mounted in the recipe under its <c>application(app_class=...)</c> element. Composition is explicit; a mixin cannot add words.</fact>
+      <fact source="genro_builders/builder/base.py:230" method="run" verified="2026-11-02">genro-builders 0.30.0 composes the elements of plain mixin bases of a grammar class: elements with different names are united; an element with the same name is replaced entirely.</fact>
+    </section>
+
+    <section title="genropy legacy">
+      <fact source="genropy:gnr/web/gnrwsgisite.py:499" method="read" verified="2026-11-02">At startup the site reads <c>alias_url</c> from every webtool and builds <c>webtools_static_routes</c>, a dict absolute path → webtool. <c>_dispatcher</c> looks the exact path up before every other rule.</fact>
+      <fact source="genropy:webtools/wku.py:71" method="read" verified="2026-11-02"><c>DeepLinkIOS</c> always associates the whole site (<c>"/": "/*"</c>); the configuration only excludes paths. It also emits <c>webcredentials</c> with the same app ids.</fact>
+      <fact source="genropy:webtools/wku.py:94" method="read" verified="2026-11-02"><c>DeepLinkAndroid</c> emits package name, certificate fingerprints and the relations <c>handle_all_urls</c> and <c>get_login_creds</c>. It has no paths.</fact>
+    </section>
+  </current>
+
+  <solution>
+    <section title="Behaviour">
+      <list>
+        <item>An application class or a mixin declares the well-known URLs it answers in a class dict <c>well_known</c>: public path → route path inside the application.</item>
+        <item>What is well-known is fixed by the standards, not configured: <c>/.well-known/...</c> (RFC 8615), <c>/robots.txt</c> (RFC 9309), <c>/favicon.ico</c> (the HTML default icon). RFC 8615 cites <c>/robots.txt</c> and <c>/favicon.ico</c> as the site-wide metadata that predates the prefix.</item>
+        <item>A request whose path is well-known goes to the declared route of the declaring application. A well-known path nobody declared answers 404 with the message "unimplemented well-known URL": for <c>robots.txt</c> a 4xx means "no restrictions" (RFC 9309), for the other documents "not supported".</item>
+        <item>Two applications declaring the same path stop the server at construction. Inside one application the more derived class wins.</item>
+        <item>A path that depends on the mount (OAuth protected resources) is declared once on the class with the marker <c>{mount}</c>.</item>
+        <item>The site author is responsible for what a well-known route answers: kajenn does not check that it is public.</item>
+      </list>
+    </section>
+
+    <section title="Declaring well-known URLs">
+      <code lang="python"><![CDATA[
+class MobileMixin:
+    well_known = {
+        "/.well-known/apple-app-site-association": "mobile/apple_app_site_association",
+        "/.well-known/assetlinks.json": "mobile/assetlinks",
+    }
+
+class OauthApi(RoutedApplication):
+    well_known = {"/.well-known/oauth-protected-resource/{mount}": "oauth/resource"}
+
+class Shop(MobileMixin, OauthApi):
+    well_known = {"/robots.txt": "seo/robots"}
+]]></code>
+      <list>
+        <item>Keys are public paths with the leading <c>/</c>. Values are route paths inside the application, without it.</item>
+        <item><c>BaseApplication.__init__</c> merges the dicts along the MRO (the more derived class wins on the same key), replaces <c>{mount}</c> with <c>self.mount</c> and stores the result in <c>self.well_known</c>. For the root mount (<c>""</c>) the segment <c>/{mount}</c> is removed whole: RFC 9728 has no trailing slash for a root resource.</item>
+        <item>A key that is not a well-known path is a construction error.</item>
+        <item>An application mounted twice gets one key per mount for <c>{mount}</c> keys; a key without the marker declared by both instances is a conflict, which is correct: a site has one of each.</item>
+      </list>
+    </section>
+
+    <section title="Server">
+      <list>
+        <item>The well-known paths are one kajenn constant: <c>^/(\.well-known/.+|robots\.txt|favicon\.ico)$</c>. It is not configurable. <c>sitemap.xml</c> is not in it: the sitemap protocol does not fix its location.</item>
+        <item><c>register_application</c> reads <c>app.well_known</c>, checks that each route exists and builds one index public path → (application, route). A path already held by another application raises <c>ValueError</c>, like a claimed code or mount.</item>
+        <item>The demux matches the constant first. A declared path is forwarded to its application as the route path; an undeclared one answers 404 "unimplemented well-known URL". Other first segments starting with a dot stay 404.</item>
+        <item>The <c>_well_known</c> branch, <c>WELL_KNOWN_ROOT</c>, <c>well_known_names</c> and the rewrite in <c>demux_hidden</c> are removed.</item>
+        <item>An external application sends its <c>well_known</c> dict when it joins. A path held by another application refuses the join with <c>kbus.Refused</c>; its own re-join replaces its paths.</item>
+      </list>
+    </section>
+
+    <section title="Documents of the _server application">
+      <list>
+        <item><c>/.well-known/security.txt</c> and <c>/robots.txt</c> are generated from words of <c>ServerApplicationGrammar</c>. <c>robots.txt</c> rules are validated at boot.</item>
+        <item><c>/favicon.ico</c> is served as a file from <c>home:/static</c>.</item>
+        <item><c>_server</c> registers each path only when its words are configured or its file exists. An application may answer any of them itself, for example a favicon per host; if both do, the server stops with the conflict error.</item>
+      </list>
+    </section>
+
+    <section title="Mobile mixin">
+      <list>
+        <item>A mixin inside kajenn gives an application its mobile capability: its own grammar words, a routing class under <c>mobile</c> and the two keys of its <c>well_known</c>.</item>
+        <item>The recipe holds only real parameters: <c>ios(team_id, bundle_id, paths, excluded_paths)</c> and <c>android(package_name, fingerprints, paths, excluded_paths)</c>. The routes build the fixed JSON.</item>
+        <item>iOS: <c>paths</c> is required, at least one, in Apple <c>components</c> syntax (<c>*</c>, <c>?</c>), copied as is; exclusions are written first. No <c>/*</c> default.</item>
+        <item>Android: <c>paths</c> and <c>excluded_paths</c> are optional, same syntax, written as <c>relation_extensions</c> → <c>dynamic_app_link_components</c> (Dynamic App Links, Android 15 and later; older devices use the app manifest).</item>
+        <item><c>webcredentials</c> (iOS) and <c>get_login_creds</c> (Android) are always emitted from the same identifiers. The app activates them on its side.</item>
+        <item>A platform without configuration registers no key. A mixin with no platform configured logs a warning at boot.</item>
+      </list>
+    </section>
+
+    <section title="Grammar composition">
+      <p><c>BaseApplication.__init_subclass__</c> composes <c>cls.grammar</c> from the grammars declared along the MRO, so a mixin brings its words into every application that uses it. Only new elements are composed: an element with the same name replaces the earlier one, as genro-builders does today.</p>
+    </section>
+  </solution>
+
+  <decisions>
+    <decision id="d-declare" status="decided">
+      <question>How does an application say which well-known URLs it answers?</question>
+      <option id="d-declare-branch" title="Children of a _well_known branch, as today"/>
+      <option id="d-declare-plugin" title="A route plugin carrying the public name"/>
+      <option id="d-declare-recipe" title="Pairs public path → route written in the recipe"/>
+      <option id="d-declare-dict" title="A class dict well_known: public path → route"/>
+      <choice option="d-declare-dict" by="GP" date="2026-11-02">The application already knows the pairing; the recipe keeps only real parameters. It is the legacy alias_url model and needs no reserved branch.</choice>
+    </decision>
+
+    <decision id="d-standard" status="decided">
+      <question>Which paths are well-known?</question>
+      <option id="d-standard-prefix" title="Only /.well-known/..."/>
+      <option id="d-standard-config" title="A regex the recipe can change"/>
+      <option id="d-standard-constant" title="A kajenn constant with the locations fixed by standards"/>
+      <choice option="d-standard-constant" by="GP" date="2026-11-02">The regex is the standards: /.well-known/, robots.txt and favicon.ico. Nothing to configure.</choice>
+    </decision>
+
+    <decision id="d-undeclared" status="decided">
+      <question>What answers a well-known path no application declared?</question>
+      <option id="d-undeclared-404" title="404 with the message unimplemented well-known URL"/>
+      <option id="d-undeclared-demux" title="The normal demux, so a root application still receives it"/>
+      <choice option="d-undeclared-404" by="GP" date="2026-11-02">404 is the standard answer for an absent document.</choice>
+    </decision>
+
+    <decision id="d-conflict" status="decided">
+      <question>What happens when two applications declare the same path?</question>
+      <option id="d-conflict-raise" title="ValueError at construction; an external join is refused"/>
+      <option id="d-conflict-last" title="The last registered wins, as today"/>
+      <option id="d-conflict-override" title="An override flag lets one declaration replace the other"/>
+      <choice option="d-conflict-raise" by="GP" date="2026-11-02">No silent winner. The override flag was discussed and not adopted: with _server declaring only what is configured no case needs it, and two overrides would conflict again.</choice>
+    </decision>
+
+    <decision id="d-mount" status="decided">
+      <question>How is a path that contains the mount declared?</question>
+      <option id="d-mount-instance" title="Added on the instance in __init__"/>
+      <option id="d-mount-single" title="Forbid two instances of one class"/>
+      <option id="d-mount-regex" title="Regex keys"/>
+      <option id="d-mount-marker" title="A {mount} marker in the class key"/>
+      <choice option="d-mount-marker" by="GP" date="2026-11-02">The declaration stays on the class. Forbidding two instances does not help, because the recipe chooses the mount anyway; regex keys are ambiguous between applications and their overlap cannot be checked at construction.</choice>
+    </decision>
+
+    <decision id="d-public" status="decided">
+      <question>Does kajenn check that a well-known route is public?</question>
+      <option id="d-public-check" title="Yes, at registration"/>
+      <option id="d-public-none" title="No"/>
+      <choice option="d-public-none" by="GP" date="2026-11-02">The site author knows what the route answers.</choice>
+    </decision>
+
+    <decision id="d-static" status="decided">
+      <question>How are /robots.txt and /favicon.ico available without writing an application?</question>
+      <option id="d-static-files" title="Both as files from home:/static"/>
+      <option id="d-static-none" title="Not at all: an application declares them"/>
+      <option id="d-static-mixed" title="robots.txt from _server words, favicon.ico from home:/static"/>
+      <choice option="d-static-mixed" by="GP" date="2026-11-02">robots.txt has rules worth validating at boot; favicon.ico is an image.</choice>
+    </decision>
+
+    <decision id="d-mobile-paths" status="decided">
+      <question>Which site paths does the mobile app open?</question>
+      <option id="d-mobile-paths-required" title="iOS paths required; Android paths optional"/>
+      <option id="d-mobile-paths-all" title="The whole site (/*), as legacy"/>
+      <choice option="d-mobile-paths-required" by="GP" date="2026-11-02">Apple does not require /*, and its documentation uses specific paths. Android paths serve Dynamic App Links; the Android app is being prepared.</choice>
+    </decision>
+
+    <decision id="d-mobile-missing" status="decided">
+      <question>What happens when an application has the mobile mixin and the recipe configures no platform?</question>
+      <option id="d-mobile-missing-stop" title="Construction fails"/>
+      <option id="d-mobile-missing-warn" title="Each platform registers only if configured; a warning when none is"/>
+      <choice option="d-mobile-missing-warn" by="GP" date="2026-11-02">Platforms are independent: iOS can be ready before Android.</choice>
+    </decision>
+
+    <decision id="d-mobile-place" status="decided">
+      <question>Where does the mobile mixin live?</question>
+      <option id="d-mobile-place-core" title="Inside kajenn"/>
+      <option id="d-mobile-place-package" title="A separate package"/>
+      <choice option="d-mobile-place-core" by="GP" date="2026-11-02">It adds no dependency.</choice>
+    </decision>
+
+    <decision id="d-grammar-extend" status="decided">
+      <question>Can a class extend an element of an inherited grammar instead of replacing it?</question>
+      <option id="d-grammar-extend-now" title="Yes, with @element(..., extend=True) in genro-builders"/>
+      <option id="d-grammar-extend-later" title="Not now: only new elements are composed"/>
+      <choice option="d-grammar-extend-later" by="GP" date="2026-11-02">The mobile mixin needs only new words. extend=True is the chosen form when a case needs it.</choice>
+    </decision>
+  </decisions>
+
+  <consequences>
+    <list>
+      <item>The <c>_well_known</c> branch, <c>WELL_KNOWN_ROOT</c> and <c>well_known_names</c> are removed: a breaking change, released as a minor version.</item>
+      <item>The proposal <ref doc="proposal/channels-meta-and-server-gui" to="d-segment">channels-meta-and-server-gui</ref> no longer needs a <c>_meta/well_known</c> branch.</item>
+      <item>A site whose root application answers <c>/favicon.ico</c> today must declare it in that application's <c>well_known</c>.</item>
+      <item>The guide <c>docs/guides/hidden-paths.md</c> is rewritten with one table: for each case, who answers, when construction stops, when the answer is 404 "unimplemented well-known URL". The <c>{mount}</c> marker and the MRO merge are documented with examples.</item>
+      <item>Tests on the kajenn router cannot prove what an external client sees. A deployment check requests each declared document on the public HTTPS address, through the proxy, and fails on any status other than 200, on a redirect or on a body that does not parse.</item>
+    </list>
+  </consequences>
+
+  <related>
+    <doc id="proposal/channels-meta-and-server-gui">Reserves the _meta segment inside every routed application</doc>
+  </related>
+</proposal>
