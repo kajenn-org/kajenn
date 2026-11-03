@@ -131,14 +131,15 @@ Tests: [tests/server_app/test_tasks_section.py](../../../tests/server_app/test_t
 
 ## Cancellation of a sync handler on the pool
 
-A sync task handler runs through `WorkPool.run` (`src/kajenn/pool.py:103-140`).
+A sync task handler runs through `WorkPool.run` (`src/kajenn/pool.py:103-146`).
 When the caller is cancelled, work still queued is withdrawn. Work already
 running is awaited to its end, and then `CancelledError` is raised again. An
 exception raised by that work is logged on `kajenn.pool`.
 
-Tests: `tests/core/test_pool.py::TestCancellation`. On Python 3.14
-`::test_the_work_error_after_a_cancellation_is_logged_and_observed` fails
-(kajenn-org/kajenn#95). CI runs Python 3.11 only.
+The running work is awaited with `asyncio.wait`, not `asyncio.shield`, so the
+late exception is reported once, on the `kajenn.pool` log (commit 2d396e0).
+
+Tests: `tests/core/test_pool.py::TestCancellation`. CI runs Python 3.11 only.
 
 ## Distance from design.md
 

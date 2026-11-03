@@ -26,13 +26,6 @@ by a worker that stopped is never settled: the only `settle` call in `src/` is
 boot sweep settles `active/` orphans as `aborted`, and whether
 `LocalTaskExecutor.execute` reads `is_cancelled` while the task runs.
 
-**S3 [pool · python 3.14] — kajenn-org/kajenn#95 "WorkPool cancellation test fails on Python 3.14: the shielded work error reaches the loop exception handler".**
-A sync task handler runs through `server.run_sync` and `WorkPool.run`
-(`src/kajenn/pool.py:103-140`). On Python 3.14 the work error after a
-cancellation reaches the loop exception handler as well as the `kajenn.pool`
-log. `tests/core/test_pool.py::TestCancellation::test_the_work_error_after_a_cancellation_is_logged_and_observed`
-fails there. The `tests.yml` workflow runs Python 3.11 only.
-
 **S4 [route names] — kajenn-org/kajenn#8 "Rename the list routes of the server sections".**
 `TasksSection.list` (`src/kajenn/server_app/server_sections/tasks_section.py:83`)
 publishes the path `/_server/tasks/list`. The issue asks the owner to name the
