@@ -58,6 +58,10 @@ below a threshold.
   `env_capabilities` passed by the caller.
 - A request refused for missing env capabilities answers 503, with an
   explanation that names the missing capabilities. *(Owner, 2026-11-03.)*
+- Whether a listing includes the entries a filter denies (auth, channel or env
+  capabilities) is decided by the application layer at each listing call:
+  "to call a listing, I will have to decide it". genro-routes already takes
+  it as `nodes(forbidden=...)`. *(Owner, 2026-11-03.)*
 
 ## Still open
 
