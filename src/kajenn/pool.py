@@ -120,8 +120,12 @@ class WorkPool:
         try:
             work = self.executor.submit(ctx.run, fn, *args)
             outcome = asyncio.wrap_future(work)
+            # asyncio.wait, not asyncio.shield: a cancelled wait leaves the
+            # work running like shield does, but since Python 3.14 shield also
+            # reports the work's late exception to the loop's exception
+            # handler, a second report of the error logged below.
             try:
-                return await asyncio.shield(outcome)
+                await asyncio.wait({outcome})
             except asyncio.CancelledError:
                 if work.cancel():
                     raise
@@ -137,6 +141,7 @@ class WorkPool:
                         exc_info=outcome.exception(),
                     )
                 raise
+            return outcome.result()
         finally:
             self._busy -= 1
 
