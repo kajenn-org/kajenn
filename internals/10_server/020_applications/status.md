@@ -39,8 +39,8 @@ Each face has a channel name. `RoutedApplication.http_channel` is `"rest"`, and
 `mcp_channel = "mcp"`, `rest_channel = "rest"` and `http_channel =
 rest_channel` (`applications/mcp.py:401-403`).
 
-No code passes a capabilities filter, so of the three filters design.md §3
-applies to every request, the resolution applies two. The routing-system status
+No code passes a capabilities filter. The resolution filters on tags and
+channel only. The routing-system status
 carries the evidence: [025 status](../025_routing-system/status.md).
 
 Claim anchors: [`BaseApplication`](../../../src/kajenn/application.py#L163), [`app_snapshot`](../../../src/kajenn/application.py#L353), [`app_panel`](../../../src/kajenn/application.py#L363), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127), [`execute`](../../../src/kajenn/routed_application.py#L233), [`authenticate_scope`](../../../src/kajenn/routed_application.py#L284), [`discover`](../../../src/kajenn/routed_application.py#L300), [`auth_filters`](../../../src/kajenn/routed_application.py#L315).

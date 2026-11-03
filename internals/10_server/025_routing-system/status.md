@@ -47,9 +47,9 @@ shows the routes of every method. Tests:
 `::TestNotHttp::test_a_kbus_call_reaches_a_get_route`,
 `::TestNotHttp::test_discovery_still_lists_routes_of_every_method`.
 
-The design's per-request filter on capabilities is not built: design.md §2
-states that the walk filters every request on its environment's capabilities;
-the code passes tags and channel only (`routed_application.py:326-330`), and
+No code filters on capabilities. The owner statement of 2026-11-03 (design.md,
+header) says routes depend on auth tags and capabilities. The code passes tags
+and channel only (`routed_application.py:326-330`), and
 nothing produces a capabilities value per request.
 
 Claim anchors: [`PluginMixin`](../../../src/kajenn/plugin_mixin.py#L74), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127), [`execute`](../../../src/kajenn/routed_application.py#L233), [`authenticate_scope`](../../../src/kajenn/routed_application.py#L284), [`discover`](../../../src/kajenn/routed_application.py#L300), [`auth_filters`](../../../src/kajenn/routed_application.py#L315), [`method_filters`](../../../src/kajenn/routed_application.py#L332), [`deny_reason`](../../../src/kajenn/plugins/openapi/plugin.py#L99).
@@ -76,9 +76,9 @@ configures it with `channels="rest"` (`applications/mcp.py:429-430`),
 `McpTransport.build_engine` plugs `pydantic` and `auth` when absent
 (`applications/mcp.py:131-133`).
 
-The design's runtime configuration of plugins is not built: design.md §7 states
-that a plugin can be plugged, enabled, disabled or given new options while the
-server runs; the code arms once and holds no path to a later change. genro-routes
+No code changes the plugins of an armed tree. The owner statement of 2026-11-03
+(design.md, header) says plugins can be configured dynamically. The code arms
+once and holds no path to a later change. genro-routes
 0.30.1 provides `Router.plug`, `Router.set_plugin_enabled` and
 `Router.get_config` (`genro_routes/core/router.py:163`, `:300`, `:231`).
 
@@ -105,8 +105,8 @@ should not be declared complete from the removal of that old method alone.
 
 No code removes a branch. genro-routes 0.30.1 provides `remove_branch(name)` and
 `detach_instance(child)` (`genro_routes/core/base_router.py:665`, `:773`);
-nothing in `src/` calls either. The design's removal of a branch while the
-server runs (design.md §1) is not built.
+nothing in `src/` calls either. The owner statement of 2026-11-03 (design.md,
+header) says applications can even be mounted and unmounted.
 
 See [OpenAPI status](../020_applications/openapi/status.md) for the schema and
 [MCP status](../020_applications/mcp/status.md) for protocol behavior.

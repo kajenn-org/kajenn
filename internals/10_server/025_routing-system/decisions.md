@@ -17,30 +17,18 @@ server skeleton rather than one entry at a time (owner, 2026-08-23).
 
 ---
 
-No ratified decision other than the three owner voices below. See
+No ratified decision other than the owner statement below. See
 [open_decisions.md](open_decisions.md).
 
-## Routes computed per request on tags, capabilities and channel
+## Owner statement of 2026-11-03
 
-**Source: Owner, 2026-11-03.** The routes a request sees are computed for that
-request. The walk filters on three facts of the request: the caller's tags
-(`auth`), the capabilities of the environment the request runs in (`env`), and
-the channel it arrived through (`channel`). Capabilities are a fact of the
-request's environment, not of the installation. Every face supplies its
-channel. Accounted for in [design.md](design.md) §2.
+**Source: Owner, 2026-11-03.** Translated from Italian, verbatim: routes depend
+on auth tags and capabilities and are always computed dynamically. Plugins can
+be configured dynamically, and applications can even be mounted and unmounted.
 
-## Router plugins configured while the server runs
-
-**Source: Owner, 2026-11-03.** Router plugins are configured while the server
-runs: a plugin can be plugged, enabled, disabled or given new options without a
-restart. Arming at the first look after installation stays; it is the first
-arming, not the only one. Accounted for in [design.md](design.md) §7.
-
-## Branch removal while the server runs
-
-**Source: Owner, 2026-11-03.** An application is mounted and unmounted while the
-server runs; a branch is removed from a tree as it is attached. Accounted for in
-[design.md](design.md) §1.
+This voice is recorded as given. What it implies for the text of
+[design.md](design.md) is not decided: the lines it contradicts, and the
+questions it leaves open, are the frictions below.
 
 ## Still open
 
@@ -60,9 +48,33 @@ as the fifth way a request does not reach its handler.
 [design.md](design.md) §5 says "Today there is one, `openapi`" about the dialect
 plugins this package ships. The overview forbids "today" in `design.md`.
 
-**S10 [readme] — README.md describes the walk and the arming as before
-2026-11-03.** [README.md](README.md) says the walk filters on "the
-installation's capabilities", and lists "when a tree is armed — once, on the
-first look after installation". [design.md](design.md) §2 and §7 now say the
-capabilities of the environment the request runs in, and plugins configured
-while the server runs. README.md was not edited in the 2026-11-03 pass.
+**S10 [owner-2026-11-03] — capabilities: a fact of the installation or of the
+request.** [design.md](design.md):112 and :121 say capabilities are "what this
+installation can do" and "what the installation has rather than who is asking".
+The owner statement says routes depend on capabilities and are always computed
+dynamically. Open question: are capabilities carried by each request, or are
+they the installation's and only re-read at every walk?
+
+**S11 [owner-2026-11-03] — plugins configured dynamically: what changes, and
+where.** [design.md](design.md):63 and :249 say a tree is armed once, at the
+first look after installation. The owner statement says plugins can be
+configured dynamically. Open questions:
+- Does a change reach a tree already armed, and from which request on?
+- Is a change made for a whole tree, or also for a single entry? genro-routes
+  `Router.set_plugin_enabled(method_name, plugin_name, enabled)` works per
+  entry or on `"_all_"`.
+- Can a change switch off one of the fixed pair (`pydantic`, `openapi`) of §6?
+  The recipe refuses it (`plugin_mixin.py:110`); genro-routes accepts
+  `set_plugin_enabled("_all_", "pydantic", False)`.
+
+**S12 [owner-2026-11-03] — unmounting: how a branch leaves a tree.**
+[design.md](design.md):57 says a tree is "grown by attaching others"; no line
+describes removal. The owner statement says applications can be mounted and
+unmounted. genro-routes has `remove_branch(name)` and `detach_instance`; no code
+in `src/kajenn` calls them. Open question: what the design says about removing
+a branch, and what becomes of a request in flight on it.
+
+**S13 [code-past-design] — the channel is supplied on every face.**
+[design.md](design.md):129 says "HTTP dispatch supplies none". `auth_filters`
+passes `channel_channel` for every face (`routed_application.py`, see
+[status.md](status.md)). The owner statement does not mention the channel.

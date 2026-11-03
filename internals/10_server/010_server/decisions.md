@@ -30,8 +30,8 @@ The `register_application` docstring states "the set of applications is fixed
 at construction" ([server.py](../../../src/kajenn/server.py#L244)). The module
 docstring repeats it ([server.py](../../../src/kajenn/server.py#L20)).
 [design.md](design.md) §2 and §8 describe an installed set that is not sealed
-and changes while the server runs. The owner restated it on 2026-11-03:
-applications are mounted and unmounted at runtime. D32 (SPECIFICATION.md:954)
+and changes while the server runs. The owner statement of 2026-11-03 (translated, verbatim) says
+applications can even be mounted and unmounted. D32 (SPECIFICATION.md:954)
 requires the reason to be written where a static limit is accepted. The
 docstring gives no reason. No method of `BaseServer` removes an application.
 genro-routes 0.30.1 has `BaseRouter.remove_branch` and

@@ -2,9 +2,8 @@
 
 **Version**: 0.4 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
 
-*Owner, 2026-11-03: step 3 moved. The routes a request sees are computed for
-that request, and all three filters apply to every request. The earlier text
-called tags the only filter an ordinary application uses.*
+*Owner, 2026-11-03, translated from Italian, verbatim:* routes depend on auth tags and capabilities and are always computed dynamically. Plugins can be configured dynamically, and applications can even be mounted and unmounted.
+The lines of this page it contradicts are in [decisions.md](decisions.md), Still open.
 
 What an application is, what it owes the server that hosts it, and everything
 that happens between a request arriving at the application and an answer going
@@ -249,11 +248,10 @@ case and not the loosest. Every route carrying a rule is closed to them,
 because no tag they hold can match one. What they reach is exactly the routes
 that carry no rule at all — which is the definition of public.
 
-The routes a request sees are computed for that request. Tags are one of three
-facts of the request the resolution filters on, and all three apply to every
-request. The other two — the capabilities of the environment the request runs
-in, and the channel it arrived through — belong to the routing system with the
-rest of the walk.
+Tags are one of three filters the resolution accepts, and the only one an
+ordinary application uses. The other two — what this installation is able to
+do, and which channel the request came in through — belong to the routing
+system with the rest of the walk.
 
 > Who resolves the identity and puts it there is
 > [050 authentication](../050_authentication/README.md); the three filters are

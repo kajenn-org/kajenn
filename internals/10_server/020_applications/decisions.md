@@ -17,30 +17,18 @@ this design stands on its own.
 
 ---
 
-No ratified decision other than the three owner voices below. See
+No ratified decision other than the owner statement below. See
 [open_decisions.md](open_decisions.md).
 
-## Routes computed per request on tags, capabilities and channel
+## Owner statement of 2026-11-03
 
-**Source: Owner, 2026-11-03.** The routes a request sees are computed for that
-request. The walk filters on three facts of the request: the caller's tags
-(`auth`), the capabilities of the environment the request runs in (`env`), and
-the channel it arrived through (`channel`). All three apply to every request,
-not only tags. Accounted for in [design.md](design.md) §3, step 3.
+**Source: Owner, 2026-11-03.** Translated from Italian, verbatim: routes depend
+on auth tags and capabilities and are always computed dynamically. Plugins can
+be configured dynamically, and applications can even be mounted and unmounted.
 
-## Router plugins configured while the server runs
-
-**Source: Owner, 2026-11-03.** Router plugins are configured while the server
-runs: a plugin can be plugged, enabled, disabled or given new options without a
-restart. The plugins are the routing system's; the voice is recorded here
-because every routed application carries them.
-[025 routing system](../025_routing-system/decisions.md) accounts for it.
-
-## Applications mounted and unmounted while the server runs
-
-**Source: Owner, 2026-11-03.** An application is mounted and unmounted while the
-server runs; a branch is removed from a tree as it is attached. Friction S19
-below records the line of [design.md](design.md) §1 that this voice contradicts.
+This voice is recorded as given. What it implies for the text of
+[design.md](design.md) is not decided: the lines it contradicts, and the
+questions it leaves open, are the frictions below.
 
 ## Still open
 
@@ -65,12 +53,13 @@ at a login page (`middleware/errors.py:32-36`). The comment above
 **S19 [owner-2026-11-03] — §1 keeps a restart for an application that cannot
 move.** [design.md](design.md) §1 says an application that cannot be taken
 away and put back "does not claim it can, and its change waits for a restart".
-The owner voice of 2026-11-03 says an application is mounted and unmounted
-while the server runs. The design does not state why such an application cannot
+The owner statement of 2026-11-03 says applications can even be mounted and
+unmounted. The design does not state why such an application cannot
 be made movable, which the overview's first rule (D32) requires where a restart
 is accepted.
 
-**S20 [owner-2026-11-03] — the dispatch diagram names one filter.** The step 3
-box of the diagram in [design.md](design.md) §3 reads "filtered by the caller's
-identity". The text of step 3 now says the resolution filters every request on
-tags, capabilities and channel.
+**S20 [owner-2026-11-03] — tags as the only filter of an ordinary
+application.** [design.md](design.md):248-249 says tags are "the only one an
+ordinary application uses". The owner statement says routes depend on auth tags
+and capabilities and are always computed dynamically. Open question: what
+step 3 says about capabilities for an ordinary application.
