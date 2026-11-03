@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<booklet id="booklet/server-application" title="The server application _server: what it is for, what it answers, how to configure it" date="2026-11-03" lang="en" author="Giovanni Porcari">
+  <purpose>
+    <p>Every kajenn server carries one management application, <c>_server</c> (class <c>ServerApplication</c>, package <c>kajenn.server_app</c>). It is the system surface of the server: the login surface for humans, the management of users, credentials, tasks and databases, the monitor, the credential check that channels call, and three site documents (<c>security.txt</c>, <c>robots.txt</c>, <c>favicon.ico</c>).</p>
+    <p>This booklet states what <c>_server</c> does today on <c>develop</c>: why it exists, every route it answers and who may call it, every recipe word that configures it, how other code extends it, who uses it, and where its browser interface lives. Every fact carries its source.</p>
+  </purpose>
+
+  <requires>
+    <list>
+      <item>kajenn on <c>develop</c> after merge 3f5588d (2026-11-03).</item>
+      <item>For login and user management: an <c>authentication().users(...)</c> store in the recipe.</item>
+      <item>For OIDC: <c>server(external_url=...)</c> in the recipe.</item>
+    </list>
+  </requires>
+
+  <step id="s-why" title="Why it exists">
+    <p>kajenn keeps everything that asks a human for a user and a password out of the core. The core authenticates presented credentials through <c>kajenn.auth</c> and does not import <c>kajenn.server_app</c>; <c>_server</c> is the application that owns the login surface and the management routes, mounted like any other application.</p>
+    <fact source="src/kajenn/server_app/__init__.py:15" method="read" verified="2026-11-03">The package is the system surface a server exposes under <c>/_server</c>. It holds what asks a human for a user and a password; <c>import kajenn</c> loads none of it.</fact>
+    <fact source="src/kajenn/server_app/server_app.py:207" method="read" verified="2026-11-03"><c>ServerApplication</c> extends <c>OpenApiApplication</c>, which extends <c>RoutedApplication</c>: its routes are ordinary routes with an OpenAPI description at <c>/_server/_meta/schema_json</c>.</fact>
+    <fact source="src/kajenn/server_app/server_app.py:225" method="read" verified="2026-11-03"><c>code</c> and <c>mount</c> are both <c>_server</c>, fixed on the class: <c>PasswordMethod</c> names <c>/_server/login</c> as its form action.</fact>
+  </step>
+
+  <step id="s-mount" title="Know when it is mounted">
+    <p>A server always has <c>_server</c>. The recipe never declares it: it only customises it.</p>
+    <list>
+      <item>No application of code <c>_server</c> in the recipe or the kwargs → the server appends a default <c>ServerApplication()</c>.</item>
+      <item><c>application(code="_server")</c> without <c>app_class</c> → <c>ServerApplication</c> with the words written under it.</item>
+      <item><c>application(code="_server", app_class=MyServerApp)</c> → accepted only when <c>MyServerApp</c> subclasses <c>ServerApplication</c>; otherwise the server refuses to build.</item>
+      <item>The dedicated process of an application declared with <c>spawner="subprocess"</c> mounts no <c>_server</c>: it hosts that application alone.</item>
+    </list>
+    <fact source="src/kajenn/asgi_server.py:138" method="read" verified="2026-11-03">When the process has no role and no application has code <c>_server</c>, a default <c>ServerApplication()</c> is appended to the applications.</fact>
+    <fact source="src/kajenn/config/builder.py:90" method="read" verified="2026-11-03"><c>application(code="_server")</c> without <c>app_class</c> takes <c>ServerApplication</c>.</fact>
+    <fact source="src/kajenn/config/handler.py:309" method="read" verified="2026-11-03">An <c>app_class</c> on code <c>_server</c> that is not a <c>ServerApplication</c> subclass raises <c>ValueError</c> naming the class.</fact>
+    <fact source="tests/core/test_server_app_always_present.py" method="test" verified="2026-11-03">A bare server, a recipe naming nothing and a recipe customising <c>_server</c> all mount it; the dedicated process of a spawned application mounts none.</fact>
+  </step>
+
+  <step id="s-routes" title="Know what it answers and who may call it">
+    <p>Access is decided per route by its <c>auth_rule</c>: no identity answers 401, an identity without the tag answers 403. A route with an <c>openapi_method</c> refuses other methods with 405; a route without one answers every method.</p>
+    <table title="Access summary">
+      <row head="true"><cell>Access</cell><cell>Routes</cell></row>
+      <row><cell>Public</cell><cell><c>/_server/</c> (index), <c>login</c>, <c>logout</c>, <c>login_methods</c>, <c>_meta/*</c>, OIDC <c>start</c> and <c>callback</c>, the three well-known documents</cell></row>
+      <row><cell>KajennBus only (HTTP answers 403)</cell><cell><c>auth/authenticate</c>, <c>auth/forget_credential</c></cell></row>
+      <row><cell><c>SUPERADMIN</c></cell><cell><c>users/*</c>, <c>tokens/*</c>, <c>tasks/*</c></cell></row>
+      <row><cell><c>SERVER_ADMIN</c></cell><cell><c>monitor/*</c>, <c>databases/*</c></cell></row>
+    </table>
+
+    <section title="The application itself">
+      <table>
+        <row head="true"><cell>Path</cell><cell>Method</cell><cell>What it does</cell></row>
+        <row><cell><c>/_server/</c></cell><cell>any</cell><cell>Descriptor: <c>{title, sections}</c>, the attached section names.</cell></row>
+        <row><cell><c>/_server/login</c></cell><cell>POST</cell><cell><c>identity</c>, <c>password</c>. Checks the lockout, verifies the password against the user store, attaches an <c>Avatar</c> to the current session. Answers <c>{session_id, identity, tags}</c>, or <c>{error}</c> with <c>remaining_attempts</c> for a known identity. Without a user store: "Login is not available".</cell></row>
+        <row><cell><c>/_server/logout</c></cell><cell>any</cell><cell>Deletes the session <c>session_id</c>; answers <c>{"status": "ok"}</c>.</cell></row>
+        <row><cell><c>/_server/login_methods</c></cell><cell>any</cell><cell><c>{methods: [...]}</c>: one descriptor per registered login method (id, kind, label, action), so a front-end draws the login screen without knowing the configuration.</cell></row>
+        <row><cell><c>/_server/_meta/schema_json</c>, <c>/_server/_meta/docs</c>, <c>/_server/_meta/index</c></cell><cell>any</cell><cell>OpenAPI 3.1 document, Swagger UI, HTML index (from <c>OpenApiApplication</c>).</cell></row>
+      </table>
+      <fact source="src/kajenn/server_app/server_app.py:452" method="read" verified="2026-11-03"><c>index</c> answers the title and the sorted section names.</fact>
+      <fact source="src/kajenn/server_app/server_app.py:460" method="read" verified="2026-11-03"><c>login</c> is POST, takes <c>identity</c> and <c>password</c>, and attaches the avatar to the current session; the session id does not change.</fact>
+      <fact source="src/kajenn/server_app/server_app.py:535" method="read" verified="2026-11-03"><c>logout</c> deletes the session it is given.</fact>
+      <fact source="src/kajenn/server_app/server_app.py:554" method="read" verified="2026-11-03"><c>login_methods</c> is public by design: it lists the descriptors of the registered methods.</fact>
+    </section>
+
+    <section title="auth: credential check for channels">
+      <table>
+        <row head="true"><cell>Path</cell><cell>Method</cell><cell>What it does</cell></row>
+        <row><cell><c>/_server/auth/authenticate</c></cell><cell>POST, bus only</cell><cell><c>credential</c>, <c>channel</c>. Verifies a presented credential through <c>AuthCore</c>; answers <c>{identity, tags, data, valid_until}</c>. It is the default <c>authentication_route</c> of every channel.</cell></row>
+        <row><cell><c>/_server/auth/forget_credential</c></cell><cell>POST, bus only</cell><cell>Drops a credential from the caches of every process.</cell></row>
+        <row><cell><c>/_server/auth/oidc:&lt;code&gt;/start</c></cell><cell>any</cell><cell>Starts the OIDC authorization code flow with PKCE; 302 to the provider.</cell></row>
+        <row><cell><c>/_server/auth/oidc:&lt;code&gt;/callback</c></cell><cell>any</cell><cell>Checks the state, exchanges the code, verifies the id_token, attaches the avatar; 302 to the safe <c>next</c> path.</cell></row>
+      </table>
+      <fact source="src/kajenn/server_app/server_sections/auth_section.py:108" method="read" verified="2026-11-03"><c>authenticate</c> and <c>forget_credential</c> answer 403 to an HTTP caller: only the KajennBus reaches them.</fact>
+      <fact source="src/kajenn/auth/mixin.py:78" method="read" verified="2026-11-03"><c>DEFAULT_AUTHENTICATION_ROUTE</c> is <c>/_server/auth/authenticate</c>.</fact>
+      <fact source="src/kajenn/server_app/oidc_method.py:164" method="read" verified="2026-11-03">OIDC <c>start</c> stores state, PKCE verifier and the safe <c>next</c> in the session and redirects to the provider; <c>callback</c> (line 207) completes the login.</fact>
+    </section>
+
+    <section title="users (SUPERADMIN)">
+      <table>
+        <row head="true"><cell>Route</cell><cell>Method</cell><cell>What it does</cell></row>
+        <row><cell><c>users/list</c></cell><cell>any</cell><cell>Every user record without its password hash.</cell></row>
+        <row><cell><c>users/get</c></cell><cell>any</cell><cell>One record by <c>identity</c>.</cell></row>
+        <row><cell><c>users/create_user</c></cell><cell>POST</cell><cell>New user: password and confirmation, metadata, tags; the scrypt hash is computed on the server.</cell></row>
+        <row><cell><c>users/save</c></cell><cell>POST</cell><cell>Merges metadata into an existing record; the hash is untouched.</cell></row>
+        <row><cell><c>users/set_password</c></cell><cell>POST</cell><cell>Replaces the password.</cell></row>
+        <row><cell><c>users/delete</c></cell><cell>POST</cell><cell>Deletes the user.</cell></row>
+      </table>
+      <fact source="tests/server_app/test_users_section.py" method="test" verified="2026-11-03">The CRUD answers 401 anonymous and 403 without <c>SUPERADMIN</c>; without a store every route answers <c>{"error": "User management is not available"}</c>.</fact>
+    </section>
+
+    <section title="tokens (SUPERADMIN)">
+      <table>
+        <row head="true"><cell>Route</cell><cell>Method</cell><cell>What it does</cell></row>
+        <row><cell><c>tokens/list</c></cell><cell>any</cell><cell>Every API key record without its secret hash.</cell></row>
+        <row><cell><c>tokens/issue</c></cell><cell>POST</cell><cell><c>label</c>, <c>tags</c>, <c>expires_at</c>. Answers the key <c>gak_...</c> once only.</cell></row>
+        <row><cell><c>tokens/revoke</c>, <c>tokens/delete</c></cell><cell>POST</cell><cell>By <c>key_id</c>; both empty the credential cache in every process.</cell></row>
+        <row><cell><c>tokens/create_jwt</c></cell><cell>POST</cell><cell><c>sub</c>, <c>tags</c>, <c>expires_in</c>. Signs with the first HS* verifier of the recipe.</cell></row>
+      </table>
+      <fact source="tests/server_app/test_tokens_section.py" method="test" verified="2026-11-03">API keys and JWT minting answer 401 anonymous and 403 without <c>SUPERADMIN</c>.</fact>
+    </section>
+
+    <section title="tasks (SUPERADMIN)">
+      <table>
+        <row head="true"><cell>Route</cell><cell>Method</cell><cell>What it does</cell></row>
+        <row><cell><c>tasks/list</c></cell><cell>any</cell><cell>The schedules.</cell></row>
+        <row><cell><c>tasks/create</c>, <c>tasks/update</c></cell><cell>POST</cell><cell>A schedule: <c>code</c>, <c>kind</c>, <c>spec</c>, <c>task_name</c>, <c>kwargs</c>, <c>enabled</c>; the next run is computed.</cell></row>
+        <row><cell><c>tasks/enable</c>, <c>tasks/disable</c>, <c>tasks/run_now</c>, <c>tasks/delete</c></cell><cell>POST</cell><cell>By schedule <c>code</c>.</cell></row>
+        <row><cell><c>tasks/logs</c></cell><cell>any</cell><cell>The log of a task by name, with a limit.</cell></row>
+        <row><cell><c>tasks/spool_list</c>, <c>tasks/progress</c>, <c>tasks/result</c></cell><cell>any</cell><cell>Queued and running tasks, by owner or status; progress and result by <c>task_id</c>.</cell></row>
+        <row><cell><c>tasks/cancel</c></cell><cell>POST</cell><cell>Cancels a task by <c>task_id</c>.</cell></row>
+      </table>
+      <fact source="src/kajenn/server_app/server_sections/tasks_section.py:26" method="read" verified="2026-11-03">Every route is <c>SUPERADMIN</c>; a server with tasks disabled answers <c>{"error": "Tasks are disabled"}</c> with status 200.</fact>
+    </section>
+
+    <section title="monitor (SERVER_ADMIN)">
+      <table>
+        <row head="true"><cell>Route</cell><cell>Media type</cell><cell>What it does</cell></row>
+        <row><cell><c>monitor/snapshot</c></cell><cell>JSON</cell><cell><c>{server, apps}</c>: host, configured port, pid, application and section names; per application its <c>app_snapshot</c>.</cell></row>
+        <row><cell><c>monitor/panels</c></cell><cell>JSON</cell><cell>Per application its panel descriptor, with the URL of its panel module.</cell></row>
+        <row><cell><c>monitor/panel?app=&lt;key&gt;</c></cell><cell>text/javascript</cell><cell>The panel ES module an application provides, or 404.</cell></row>
+      </table>
+      <fact source="src/kajenn/server_app/server_sections/monitor_section.py:71" method="read" verified="2026-11-03"><c>MONITOR_RULE</c> is <c>SERVER_ADMIN</c>.</fact>
+      <fact source="src/kajenn/application.py:352" method="read" verified="2026-11-03">The base <c>app_snapshot</c> is <c>{class, code, mount}</c>; no application in <c>src/</c> extends it, and no class defines <c>panel_source</c>.</fact>
+    </section>
+
+    <section title="databases (SERVER_ADMIN)">
+      <table>
+        <row head="true"><cell>Route</cell><cell>Method</cell><cell>What it does</cell></row>
+        <row><cell><c>databases/list</c></cell><cell>any</cell><cell>Every database: name, owner, handler class, capabilities.</cell></row>
+        <row><cell><c>databases/plan</c></cell><cell>any</cell><cell>The migration plan of <c>name</c>.</cell></row>
+        <row><cell><c>databases/apply</c></cell><cell>POST</cell><cell>Applies the migration of <c>name</c>.</cell></row>
+      </table>
+      <fact source="src/kajenn/server_app/server_sections/databases_section.py:71" method="read" verified="2026-11-03">An unknown database answers 404; a handler without the capability answers 422.</fact>
+    </section>
+
+    <section title="Well-known documents">
+      <table>
+        <row head="true"><cell>Public path</cell><cell>Route</cell><cell>Declared when</cell></row>
+        <row><cell><c>/.well-known/security.txt</c></cell><cell><c>security_txt</c></cell><cell>the <c>security_txt</c> word is written</cell></row>
+        <row><cell><c>/robots.txt</c></cell><cell><c>robots_txt</c></cell><cell>the <c>robots</c> word is written</cell></row>
+        <row><cell><c>/favicon.ico</c></cell><cell><c>favicon_ico</c></cell><cell><c>static/favicon.ico</c> exists in the site home</cell></row>
+      </table>
+      <fact source="src/kajenn/server_app/server_app.py:300" method="read" verified="2026-11-03"><c>active_well_known</c> builds and validates the two documents and drops every path whose word or file is absent; the full mechanism is in <c>docs/guides/hidden-paths.md</c>.</fact>
+    </section>
+  </step>
+
+  <step id="s-configure" title="Configure it">
+    <p>The words of <c>_server</c> are written under its application element. The recipe customises it; it never has to declare it.</p>
+    <example title="A recipe customising _server">
+      <code lang="python"><![CDATA[
+server_app = apps.application(code="_server")
+server_app.login(max_attempts=3, backoff=10)
+server_app.oidc().provider(
+    code="corp",
+    issuer="https://idp.example.com",
+    client_id="corp-client",
+    client_secret=EnvResolver("CORP_OIDC_SECRET"),
+)
+server_app.security_txt(contact="mailto:security@example.com",
+                        expires="2027-06-30T00:00:00Z")
+robots = server_app.robots(sitemaps="https://example.com/sitemap.xml")
+robots.agent(user_agent="*", disallow="/admin/")
+]]></code>
+    </example>
+    <table title="Words of ServerApplicationGrammar">
+      <row head="true"><cell>Word</cell><cell>Parameters</cell><cell>Effect</cell></row>
+      <row><cell><c>login</c></cell><cell><c>max_attempts</c> (default 5), <c>backoff</c> seconds (default 30)</cell><cell>Lockout after consecutive failures; the window doubles at each further failure.</cell></row>
+      <row><cell><c>oidc</c> / <c>provider</c></cell><cell><c>code</c> (required, the collection key), <c>issuer</c>, <c>client_id</c>, <c>client_secret</c> (a resolver; optional for a public client), <c>scopes="openid email profile"</c>, <c>identity_claim="email"</c>, <c>tags</c></cell><cell>One login method per provider, mounted at <c>/_server/auth/oidc:&lt;code&gt;/</c>.</cell></row>
+      <row><cell><c>security_txt</c></cell><cell><c>contact</c>, <c>expires</c> (required); <c>encryption</c>, <c>acknowledgments</c>, <c>preferred_languages</c>, <c>canonical</c>, <c>policy</c>, <c>hiring</c></cell><cell><c>/.well-known/security.txt</c>, validated at boot.</cell></row>
+      <row><cell><c>robots</c> / <c>agent</c></cell><cell><c>sitemaps</c>; per agent <c>user_agent="*"</c>, <c>allow</c>, <c>disallow</c></cell><cell><c>/robots.txt</c>, validated at boot.</cell></row>
+      <row><cell><c>parameters</c>, <c>request</c>, <c>databases</c></cell><cell>inherited from <c>ApplicationGrammar</c></cell><cell>As for any application.</cell></row>
+    </table>
+    <table title="Server-level words that _server depends on">
+      <row head="true"><cell>Word</cell><cell>Why <c>_server</c> needs it</cell></row>
+      <row><cell><c>authentication().users(...)</c></cell><cell>The user store behind <c>login</c> and <c>users/*</c>.</cell></row>
+      <row><cell><c>authentication().tokens(...)</c></cell><cell>The API key store behind <c>tokens/*</c>.</cell></row>
+      <row><cell><c>authentication().credentials().jwt(secret=...)</c></cell><cell>The key <c>tokens/create_jwt</c> signs with.</cell></row>
+      <row><cell><c>server(external_url=...)</c></cell><cell>Required with any OIDC provider: the server refuses to boot without it.</cell></row>
+      <row><cell><c>site(home=...)</c></cell><cell>The folder whose <c>static/favicon.ico</c> is served.</cell></row>
+      <row><cell><c>channels().channel(name, authentication_route=...)</c></cell><cell>Replaces <c>/_server/auth/authenticate</c> for one channel.</cell></row>
+    </table>
+    <fact source="src/kajenn/server_app/server_app.py:106" method="read" verified="2026-11-03"><c>LOCKOUT_MAX_ATTEMPTS = 5</c>, <c>LOCKOUT_BACKOFF_SECONDS = 30.0</c>.</fact>
+    <fact source="src/kajenn/server_app/server_app.py:434" method="read" verified="2026-11-03">The lock window is <c>backoff * 2 ** (failed - max_attempts)</c> seconds from the last failure; refused attempts while locked do not count, an unknown identity has no counter, a success resets it.</fact>
+    <fact source="src/kajenn/asgi_server.py:265" method="read" verified="2026-11-03">A recipe with an OIDC provider and no <c>external_url</c> is refused at boot.</fact>
+    <fact source="tests/server_app/test_config_server_app.py" method="test" verified="2026-11-03">The <c>login</c> and <c>oidc</c> words of a recipe reach the instance; <c>client_secret</c> goes through the read stack.</fact>
+  </step>
+
+  <step id="s-extend" title="Extend it">
+    <p>Another package adds routes to <c>_server</c> by attaching a section, and adds a login method by registering it. Both are public methods of <c>ServerApplication</c>.</p>
+    <table>
+      <row head="true"><cell>Method</cell><cell>What it does</cell></row>
+      <row><cell><c>attach_section(section, name)</c></cell><cell>Mounts a <c>RoutingClass</c> at <c>/_server/&lt;name&gt;/</c> and lists it in <c>sections</c> and in the index.</cell></row>
+      <row><cell><c>sections</c></cell><cell>The attached sections by name.</cell></row>
+      <row><cell><c>register_auth_method(method)</c></cell><cell>Adds a login method (kind <c>form</c>, <c>redirect</c> or <c>ceremony</c>); a duplicate id raises <c>ValueError</c>.</cell></row>
+      <row><cell><c>auth_section</c>, <c>ensure_auth_section()</c></cell><cell>The <c>auth</c> section, created on first need.</cell></row>
+      <row><cell><c>app_snapshot</c>, <c>app_panel</c>, <c>panel_source</c> on a section</cell><cell>A section declaring them appears in the monitor as <c>_server/&lt;name&gt;</c>.</cell></row>
+      <row><cell><c>app_class</c> subclass on code <c>_server</c></cell><cell>Replaces the whole application with a subclass.</cell></row>
+    </table>
+    <fact source="src/kajenn/server_app/server_app.py:412" method="read" verified="2026-11-03"><c>attach_section(section, name)</c> adds the branch and records the section.</fact>
+    <fact source="src/kajenn/server_app/server_app.py:430" method="read" verified="2026-11-03"><c>register_auth_method</c> registers on the auth section.</fact>
+    <fact source="tests/server_app/test_server_application.py" method="test" verified="2026-11-03">A section attached with <c>attach_section</c> answers under <c>/_server/&lt;name&gt;/</c>.</fact>
+  </step>
+
+  <step id="s-users" title="Know who uses it">
+    <table>
+      <row head="true"><cell>User</cell><cell>What it uses</cell></row>
+      <row><cell>Every channel of the server (REST, MCP, WSX, KajennBus)</cell><cell><c>auth/authenticate</c>, to turn a presented credential into an identity.</cell></row>
+      <row><cell>A spawned application in its dedicated process</cell><cell>The parent's <c>_server</c>: it mounts none of its own.</cell></row>
+      <row><cell>A human through a browser</cell><cell>Login (password or OIDC), then the management routes through a GUI.</cell></row>
+      <row><cell>Scripts and operators</cell><cell>The REST routes with an API key or a JWT; <c>docs/guides/management.md</c> shows them with curl.</cell></row>
+      <row><cell>kajenn-orchestra</cell><cell>Attaches its <c>inspector</c> section when the inspector is enabled.</cell></row>
+      <row><cell>kajenn-press</cell><cell>Calls <c>login</c> in-process from its admin views.</cell></row>
+      <row><cell>kajenn-deploy</cell><cell>Health check of the container on <c>GET /_server</c>.</cell></row>
+    </table>
+    <fact source="kajenn-orchestra:src/kajenn_orchestra/spa_app.py:831" method="read" verified="2026-11-03">kajenn-orchestra attaches <c>InspectorSection</c> under <c>inspector</c> when the inspector is enabled.</fact>
+    <fact source="kajenn-press:src/kajenn_press/admin/views.py:55" method="read" verified="2026-11-03">kajenn-press calls <c>application_at("_server").login(...)</c> in-process.</fact>
+    <fact source="kajenn-deploy:local-https/compose.yaml:13" method="read" verified="2026-11-03">The local HTTPS container checks its health on <c>/_server</c>.</fact>
+    <fact source="src/kajenn/__main__.py:754" method="read" verified="2026-11-03">The <c>kajenn</c> command line has no command that calls <c>/_server</c>; <c>kajenn db</c> runs the migrations in-process.</fact>
+  </step>
+
+  <step id="s-gui" title="Find its browser interface">
+    <p>The browser interface of <c>_server</c> is not in kajenn. It lives in the repository <c>kajenn-org/kajenn-serverapp-gui</c>, today a placeholder holding the first version, built with gramlot and imported from a kajenn working tree. kajenn does not depend on gramlot.</p>
+    <p>The accepted proposal <ref doc="proposal/channels-meta-and-server-gui" to="d-gui-shape">channels-meta-and-server-gui</ref> fixes the shape the GUI takes:</p>
+    <list>
+      <item>The recipe enables it with <c>gui(gui_class=...)</c>; without the element there is no GUI and the core never names the package.</item>
+      <item><c>ServerApplication</c> builds <c>gui_class(self)</c> and passes every request on <c>ui/...</c> to it: the URL is <c>/_server/ui/</c>. The component releases its resources in <c>on_shutdown</c>.</item>
+      <item>The GUI reads and writes only through the REST routes of <c>_server</c>, like any other client.</item>
+      <item>Extension pages register on the GUI component when it exists; gramlot is an optional extra of the extension.</item>
+    </list>
+    <p>The list of what the GUI must cover is in that repository, in <c>xmldocs/proposal/server-gui-scope.xml</c>.</p>
+    <decision id="d-gui-built" status="open">
+      <question>When is the GUI component built as the proposal fixes it?</question>
+      <option id="d-gui-built-later" title="Not decided here"><p>The work belongs to kajenn-serverapp-gui and its scope proposal.</p></option>
+    </decision>
+  </step>
+
+  <rules>
+    <rule level="must-not" why="The recipe customises _server; the server mounts it anyway.">Declare <c>_server</c> to make it exist.</rule>
+    <rule level="must" why="The configuration handler refuses any other class.">Subclass <c>ServerApplication</c> when replacing <c>_server</c> through <c>app_class</c>.</rule>
+    <rule level="must" why="The server refuses to boot without it.">Write <c>server(external_url=...)</c> when any OIDC provider is configured.</rule>
+    <rule level="must-not" why="kajenn does not depend on gramlot.">Import a GUI package from kajenn code.</rule>
+    <rule level="should" why="The proposal makes REST the only door of the GUI.">Give every GUI need a REST route on <c>_server</c> before building the page.</rule>
+  </rules>
+
+  <limits>
+    <limit source="src/kajenn/server_app/server_app.py:535">The <c>logout</c> docstring says POST, but the route declares no method and answers every one; it has no <c>auth_rule</c> and deletes any session id it is given.</limit>
+    <limit source="src/kajenn/server_app/__init__.py:27">The package docstring still says nothing is mounted automatically; the server mounts <c>_server</c> always. <c>tests/server_app/test_config_server_app.py</c> line 15 says the same.</limit>
+    <limit source="src/kajenn/server_app/server_sections/monitor_section.py:27">The monitor serves data only: no page. The per-application snapshot holds class, code and mount; pools, requests, websockets and databases are not in it.</limit>
+    <limit source="src/kajenn/server_app/server_sections/tasks_section.py:52">With tasks disabled the tasks routes answer an error with status 200, not an error status.</limit>
+    <limit>No route reads or edits the effective configuration, the sessions, the logs or the application list with versions: a GUI cannot show them through REST today.</limit>
+    <limit>No route of <c>_server</c> declares a channel: the MCP face of the proposal is not there yet.</limit>
+  </limits>
+
+  <related>
+    <doc id="proposal/channels-meta-and-server-gui" type="proposal">Channel faces on every routed application, one _meta segment, and the server GUI as a separate component</doc>
+    <doc id="proposal/well-known-urls" type="proposal">Well-known URLs declared by applications</doc>
+  </related>
+</booklet>
