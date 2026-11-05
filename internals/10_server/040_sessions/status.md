@@ -1,8 +1,8 @@
 # Sessions — current state
 
-**Version**: 0.2 · **Last Updated**: 2026-09-08 · **Status**: 🔴 evidence refreshed; design ratification unchanged
+**Version**: 0.3 · **Last Updated**: 2026-11-03 · **Status**: 🔴 evidence refreshed; design ratification unchanged
 
-Verified against source revision `2465fcc` (develop baseline). Test references
+Verified against source revision `63fb326` (develop baseline). Test references
 below identify the executable contracts; they are not a new coverage percentage.
 
 ## Store, identity and write-back
@@ -14,12 +14,23 @@ and keyed avatars. `avatar()` returns the root identity or `None`;
 Handlers mutating the data Bag call `mark_dirty` explicitly. Touching the access
 clock is not a dirty-making operation.
 
+`Session.avatars` is a read-only `MappingProxyType` view; `attach_avatar` is its
+only writer (session.py:101-104). No method detaches an avatar: a claimed slot
+stays claimed for the session's lifetime (session.py:34). A non-positive TTL
+makes `is_expired` true (session.py:135-141; test `test_zero_ttl_is_expired`).
+
 `get` drops an expired session and refreshes the clock for a live one. A mass
 purge is checked on create after `PURGE_INTERVAL` (300 seconds), without a
 background purge task. `SessionMiddleware` only saves dirty sessions and only
 issues a cookie on creation; its cookie lifetime is server TTL multiplied by 24.
 
-Claim anchors: [`MemorySessionStore`](../../../src/kajenn/session/store.py#L88), [`SessionStore`](../../../src/kajenn/session/store.py#L53), [`Session`](../../../src/kajenn/session/session.py#L60), [`avatar`](../../../src/kajenn/session/session.py#L93), [`attach_avatar`](../../../src/kajenn/session/session.py#L111), [`mark_dirty`](../../../src/kajenn/session/session.py#L123), [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#L55).
+`POST /_server/logout` is the only route that deletes a session: it calls
+`session_store.delete(session_id)` and answers `{"status": "ok"}` for an unknown
+or missing id (server_app.py:535-551). The route declares no `auth_rule`. The
+test `test_logout_deletes_the_session` deletes a session without presenting a
+credential.
+
+Claim anchors: [`MemorySessionStore`](../../../src/kajenn/session/store.py#L88), [`SessionStore`](../../../src/kajenn/session/store.py#L53), [`Session`](../../../src/kajenn/session/session.py#L60), [`avatar`](../../../src/kajenn/session/session.py#L93), [`attach_avatar`](../../../src/kajenn/session/session.py#L111), [`mark_dirty`](../../../src/kajenn/session/session.py#L123), [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#L54), [`avatars`](../../../src/kajenn/session/session.py#L102), [`is_expired`](../../../src/kajenn/session/session.py#L135), [`logout`](../../../src/kajenn/server_app/server_app.py#L535).
 
 ## Two persistence formats
 
@@ -29,11 +40,16 @@ live sessions, including the Bag. `SessionMixin(save_session=...)` loads before
 lifespan and saves on exit; named CLI instances wire that snapshot path.
 A custom `SessionStore` used with snapshots must supply the snapshot methods too.
 
+The recipe element `session(ttl, store_class, save_path, **params)` lives under
+`server` (config/elements.py:228-252). `ttl` becomes `session_ttl`.
+`store_class` is instantiated with the remaining `**params`; omitted, the
+composition's `MemorySessionStore` applies. `save_path` arms the snapshot.
+
 The authenticating connection link described in the decisions is absent from
 `Session`. An identity an application keeps on a connection of its own does
 not automatically become a core session avatar.
 
-Claim anchors: [`dump`](../../../src/kajenn/session/store.py#L79), [`dump`](../../../src/kajenn/session/store.py#L139), [`restore`](../../../src/kajenn/session/store.py#L83), [`restore`](../../../src/kajenn/session/store.py#L179), [`save_snapshot`](../../../src/kajenn/session/store.py#L152), [`load_snapshot`](../../../src/kajenn/session/store.py#L167), [`SessionMixin`](../../../src/kajenn/session/mixin.py#L55), [`Session`](../../../src/kajenn/session/session.py#L60), [`save_session`](../../../src/kajenn/session/mixin.py#L83), [`SessionStore`](../../../src/kajenn/session/store.py#L53).
+Claim anchors: [`dump`](../../../src/kajenn/session/store.py#L79), [`dump`](../../../src/kajenn/session/store.py#L139), [`restore`](../../../src/kajenn/session/store.py#L83), [`restore`](../../../src/kajenn/session/store.py#L179), [`save_snapshot`](../../../src/kajenn/session/store.py#L152), [`load_snapshot`](../../../src/kajenn/session/store.py#L167), [`SessionMixin`](../../../src/kajenn/session/mixin.py#L55), [`Session`](../../../src/kajenn/session/session.py#L60), [`save_session`](../../../src/kajenn/session/mixin.py#L83), [`SessionStore`](../../../src/kajenn/session/store.py#L53), [`session` element](../../../src/kajenn/config/elements.py#L229).
 
 ## Source and test evidence
 
@@ -44,3 +60,4 @@ Claim anchors: [`dump`](../../../src/kajenn/session/store.py#L79), [`dump`](../.
 - [tests/core/test_session.py](../../../tests/core/test_session.py)
 - [tests/core/test_middleware_std.py](../../../tests/core/test_middleware_std.py)
 - [tests/core/test_cli.py](../../../tests/core/test_cli.py)
+- [tests/server_app/test_login_flow.py](../../../tests/server_app/test_login_flow.py)

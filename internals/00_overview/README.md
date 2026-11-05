@@ -1,6 +1,6 @@
 # 00 Overview — how to read this folder
 
-**Version**: 0.6 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.7 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
 
 kajenn is one world: **10_server**, the machine and everything an
 installation runs on. Inside it the numbered folders ARE the reading order:
@@ -301,7 +301,7 @@ of it in its own step folder**, which names the transversal plan it serves.
 The **coordinator** puts the sub-plans together, checks that they are
 harmonious and coherent, and only then launches a workflow. It is the one
 role that reads across entries: everything else in this dossier is written
-from inside a single one. The assembly point today is `.phased/roadmap.md`.
+from inside a single one. No assembly point exists in this repository.
 
 ## The rules
 

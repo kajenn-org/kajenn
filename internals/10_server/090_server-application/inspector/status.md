@@ -1,8 +1,8 @@
 # Inspector — current state
 
-**Version**: 0.2 · **Last Updated**: 2026-09-08 · **Status**: 🔴 evidence refreshed; design ratification unchanged
+**Version**: 0.3 · **Last Updated**: 2026-11-03 · **Status**: 🔴 evidence refreshed; design ratification unchanged
 
-Verified against source revision `2465fcc` (develop baseline). Test references
+Verified against source revision `63fb326` (develop baseline). Test references
 below identify the executable contracts; they are not a new coverage percentage.
 
 ## The attach point for a diagnostic section
@@ -22,7 +22,7 @@ The core keeps no list of attachable sections and imports none. Further
 per-application panels remain an open direction, not part of this read
 surface.
 
-Claim anchors: [`ServerApplication`](../../../../src/kajenn/server_app/server_app.py#L159), [`attach_section`](../../../../src/kajenn/server_app/server_app.py#L269), [`sections`](../../../../src/kajenn/server_app/server_app.py#L260).
+Claim anchors: [`ServerApplication`](../../../../src/kajenn/server_app/server_app.py#L207), [`attach_section`](../../../../src/kajenn/server_app/server_app.py#L412), [`sections`](../../../../src/kajenn/server_app/server_app.py#L403).
 
 ## Source and test evidence
 

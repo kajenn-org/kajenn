@@ -1,6 +1,9 @@
 # Routing system
 
-**Version**: 0.5 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.6 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
+
+*Owner, 2026-11-03, translated from Italian, verbatim:* routes depend on auth tags and capabilities and are always computed dynamically. Plugins can be configured dynamically, and applications can even be mounted and unmounted.
+The lines of this page it contradicts are in [decisions.md](decisions.md), Still open.
 
 How a path becomes a method call: what a routing class is, how a tree is walked
 and filtered, and how a capability is added to what a tree does without editing

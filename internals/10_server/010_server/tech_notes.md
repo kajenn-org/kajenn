@@ -1,6 +1,6 @@
 # Server — tech notes
 
-**Version**: 0.2 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.2 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
 
 
 ## Renewal evidence — 2026-09-08
@@ -91,8 +91,10 @@ macro". `decisions.md` §4 builds on it; nothing of it exists in code.
   `tests/`; the configuration handler declares no mutator. The live-config
   machinery underneath *does* exist and is unused — see the closing section of
   [status.md](status.md) for the exact symbols.
-- **`register_application` looks public and is not.** Two call sites in the
-  whole repository, both inside a constructor.
+- **`register_application` looks public and is not.** One call site in the
+  whole repository: `BaseServer.__init__` (`server.py:206`). The well-known
+  index it writes through `claim_well_known` is written again by
+  `_external_joined` (`kbus_mixin.py:310`) each time an external process joins.
 - **`tests/x/` is empty, repo-wide.** Every test is classified as a contract
   test, so every failure is by rule a STOP. Friction S12; not this entry's to
   resolve.
