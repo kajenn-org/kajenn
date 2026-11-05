@@ -47,6 +47,19 @@ mounts it at the ``application(app_class=...)`` line (subbuilder by reference),
 so the app declares its own vocabulary and the site dialect never validates it.
 ``ApplicationGrammar`` is the minimal one every app inherits — a single
 ``parameters`` element for free options — and a richer app subclasses it.
+A mixin can declare a ``grammar`` of its own too: ``__init_subclass__``
+composes every grammar a class along the MRO writes in its own ``__dict__``,
+in MRO order, so the application accepts the mixin's words beside its own and
+the more derived class wins on an element of the same name.
+
+An application declares the well-known URLs it answers in the class dict
+``well_known`` (public path → route), merged the same way along the MRO: a
+mixin's paths stay declared beside the class's own, and the more derived class
+wins on the same path. A ``{mount}`` marker in a path is replaced by the
+instance's mount; on the root mount ``""`` the segment ``/{mount}`` goes away
+whole. The server indexes what ``active_well_known()`` returns.
+``default_well_known`` has the same shape: a default answers a path only when
+no application declares it, whatever the order of registration.
 
 An application reaches its databases with ``db(name=None)`` (the object the
 current call took) and ``async_db(name=None)`` (its awaitable face, for an
@@ -65,6 +78,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Annotated, Any
 
 from genro_builders.builder import Regex, element
+
+from .well_known import WELL_KNOWN_PATTERN
 
 if TYPE_CHECKING:
     from .server import BaseServer
@@ -156,12 +171,42 @@ class BaseApplication:
     — the database ``db()`` answers without a name, ``None`` meaning the
     default rule. All three default to the class attributes below, so a
     subclass can set them declaratively.
+
+    ``well_known`` and ``default_well_known`` are read from the class dicts
+    along the MRO, merged base first, and stored on the instance with
+    ``{mount}`` resolved; a path that does not match ``WELL_KNOWN_PATTERN``
+    raises ``ValueError`` naming it. A default answers only a path that no
+    application declares in ``well_known``.
     """
 
     code: str = ""
     mount: str | None = None
     db_name: str | None = None
     grammar: type = ApplicationGrammar
+    well_known: dict[str, str] = {}
+    default_well_known: dict[str, str] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # Only what classes WROTE counts: a grammar composed here sits in its
+        # class's __dict__ too, and stands for the declared grammars it joins.
+        declared: list[type] = []
+        for klass in cls.__mro__:
+            grammar = klass.__dict__.get("grammar")
+            if grammar is None:
+                continue
+            declared.extend(grammar.__bases__ if grammar.__dict__.get("_kajenn_composed") else [grammar])
+        declared = list(dict.fromkeys(declared))
+        # A grammar already a base of another one would break the composed MRO.
+        bases = tuple(
+            grammar
+            for grammar in declared
+            if not any(other is not grammar and issubclass(other, grammar) for other in declared)
+        )
+        if len(bases) == 1:
+            cls.grammar = bases[0]
+        else:
+            cls.grammar = type(f"{cls.__name__}Grammar", bases, {"_kajenn_composed": True})
 
     def __init__(self, **kwargs: Any) -> None:
         cls = type(self)
@@ -172,6 +217,8 @@ class BaseApplication:
         # ``is None`` and never truthiness: ``mount=""`` IS the site root, and
         # ``mount or code`` would silently move a root app to ``/code``.
         self.mount = code if mount is None else mount
+        self.well_known: dict[str, str] = self.resolve_well_known("well_known")
+        self.default_well_known: dict[str, str] = self.resolve_well_known("default_well_known")
         self._server: BaseServer | None = None
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
@@ -285,19 +332,47 @@ class BaseApplication:
         """
         return None
 
-    @property
-    def well_known_names(self) -> tuple[str, ...]:
-        """The discovery documents this application answers under ``/.well-known/``.
+    def resolve_well_known(self, attribute: str) -> dict[str, str]:
+        """The class dicts named ``attribute`` along the MRO, merged base first.
 
-        Returns:
-            The names, empty here — an application that serves none, which is
-            the base answer.
-
-        The server reads this at mount time and keeps one name → application
-        index; a routed application answers with the children of its
-        ``_well_known`` branch.
+        ``{mount}`` is replaced by ``self.mount``; on the root mount ``""`` the
+        segment ``/{mount}`` goes away whole. A path that does not match
+        ``WELL_KNOWN_PATTERN`` raises ``ValueError`` naming it.
         """
-        return ()
+        cls = type(self)
+        merged: dict[str, str] = {}
+        for klass in reversed(cls.__mro__):
+            merged.update(klass.__dict__.get(attribute, {}))
+        resolved: dict[str, str] = {}
+        for declared, target in merged.items():
+            if self.mount:
+                path = declared.replace("{mount}", self.mount)
+            else:
+                path = declared.replace("/{mount}", "")
+            if not WELL_KNOWN_PATTERN.match(path):
+                raise ValueError(
+                    f"{cls.__name__}: {declared!r} is not a well-known path "
+                    "(/.well-known/..., /robots.txt, /favicon.ico, /healthz, /livez, /readyz)"
+                )
+            resolved[path] = target
+        return resolved
+
+    def active_well_known(self) -> dict[str, str]:
+        """The well-known paths the server indexes for this application: path → route.
+
+        The base answers every declared path (a copy of ``well_known``). The
+        server calls it after attaching the application, so a subclass can read
+        its own configuration and leave out what is not configured.
+        """
+        return dict(self.well_known)
+
+    def active_default_well_known(self) -> dict[str, str]:
+        """The default well-known paths the server indexes: path → route.
+
+        A copy of ``default_well_known``, called like ``active_well_known``.
+        A default answers only a path no application declares.
+        """
+        return dict(self.default_well_known)
 
     @property
     def app_snapshot(self) -> dict[str, Any]:

@@ -26,9 +26,11 @@ on the loop; the pool is provisioned lazily on first use and torn down at
 shutdown.
 
 As an ASGI callable, ``__call__`` dispatches on the scope type: ``http`` runs
-the D3 demux — a first path segment starting with a dot is hidden and answers
-404 on the spot, ``/.well-known/<declared name>`` excepted; else the app
-mounted on that segment, with the segment stripped; else the app on the site
+the D3 demux — a well-known path (``/.well-known/...``, ``/robots.txt``,
+``/favicon.ico``) goes to the application that declared it in its
+``well_known`` dict, and answers 404 "unimplemented well-known URL" when none
+did; any other first path segment starting with a dot is hidden and answers
+404 on the spot; else the app mounted on that segment, with the segment stripped; else the app on the site
 root with the full path; else a 307 from ``/`` to the declared ``default``;
 else 404 — ``websocket`` runs
 ``on_websocket``,
@@ -79,7 +81,7 @@ from .pool import WorkPool
 from .request_registry import RegisteredRequest, RequestRegistry
 from .response import Response
 from .websocket import WebSocket, WebSocketRegistry
-from .well_known import HIDDEN_SEGMENT_PREFIX, WELL_KNOWN_ROOT, WELL_KNOWN_SEGMENT
+from .well_known import HIDDEN_SEGMENT_PREFIX, WELL_KNOWN_PATTERN
 from .wsx_payload import SerializedWsxPayload
 from .wsx import WsxConnection, WsxEnvelope
 
@@ -170,7 +172,8 @@ class BaseServer:
         super().__init__()
         self._applications: dict[str, BaseApplication] = {}
         self._by_mount: dict[str, BaseApplication] = {}
-        self._well_known: dict[str, BaseApplication] = {}
+        self._well_known_routes: dict[str, tuple[BaseApplication, str]] = {}
+        self._default_well_known_routes: dict[str, tuple[BaseApplication, str]] = {}
         self._databases: dict[str, DbHandlerBase] = {}
         self._db_handlers: dict[type[DbHandlerBase], DbHandlerBase] = {}
         self._uvicorn: UvicornServer | None = None
@@ -235,19 +238,29 @@ class BaseServer:
         return self._by_mount.get(mount)
 
     @property
-    def well_known_applications(self) -> dict[str, BaseApplication]:
-        """The discovery names served under ``/.well-known/``, each with its application."""
-        return self._well_known
+    def well_known_routes(self) -> dict[str, tuple[BaseApplication, str]]:
+        """The declared well-known paths, each with its application and route."""
+        return self._well_known_routes
+
+    @property
+    def default_well_known_routes(self) -> dict[str, tuple[BaseApplication, str]]:
+        """The default well-known paths, each with its application and route.
+
+        A default answers a path only when ``well_known_routes`` has none.
+        """
+        return self._default_well_known_routes
 
     def register_application(self, app: BaseApplication) -> None:
         """Register ``app`` under its ``code`` and its ``mount``.
 
         Assigns the ownership channel (``app.server = self``), then indexes the
-        discovery names the app declares (``well_known_names``): a name two
-        applications declare belongs to the LAST registered — a fixed rule, no
-        option. Internal: the set of applications is fixed at construction, so
-        the callers are ``__init__`` and the composition layers building a
-        server. A claimed code and a claimed mount both raise ``ValueError``.
+        well-known paths the app answers (``active_well_known()`` and
+        ``active_default_well_known()``, read after the assignment so the app
+        can read its configuration). Internal: the
+        set of applications is fixed at construction, so the callers are
+        ``__init__`` and the composition layers building a server. A claimed
+        code, a claimed mount and a well-known path another application holds
+        all raise ``ValueError``.
         """
         mount = app.code if app.mount is None else app.mount
         if app.code in self.applications:
@@ -255,23 +268,43 @@ class BaseServer:
         if mount in self._by_mount:
             raise ValueError(f"mount already claimed: {mount!r}")
         app.server = self
-        self.index_well_known(app, app.well_known_names)
+        self.claim_well_known(app, app.active_well_known(), app.active_default_well_known())
         self.applications[app.code] = app
         self._by_mount[mount] = app
 
-    def index_well_known(self, app: BaseApplication, names: Iterable[str]) -> None:
-        """Make ``names`` the discovery names ``app`` answers under ``/.well-known/``.
+    def claim_well_known(
+        self, app: BaseApplication, routes: dict[str, str], defaults: dict[str, str]
+    ) -> None:
+        """Make ``routes`` and ``defaults`` (public path → route) the well-known paths of ``app``.
 
-        The names ``app`` held before are dropped first, then each of ``names``
-        is given to ``app``: a name another application declared belongs to
-        the LAST indexed. ``register_application`` calls it with the names the
-        app declares; the KajennBus calls it again for the mount of an external
-        application each time its process registers, with the names it presents.
+        A declared path another application declares, and a default path
+        another application gives as default, raise ``ValueError`` naming the
+        path and both application codes, and nothing changes. A declared path
+        and a default of another application never conflict: the declared one
+        answers. Otherwise the paths ``app`` held before are dropped and the
+        new ones take their place: ``register_application`` calls it once per
+        application, the KajennBus again for an external application each time
+        its process joins.
         """
-        for name in [name for name, owner in self._well_known.items() if owner is app]:
-            del self._well_known[name]
-        for name in names:
-            self._well_known[name] = app
+        for index, paths, kind in (
+            (self._well_known_routes, routes, "declared"),
+            (self._default_well_known_routes, defaults, "given as default"),
+        ):
+            for path in paths:
+                holder = index.get(path)
+                if holder is not None and holder[0] is not app:
+                    raise ValueError(
+                        f"well-known path {path!r} {kind} by both "
+                        f"{holder[0].code!r} and {app.code!r}"
+                    )
+        for index, paths in (
+            (self._well_known_routes, routes),
+            (self._default_well_known_routes, defaults),
+        ):
+            for path in [path for path, (owner, _) in index.items() if owner is app]:
+                del index[path]
+            for path, route in paths.items():
+                index[path] = (app, route)
 
     @property
     def databases(self) -> dict[str, DbHandlerBase]:
@@ -534,17 +567,21 @@ class BaseServer:
         else **404**. ``/`` on a server WITH a root application matches its
         empty mount in the first branch, which forwards the same ``/``.
 
-        The hidden paths come first: a first segment starting with a dot
-        never takes those branches, and the rule is the server's own — always
-        on, no middleware, no switch. A path without a dot is ordinary, the
-        conventional probes included (``/favicon.ico``, ``/robots.txt``): the
-        server silences none of them.
+        The well-known paths come first (``demux_well_known``), then the hidden
+        ones: any other first segment starting with a dot answers 404 and no
+        application is reached — not a mount, not the root application, not
+        the ``default`` redirect. The rule is the server's own — always on, no
+        middleware, no switch. Any other path is ordinary, the conventional
+        probes that are not well-known included (``/sitemap.xml``,
+        ``/apple-touch-icon.png``).
         """
         path = scope["path"]
         rest = path.lstrip("/")
+        if WELL_KNOWN_PATTERN.match("/" + rest):
+            return self.demux_well_known("/" + rest, scope)
         segment, _, remainder = rest.partition("/")
         if segment.startswith(HIDDEN_SEGMENT_PREFIX):
-            return self.demux_hidden(segment, remainder, scope)
+            return Response(content="Not Found", status_code=404, media_type="text/plain"), scope
         app = self.application_at(segment)
         if app is not None:
             sub_scope = dict(scope)
@@ -558,26 +595,26 @@ class BaseServer:
             return self.redirect_to_default(default, scope), scope
         return Response(content="Not Found", status_code=404, media_type="text/plain"), scope
 
-    def demux_hidden(self, segment: str, remainder: str, scope: Scope) -> tuple[ASGIApp, Scope]:
-        """What serves a hidden first segment: a declared document, else **404**.
+    def demux_well_known(self, path: str, scope: Scope) -> tuple[ASGIApp, Scope]:
+        """What serves a well-known ``path``: its declaring application, else **404**.
 
-        Nothing of a site lives under a dotted segment — ``/.git/config``,
-        ``/.env`` — so the answer is 404 and no application is reached: not a
-        mount, not the root application, not the ``default`` redirect. The one
-        exception is RFC 8615: when ``segment`` is ``.well-known`` and the
-        first segment of ``remainder`` is a name in ``well_known_applications``
-        (declared at mount time, or presented by the process of an external
-        application when it registers), the request goes to that application rebuilt as
-        ``/_well_known/<name>/<rest>``, the path its own router already
-        resolves. No translation is invented.
+        A path in ``well_known_routes``, else in ``default_well_known_routes``,
+        goes to its application with
+        ``scope["path"]`` set to ``/<route>`` and the rest of the scope, query
+        string included, unchanged; an external application is reached through
+        its mount like any other request. A path nobody declared answers 404
+        "unimplemented well-known URL" and no application is reached, the root
+        application included.
         """
-        if segment == WELL_KNOWN_SEGMENT:
-            app = self.well_known_applications.get(remainder.partition("/")[0])
-            if app is not None:
-                sub_scope = dict(scope)
-                sub_scope["path"] = f"/{WELL_KNOWN_ROOT}/{remainder}"
-                return app, sub_scope
-        return Response(content="Not Found", status_code=404, media_type="text/plain"), scope
+        declared = self.well_known_routes.get(path) or self.default_well_known_routes.get(path)
+        if declared is None:
+            return Response(
+                content="unimplemented well-known URL", status_code=404, media_type="text/plain"
+            ), scope
+        app, route = declared
+        sub_scope = dict(scope)
+        sub_scope["path"] = "/" + route
+        return app, sub_scope
 
     def redirect_to_default(self, app: BaseApplication, scope: Scope) -> Response:
         """A 307 to ``app``'s mount, preserving the query string.

@@ -101,7 +101,7 @@ class KBusMixin:
 
     @property
     def kbus_member(self) -> kbus.Member | None:
-        """This process's member: ``server`` on the server, ``<code>`` in a role process."""
+        """This process's member: ``server`` on the server, ``<code>`` in an application's dedicated process."""
         return self._kbus_member
 
     @property
@@ -292,19 +292,26 @@ class KBusMixin:
             environment={}, pid=pid)
 
     def _external_joined(self, code: str, meta: dict[str, Any]) -> None:
-        """Index the discovery names of a process that joined and record its pid.
+        """Index the well-known paths of a process that joined and record its pid.
 
-        ``meta["well_known"]`` — the names its application answers — replaces
-        the names a previous process presented. A value that is not a list of
-        non-empty strings is refused with ``kbus.Refused``.
+        ``meta["well_known"]`` and ``meta["default_well_known"]`` — the paths
+        its application answers and the ones it gives as default, public path →
+        route — replace the paths a previous process presented. A value that is
+        not a dict of non-empty strings, and a path another application holds
+        in the same dict, are refused with ``kbus.Refused``.
         """
-        names = meta.get("well_known")
-        if not (isinstance(names, list)
-                and all(isinstance(name, str) and name for name in names)):
-            raise kbus.Refused(
-                f"application {code!r} refused: well_known is not a list of non-empty strings")
+        presented = {name: meta.get(name) for name in ("well_known", "default_well_known")}
+        for name, routes in presented.items():
+            if not (isinstance(routes, dict)
+                    and all(isinstance(item, str) and item
+                            for pair in routes.items() for item in pair)):
+                raise kbus.Refused(
+                    f"application {code!r} refused: {name} is not a dict of non-empty strings")
         app = self.external_applications[code]
-        self.index_well_known(app, names)
+        try:
+            self.claim_well_known(app, presented["well_known"], presented["default_well_known"])
+        except ValueError as exc:
+            raise kbus.Refused(f"application {code!r} refused: {exc}") from exc
         self.kbus_spawners[app.spawner].joined(f"application:{code}")
         self.kbus_pids[code] = meta["pid"]
 
@@ -343,7 +350,9 @@ class KBusMixin:
         No HTTP listener is opened. The URL is popped from
         ``KAJENN_KBUS_PARENT``; the member connects after the hosted
         application's ``on_startup`` returned, then calls ``server.joined``
-        with the discovery names that application answers and the pid.
+        with the well-known paths that application answers and gives as default
+        (``active_well_known()`` and ``active_default_well_known()``, public path
+        → route) and the pid.
         SIGTERM, SIGINT or the loss of the connection to the server closes the
         member and runs the shutdown.
         """
@@ -369,7 +378,8 @@ class KBusMixin:
                 cafile=self.kbus_options.get("cafile")) if scheme == "wss" else None)
             self._kbus_member = member
             await member.call(f"{SERVER_MEMBER}.joined", kbus.Message({
-                "well_known": list(self.applications[code].well_known_names),
+                "well_known": self.applications[code].active_well_known(),
+                "default_well_known": self.applications[code].active_default_well_known(),
                 "pid": os.getpid()}))
             ended = asyncio.create_task(member.connected.wait_closed())
             stopped = asyncio.create_task(stop.wait())
@@ -433,7 +443,7 @@ class KBusMixin:
             await self.serve_kbus_message(message)
 
     def _goes_to_parent(self, path: str) -> bool:
-        """In a role process, a path outside the hosted application goes to the server."""
+        """In an application's dedicated process, a path outside it goes to the server."""
         if self.kbus_role is None:
             return False
         segment = path.lstrip("/").partition("/")[0]

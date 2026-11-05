@@ -89,7 +89,6 @@ from .exceptions import (
 from .plugins.openapi.plugin import METHOD_NOT_ALLOWED
 from .request import Request
 from .streaming import StreamingResponse
-from .well_known import WELL_KNOWN_ROOT
 
 if TYPE_CHECKING:
     from genro_routes import Router, RouterNode
@@ -183,25 +182,37 @@ class RoutedApplication(BaseApplication, RoutingClass):
             arm_router(router)
         return router
 
-    @property
-    def well_known_names(self) -> tuple[str, ...]:
-        """The children of this app's ``_well_known`` branch — its discovery documents.
+    def active_well_known(self) -> dict[str, str]:
+        """The declared well-known paths, each route checked against the router.
 
-        Every child is one name served under ``/.well-known/``: an entry, or a
-        sub-branch with a path of its own under it. A ruled entry is a name
-        like any other (``forbidden=True``), because the answer to an identity
-        that does not match is the application's own 401/403, never a 404 from
-        the demux.
-
-        The router is read through ``super().route``, NOT through the ``route``
-        property: the server asks this at mount time, and the configured
-        plugins are armed later, on the first access a request makes.
+        A route must name an entry exactly, written without a leading slash — a
+        best-match fallback to a shorter path does not count; one that does not
+        raises ``ValueError`` naming it.
+        A ruled entry counts like any other: its own auth rules answer the
+        request. The router is read through ``super().route``, NOT through the
+        ``route`` property: the server asks this at registration, and the
+        configured plugins are armed later, on the first access a request makes.
         """
-        branch = super().route.router_at_path(WELL_KNOWN_ROOT)
-        if branch is None:
-            return ()
-        children = branch.nodes(lazy=True, forbidden=True)
-        return (*children.get("entries", ()), *children.get("routers", ()))
+        return self.check_well_known_routes(super().active_well_known())
+
+    def active_default_well_known(self) -> dict[str, str]:
+        """The default well-known paths, each route checked like ``active_well_known``."""
+        return self.check_well_known_routes(super().active_default_well_known())
+
+    def check_well_known_routes(self, active: dict[str, str]) -> dict[str, str]:
+        """``active`` unchanged, after checking that every route names an entry."""
+        router = super().route
+        for target in active.values():
+            parent, _, name = target.rpartition("/")
+            branch = router.router_at_path(parent)
+            entries = branch.nodes(lazy=True, forbidden=True).get("entries", ()) if branch else ()
+            # The demux forwards "/" + route as written: a leading slash
+            # would reach the router as "//...", so it names no entry either.
+            if target.startswith("/") or name not in entries:
+                raise ValueError(
+                    f"application {self.code!r}: well-known route {target!r} names no entry"
+                )
+        return active
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """Build the request, run it through ``execute``, respond.

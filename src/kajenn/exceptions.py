@@ -163,8 +163,9 @@ class KBusCallError(Exception):
 
     Raised when the REPLY carries a status >= 400: ``error`` is what the REPLY
     carried and ``status`` its status. Also raised with status 503 when a call
-    from a role process to the server fails in transport: ``error`` is then the
-    text of the transport failure.
+    from the dedicated process of an application mounted with
+    ``spawner="subprocess"`` to the server fails in transport: ``error`` is then
+    the text of the transport failure.
     """
 
     def __init__(self, path: str, error: Any, status: int | None = None) -> None:

@@ -50,17 +50,22 @@ wrong secret is refused by the dispatcher (`kbus.Rejected`).
 
 ## Joined
 
-The role process loads the same configuration and builds only its own
-application. It connects after that application's `on_startup` returned, then
-calls `server.joined` with `meta = {"well_known": [...], "pid": <pid>}`:
-`well_known` lists the discovery names the application answers under
-`/.well-known/`. The server indexes those names on the mount of that
-application, replacing those of a previous process, tells the spawner the role
-joined and records the pid. A `well_known` that is not a list of non-empty
-strings is refused with `kbus.Refused`: the process ends and is relaunched.
+The dedicated process of an application mounted with `spawner="subprocess"`
+loads the same configuration and builds only its own application. It connects after that application's `on_startup` returned, then
+calls `server.joined` with
+`meta = {"well_known": {...}, "default_well_known": {...}, "pid": <pid>}`:
+the two dicts are the application's `active_well_known()` and
+`active_default_well_known()`, public path → route. The server indexes those
+paths for that application, replacing those of a previous process, tells the
+spawner the role joined and records the pid. A dict that is not made of
+non-empty strings, a declared path another application declares, or a default
+another application gives, is refused with `kbus.Refused`: the process ends
+and is relaunched. A declared path never conflicts with another application's
+default: the declared one answers. See [well-known URLs](../guides/hidden-paths.md).
 
 Until its process has joined, a mount answers 503 and `kbus_call` towards it
-raises `KBusCallError` with status 503; its discovery names answer 404.
+raises `KBusCallError` with status 503; its well-known paths answer 404
+"unimplemented well-known URL".
 
 ## Forget credentials
 
@@ -169,7 +174,8 @@ again in the server (see the HTTP record); an exception other than an
 `"<Type>: <message>"`, so a `kbus_call` or a WSX message answers the same text
 as in the server's process, and only the spawned process logs its traceback.
 
-In a role process, a `kbus_call` to a path outside its own application goes to
+In an application's dedicated process, a `kbus_call` to a path outside its own
+application goes to
 the `server` member, which serves it through the demux exactly like an
 in-process call; a transport failure raises `KBusCallError` with status 503.
 
@@ -202,7 +208,8 @@ implement; `SubprocessSpawner` is the `"subprocess"` one.
 
 `server.kbus(address, certfile, keyfile, cafile, max_frame, max_meta,
 max_route, max_pending, stream_window, write_buffer)`: the six limits build the
-dispatcher's `kbus.Limits`, and the role process uses the same ones. An omitted
+dispatcher's `kbus.Limits`, and an application's dedicated process uses the
+same ones. An omitted
 limit keeps the kbus default. An address in any other form than `unix://` or
 `wss://`, `ws://` included, is a boot error, and so is a `wss://` address
 without `certfile` and `keyfile`.

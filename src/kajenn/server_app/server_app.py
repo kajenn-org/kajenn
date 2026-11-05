@@ -73,8 +73,12 @@ at attachment by ``read_declared_login_surface``. Both absent, the defaults
 
 from __future__ import annotations
 
+import logging
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, ClassVar
+from urllib.parse import urlparse
 
 from genro_bag import BagResolver
 from genro_builders.builder import element
@@ -82,13 +86,16 @@ from genro_routes import RoutingClass, route
 
 from kajenn.application import ApplicationGrammar, BaseApplication
 from kajenn.applications.openapi import OpenApiApplication
+from kajenn.exceptions import HTTPNotFound
 from kajenn.session import Avatar
+from kajenn.well_known import as_list
 
 from .auth_method import AuthMethod, PasswordMethod
 from .oidc_method import OidcMethod
 from .server_sections import (
     AuthSection,
     DatabasesSection,
+    K8sSection,
     MonitorSection,
     TasksSection,
     TokensSection,
@@ -99,6 +106,17 @@ __all__ = ["ServerApplication", "ServerApplicationGrammar"]
 
 LOCKOUT_MAX_ATTEMPTS = 5
 LOCKOUT_BACKOFF_SECONDS = 30.0
+
+SECURITY_TXT_FIELDS = (
+    ("contact", "Contact"),
+    ("expires", "Expires"),
+    ("encryption", "Encryption"),
+    ("acknowledgments", "Acknowledgments"),
+    ("preferred_languages", "Preferred-Languages"),
+    ("canonical", "Canonical"),
+    ("policy", "Policy"),
+    ("hiring", "Hiring"),
+)
 
 
 class ServerApplicationGrammar(ApplicationGrammar):
@@ -122,6 +140,16 @@ class ServerApplicationGrammar(ApplicationGrammar):
     provider is a keyed collection with a secret in it: an element's attributes
     go through the read stack, so ``client_secret`` is a resolver read at read
     time and the secret never sits in the recipe.
+
+    The same element carries the words of two well-known documents the server
+    answers itself, ``/.well-known/security.txt`` and ``/robots.txt``::
+
+        server_app.security_txt(contact="mailto:security@example.com",
+                                expires="2027-06-30T00:00:00Z")
+        robots = server_app.robots(sitemaps="https://example.com/sitemap.xml")
+        robots.agent(user_agent="*", disallow="/admin/")
+
+    A document whose word is not written is not declared.
     """
 
     @element(sub_tags="", node_label="login")
@@ -149,6 +177,33 @@ class ServerApplicationGrammar(ApplicationGrammar):
         has none; give it a resolver), plus the defaulted ``scopes``,
         ``identity_claim`` and ``tags``."""
 
+    @element(sub_tags="", node_label="security_txt")
+    def security_txt(
+        self,
+        contact: str | list = None,
+        expires: str = None,
+        encryption: str | list = None,
+        acknowledgments: str | list = None,
+        preferred_languages: str | list = None,
+        canonical: str | list = None,
+        policy: str | list = None,
+        hiring: str | list = None,
+    ) -> None:
+        """The RFC 9116 fields of ``/.well-known/security.txt``. ``contact`` and
+        ``expires`` (ISO 8601) are required; every other field is optional."""
+
+    @element(sub_tags="agent", node_label="robots")
+    def robots(self, sitemaps: str | list = None) -> None:
+        """``/robots.txt``: one group per ``agent`` child, then the ``sitemaps``
+        (absolute http(s) URLs). At least one ``agent`` is required."""
+
+    @element(parent_tags="robots", sub_tags="")
+    def agent(
+        self, user_agent: str = "*", allow: str | list = None, disallow: str | list = None
+    ) -> None:
+        """One robots.txt group: ``user_agent`` and its ``allow``/``disallow``
+        rules, each starting with ``/`` or ``*``."""
+
 
 class ServerApplication(OpenApiApplication):
     """System endpoints of a server, mounted under ``/_server``.
@@ -156,6 +211,16 @@ class ServerApplication(OpenApiApplication):
     Carries the public server's system surface: the password login surface and
     the sections attached through ``attach_section``, listed by the ``index``
     descriptor.
+
+    It also answers three well-known documents as defaults, each given only
+    when it is configured (``active_default_well_known``):
+    ``/.well-known/security.txt`` and ``/robots.txt`` from the ``security_txt``
+    and ``robots`` words, validated there so a bad value stops the server at
+    construction, and ``/favicon.ico`` from ``static/favicon.ico`` of the site
+    home. It answers the health probes ``/healthz``, ``/livez`` and
+    ``/readyz`` as defaults too, always, from its ``k8s`` section (#105). An
+    application declaring one of these paths in ``well_known`` answers it
+    instead.
     """
 
     openapi_info: ClassVar[dict[str, Any]] = {
@@ -165,8 +230,18 @@ class ServerApplication(OpenApiApplication):
     code = "_server"
     mount = "_server"
     grammar: type = ServerApplicationGrammar
+    default_well_known = {
+        "/.well-known/security.txt": "security_txt",
+        "/robots.txt": "robots_txt",
+        "/favicon.ico": "favicon_ico",
+        "/healthz": "k8s/healthz",
+        "/livez": "k8s/livez",
+        "/readyz": "k8s/readyz",
+    }
 
     def __init__(self, **kwargs: Any) -> None:
+        self._security_txt_document: str | None = None
+        self._robots_txt_document: str | None = None
         self._login_policy: dict[str, Any] = kwargs.pop("login", {})
         self._oidc_providers: dict[str, dict[str, Any]] = kwargs.pop("oidc", {})
         self._sections: dict[str, RoutingClass] = {}
@@ -181,6 +256,7 @@ class ServerApplication(OpenApiApplication):
         self.attach_section(TasksSection(self), name="tasks")
         self.attach_section(MonitorSection(self), name="monitor")
         self.attach_section(DatabasesSection(self), name="databases")
+        self.attach_section(K8sSection(self), name="k8s")
 
     @BaseApplication.server.setter
     def server(self, value: Any) -> None:
@@ -229,6 +305,90 @@ class ServerApplication(OpenApiApplication):
             self.register_auth_method(
                 OidcMethod(self, self._oidc_method_id(child.label), child.label, provider)
             )
+
+    def active_default_well_known(self) -> dict[str, str]:
+        """The well-known documents this server has configured, given as defaults.
+
+        Builds ``security.txt`` and ``robots.txt`` from their words — the
+        validation raises ``ValueError`` here, at construction — and keeps
+        each path only when its word is written; ``/favicon.ico`` only when the
+        site home has ``static/favicon.ico``. An application declaring the same
+        path in ``well_known`` answers it instead.
+        """
+        active = super().active_default_well_known()
+        handler = getattr(self.server, "config", None)
+        section = f"applications.{self.code}"
+        if handler is not None and handler.node(f"{section}.security_txt") is not None:
+            self._security_txt_document = self.build_security_txt(handler, section)
+        else:
+            active.pop("/.well-known/security.txt")
+        if handler is not None and handler.node(f"{section}.robots") is not None:
+            self._robots_txt_document = self.build_robots_txt(handler, section)
+        else:
+            active.pop("/robots.txt")
+        if self.favicon_path() is None:
+            active.pop("/favicon.ico")
+        return active
+
+    def build_security_txt(self, handler: Any, section: str) -> str:
+        """The security.txt body from the ``security_txt`` word, validated."""
+        names = [name for name, _ in SECURITY_TXT_FIELDS]
+        fields = handler.closed_attrs(f"{section}.security_txt", *names)
+        if not as_list(fields.get("contact")):
+            raise ValueError("security_txt: contact is required")
+        expires = fields.get("expires")
+        if not expires:
+            raise ValueError("security_txt: expires is required")
+        try:
+            expires_at = datetime.fromisoformat(expires)
+        except (TypeError, ValueError):
+            raise ValueError(f"security_txt: expires {expires!r} is not ISO 8601") from None
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at < datetime.now(timezone.utc):
+            logging.getLogger(__name__).warning("security_txt: expires %s is past", expires)
+        lines = []
+        for name, field in SECURITY_TXT_FIELDS:
+            values = as_list(fields.get(name))
+            if name == "preferred_languages" and values:
+                values = [", ".join(values)]
+            lines.extend(f"{field}: {value}" for value in values)
+        return "\n".join(lines) + "\n"
+
+    def build_robots_txt(self, handler: Any, section: str) -> str:
+        """The robots.txt body from the ``robots`` word and its agents, validated."""
+        path = f"{section}.robots"
+        groups = []
+        for child in handler.node(path).value or ():
+            agent = handler.closed_attrs(f"{path}.{child.label}", "user_agent", "allow", "disallow")
+            if not agent.get("user_agent"):
+                raise ValueError("robots: an agent has an empty user_agent")
+            lines = [f"User-agent: {agent['user_agent']}"]
+            for field in ("allow", "disallow"):
+                for rule in as_list(agent.get(field)):
+                    if not rule.startswith(("/", "*")):
+                        raise ValueError(f"robots: rule {rule!r} must start with '/' or '*'")
+                    lines.append(f"{field.capitalize()}: {rule}")
+            groups.append("\n".join(lines) + "\n")
+        if not groups:
+            raise ValueError("robots: at least one agent is required")
+        body = "\n".join(groups)
+        sitemaps = as_list(handler.closed_attrs(path, "sitemaps").get("sitemaps"))
+        for sitemap in sitemaps:
+            parsed = urlparse(sitemap)
+            if parsed.scheme not in ("http", "https") or not parsed.netloc:
+                raise ValueError(f"robots: sitemap {sitemap!r} is not an absolute http(s) URL")
+        if sitemaps:
+            body += "\n" + "".join(f"Sitemap: {sitemap}\n" for sitemap in sitemaps)
+        return body
+
+    def favicon_path(self) -> Path | None:
+        """``static/favicon.ico`` of the site home, ``None`` when there is no such file."""
+        home = getattr(self.server, "site_home", None)
+        if home is None:
+            return None
+        path = home.static / "favicon.ico"
+        return path if path.is_file() else None
 
     @staticmethod
     def _oidc_method_id(code: str) -> str:
@@ -417,3 +577,34 @@ class ServerApplication(OpenApiApplication):
         """
         section = self.auth_section
         return {"methods": section.descriptors() if section is not None else []}
+
+    @route(media_type="text/plain")
+    def security_txt(self) -> str:
+        """The security.txt document. Route: GET /.well-known/security.txt
+
+        Raises ``HTTPNotFound`` when the ``security_txt`` word is not written.
+        """
+        if self._security_txt_document is None:
+            raise HTTPNotFound("security.txt is not configured")
+        return self._security_txt_document
+
+    @route(media_type="text/plain")
+    def robots_txt(self) -> str:
+        """The robots.txt document. Route: GET /robots.txt
+
+        Raises ``HTTPNotFound`` when the ``robots`` word is not written.
+        """
+        if self._robots_txt_document is None:
+            raise HTTPNotFound("robots.txt is not configured")
+        return self._robots_txt_document
+
+    @route(media_type="image/x-icon")
+    def favicon_ico(self) -> Path:
+        """The site's favicon file. Route: GET /favicon.ico
+
+        Raises ``HTTPNotFound`` when the site home has no ``static/favicon.ico``.
+        """
+        path = self.favicon_path()
+        if path is None:
+            raise HTTPNotFound("favicon.ico is not configured")
+        return path

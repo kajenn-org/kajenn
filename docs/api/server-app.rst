@@ -14,7 +14,8 @@ with the code ``_server`` takes its place::
 
     server = AsgiServer(applications=[MyServerApp, (MyApp, {"mount": ""})])
 
-The role process of an external application mounts none. The management pages
+The dedicated process of an application mounted with ``spawner="subprocess"``
+mounts none. The management pages
 themselves are not here: this package serves the JSON a page drives.
 
 Application and grammar

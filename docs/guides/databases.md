@@ -105,6 +105,8 @@ once and the handler releases it when the call ends. The sync route uses
 - The core asks `take(name, call)` once per name per call and keeps the answer
   on `call.databases`. It calls `release(call)` at the end of every call that
   took, on a pool thread: after a sync route, on the thread the route ran on.
+  A call cancelled while its work runs on the pool releases only after that
+  work ends; the cancellation propagates then. Work still queued never runs.
 - An `async def` route uses `request.async_db()`: the object `take` returned,
   passed through the handler's `async_view`. By default the methods the
   handler lists in `terminals` become awaitable and run on the pool.
