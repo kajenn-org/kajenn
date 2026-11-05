@@ -283,7 +283,9 @@ One line each; the deep dives live in their own guides.
   [the site home](cli.md#the-site-home).
 - **`server`** — `host`, `port`, `external_url` (the PUBLIC address, not the
   listener), `max_threads`, `shutdown_timeout_seconds` (default 5.0), plus `websocket`
-  (`origins`, `max_concurrent`), `session` (its `ttl`) and `tasks` (see [Background tasks](tasks.md)).
+  (`origins`, `max_concurrent`), `session` (its `ttl`), `tasks` (see [Background tasks](tasks.md))
+  and `probes` (`enabled`, `liveness`, `readiness`: the health probe paths, see
+  [Lifecycle](lifecycle.md#health-probes)).
 - **`middleware`** — one `{name: bool | dict}` switch per middleware; a dict
   enables it and becomes its options (see [Middleware](middleware.md)).
 - **`authentication`** — the whole identity surface in one section:

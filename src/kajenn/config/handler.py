@@ -34,7 +34,8 @@ Section → constructor kwarg:
 
 - ``site`` → ``site_name``/``site_home`` (the folder the site owns).
 - ``server`` → ``host``/``port``/``external_url``/``max_threads``/``shutdown_timeout_seconds``/``debug``, its
-  ``session`` child → ``session_ttl``, its ``tasks`` child → ``tasks``.
+  ``session`` child → ``session_ttl``, its ``tasks`` child → ``tasks``, its
+  ``probes`` child → ``probes`` (the health probe paths, ``False`` when off).
 - ``middleware`` → ``middleware`` ({name: bool | dict} switches).
 - ``authentication`` → ``users``/``tokens`` (the store descriptors ``AuthMixin``
   peels) and ``auth`` (the ``AuthCore`` entries folded from ``credentials``).
@@ -149,6 +150,12 @@ class ConfigurationHandler(ConfigHandler):
             kwargs["tasks"] = self.closed_attrs(
                 "server.tasks", "enabled", "tick_seconds", "mount"
             )
+        if self.node("server.probes") is not None:
+            options = self.closed_attrs("server.probes", "enabled", "liveness", "readiness")
+            if not bool(options.pop("enabled", True)):
+                kwargs["probes"] = False
+            else:
+                kwargs["probes"] = {kind: paths or None for kind, paths in options.items()}
         return kwargs
 
     def middleware_config(self) -> dict[str, Any] | None:

@@ -168,6 +168,11 @@ class RemoteApplication(BaseApplication):
         if hasattr(app_class, "serve_websocket"):
             self.serve_websocket = self._forward_websocket
 
+    @property
+    def ready(self) -> bool:
+        """True once the application's process has joined the server, false until then and after it is lost."""
+        return self.code in getattr(self.server, "kbus_pids", {})
+
     async def __call__(self, scope, receive, send) -> None:
         """Forward one request to the member and write its answer as it streams.
 

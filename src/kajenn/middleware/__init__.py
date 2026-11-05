@@ -121,8 +121,16 @@ class MiddlewareMixin:
         await super().__call__(scope, receive, send)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        """Route ``http`` scopes through the chain; every other scope passes straight through."""
+        """Route ``http`` scopes through the chain; every other scope passes straight through.
+
+        A health probe (``BaseServer.probe``) is answered here, before the
+        chain: a probe opens no session, sets no cookie, logs no line.
+        """
         if scope["type"] != "http":
             await super().__call__(scope, receive, send)
+            return
+        probe = self.probe(scope)  # type: ignore[attr-defined]
+        if probe is not None:
+            await probe(scope, receive, send)
             return
         await self.middleware_chain(scope, receive, send)

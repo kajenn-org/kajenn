@@ -70,3 +70,86 @@ This is a connection-drain timeout, not a five-second deadline for the entire
 process: application hooks and worker shutdown have their own work to finish.
 Stop a foreground server with Ctrl-C; the CLI's `stop` sends SIGTERM to the
 named server (or reload supervisor). See [CLI](cli.md).
+
+## Health probes
+
+Every server answers three probe paths itself, for an orchestrator such as
+Kubernetes, a load balancer or a container runtime:
+
+| Path | Kind | Answer |
+| --- | --- | --- |
+| `/healthz` | liveness | 200 `ok` while the process can answer at all, leaving included |
+| `/livez` | liveness | same as `/healthz` |
+| `/readyz` | readiness | 200 `ready` while the state is `RUNNING` and every application is `ready`; otherwise 503 `not ready`, then one reason per line |
+
+The server answers them in its own entry point, before the middleware chain
+and before the 503 refusal of a server that is leaving. A probe opens no
+session, sets no cookie, needs no credential, and is not a registered request,
+so it never delays the drain. GET and HEAD are answered; any other method gets
+405. Answers carry `cache-control: no-store`. Only the exact path is a probe:
+`/healthz/x` reaches the applications as usual.
+
+```console
+$ curl -s http://127.0.0.1:8000/healthz
+ok
+$ curl -s -w ' %{http_code}\n' http://127.0.0.1:8000/readyz
+ready 200
+```
+
+During shutdown, `/healthz` stays 200 and `/readyz` turns 503 with
+`server stopping` (or `server quitting`), so the orchestrator stops sending
+traffic without restarting the process. An application spawned in its own
+process (`spawner="subprocess"`) is not ready until its process joins, and
+again while it is relaunched: `/readyz` names it as `application <code>`.
+
+### Readiness of an application
+
+`BaseApplication.ready` is `True`. An application that depends on something
+it can lose overrides it. The property is read on every probe, so it must
+answer at once, with no I/O:
+
+```python
+from kajenn import RoutedApplication
+
+
+class Feed(RoutedApplication):
+    connected = False
+
+    @property
+    def ready(self) -> bool:
+        return self.connected
+```
+
+`server.readiness()` returns the same reasons as a list, empty when the server
+is ready.
+
+### Renaming or turning off the probes
+
+The `probes` word of the `server` section takes comma-separated paths per
+kind. An empty string turns that kind off, and `enabled=False` turns both off:
+
+```python
+from kajenn.config import AsgiConfigBuilder
+
+
+class Configuration(AsgiConfigBuilder):
+    def main(self, root):
+        root.configuration().server().probes(liveness="/_health", readiness="/_ready")
+```
+
+The same as a kwarg: `AsgiServer(probes={"liveness": "/_health", "readiness":
+["/_ready"]})`; a kind left out keeps its default, and `probes=False` turns
+them all off. A probe path must start with `/` and must not be a well-known
+path; the same path given twice is a `ValueError` at construction.
+
+A probe path is answered first, so it hides an application route on the same
+path. Rename the probes if an application needs that path.
+
+Kubernetes example:
+
+```yaml
+livenessProbe:
+  httpGet: {path: /healthz, port: 8000}
+readinessProbe:
+  httpGet: {path: /readyz, port: 8000}
+```

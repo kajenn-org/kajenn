@@ -396,6 +396,17 @@ class BaseApplication:
         """
         return {"panel": "generic"}
 
+    @property
+    def ready(self) -> bool:
+        """Whether this application takes traffic now: read by the readiness probe.
+
+        True at the base. An application that depends on something it can
+        lose (a process, a connection) overrides it: while it is false,
+        ``/readyz`` answers 503 naming this application's code. Read on every
+        probe, so it must answer at once, without I/O.
+        """
+        return True
+
     def on_startup(self) -> None:
         """Lifecycle hook run at server startup. Override as sync or async."""
 

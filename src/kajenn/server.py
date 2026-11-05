@@ -40,6 +40,12 @@ reverse shutdown, error isolation). Each http dispatch is registered in the
 ``RequestRegistry`` (``requests``) for the span of the request — the current
 request and the in-flight picture. ``serve()`` boots uvicorn programmatically.
 
+The health probes (``probes.py``) come before all of it: ``/healthz`` and
+``/livez`` (liveness) and ``/readyz`` (readiness) are answered by the server
+itself, ahead of the state refusal and of the registry, so an orchestrator
+reads a server that is leaving as alive and not ready. The ``probes`` kwarg
+renames them or turns them off.
+
 The server also holds the mounted databases (``databases``, name → handler):
 one ``DbHandlerBase`` per handler class, fed by ``add_database``. A call takes
 each name at most once (``take_database``, the answer kept on the call's
@@ -78,6 +84,7 @@ from .application import BaseApplication
 from .db import DbHandlerBase
 from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
+from .probes import LIVENESS, probe_paths
 from .request_registry import RegisteredRequest, RequestRegistry
 from .response import Response
 from .websocket import WebSocket, WebSocketRegistry
@@ -149,8 +156,10 @@ class BaseServer:
     websocket options, ``{"origins": [...], "max_concurrent": 16}`` — and
     ``shutdown_timeout_seconds`` — how long uvicorn waits for open connections
     to finish before it cancels them at shutdown (5.0) — and ``debug`` — a
-    flag or a string the applications read as ``server.debug`` (``False``).
-    Without a bound, one
+    flag or a string the applications read as ``server.debug`` (``False``) —
+    and ``probes`` — the health probe paths by kind (``probes.probe_paths``;
+    omitted, ``/healthz``, ``/livez`` and ``/readyz``; ``False`` turns them
+    off). Without a shutdown bound, one
     endless response — an SSE stream a client never closes — holds the server
     for ever and the lifespan shutdown never runs.
     """
@@ -161,6 +170,7 @@ class BaseServer:
         max_threads: int | None = kwargs.pop("max_threads", None)
         debug: bool | str = kwargs.pop("debug", False)
         websocket: dict[str, Any] = kwargs.pop("websocket", None) or {}
+        probes: Any = kwargs.pop("probes", None)
         shutdown_timeout: float = float(
             kwargs.pop("shutdown_timeout_seconds", None) or SHUTDOWN_TIMEOUT_SECONDS
         )
@@ -187,6 +197,7 @@ class BaseServer:
             websocket.get("max_concurrent") or WEBSOCKET_MAX_CONCURRENT
         )
         self._shutdown_timeout_seconds = shutdown_timeout
+        self._probe_paths = probe_paths(probes)
         self._state = RUNNING
         self._leaving = asyncio.Event()
         self.shutdown_mode = STOPPING
@@ -512,6 +523,48 @@ class BaseServer:
         """How many messages of ONE connection may be in flight at once."""
         return self._websocket_max_concurrent
 
+    @property
+    def probe_paths(self) -> dict[str, str]:
+        """The health probe paths this server answers: public path → kind."""
+        return self._probe_paths
+
+    def readiness(self) -> list[str]:
+        """Why this server should not take traffic now: empty when it should.
+
+        One reason per line of the readiness answer: the state when it is not
+        ``RUNNING``, then each application whose ``ready`` is false, by code.
+        """
+        reasons = [] if self.state == RUNNING else [f"server {self.state}"]
+        reasons.extend(f"application {app.code}" for app in self.applications.values()
+                       if not app.ready)
+        return reasons
+
+    def probe(self, scope: Scope) -> Response | None:
+        """The answer to a health probe, ``None`` when ``scope`` is not one.
+
+        Only an ``http`` scope on a path of ``probe_paths`` is a probe. GET and
+        HEAD are answered — liveness 200 ``ok``; readiness 200 ``ready``, or
+        503 ``not ready`` followed by the ``readiness`` reasons — any other
+        method 405. Never cached. The caller sends it as is: nothing of the
+        server runs for a probe, not the middleware chain, not the registry.
+        """
+        if scope.get("type") != "http":
+            return None
+        kind = self.probe_paths.get(scope["path"])
+        if kind is None:
+            return None
+        headers = {"cache-control": "no-store"}
+        if scope.get("method") not in ("GET", "HEAD"):
+            return Response(content="Method Not Allowed", status_code=405,
+                            media_type="text/plain", headers={**headers, "allow": "GET, HEAD"})
+        if kind == LIVENESS:
+            return Response(content="ok", media_type="text/plain", headers=headers)
+        reasons = self.readiness()
+        if not reasons:
+            return Response(content="ready", media_type="text/plain", headers=headers)
+        return Response(content="\n".join(["not ready", *reasons]), status_code=503,
+                        media_type="text/plain", headers=headers)
+
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """ASGI entry point: dispatch on the scope type.
 
@@ -520,7 +573,10 @@ class BaseServer:
         empty socket by default); ``lifespan`` runs the ``Lifespan`` handler.
         Any other type is an ASGI protocol error.
 
-        ``state`` is read FIRST: anything but ``RUNNING`` takes nothing new in
+        A health probe (``probe``) is answered before anything else, the state
+        included: liveness must stay true while the server leaves.
+
+        ``state`` is read next: anything but ``RUNNING`` takes nothing new in
         charge, and this branch renders the refusal the way HTTP says it — 503
         and ``Retry-After``. Another transport reads the same state and renders
         its own. Whatever the middleware chain answers by itself never reaches
@@ -528,6 +584,10 @@ class BaseServer:
         """
         scope_type = scope["type"]
         if scope_type == "http":
+            probe = self.probe(scope)
+            if probe is not None:
+                await probe(scope, receive, send)
+                return
             if self.state != RUNNING:
                 await Response(
                     content="Server restarting",

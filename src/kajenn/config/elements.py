@@ -130,7 +130,8 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         boot is ``kajenn serve <name>``.
         """
 
-    @element(parent_tags="configuration", sub_tags="session[0:1],tasks[0:1],websocket[0:1],kbus[0:1]")
+    @element(parent_tags="configuration",
+             sub_tags="session[0:1],tasks[0:1],websocket[0:1],kbus[0:1],probes[0:1]")
     def server(
         self,
         host: str | BagResolver = None,
@@ -167,8 +168,23 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         never run.
 
         Children are server-domain: ``session`` (the session TTL), ``tasks``
-        (the task backbone, declared by ``TaskGrammar``), ``websocket`` and
-        ``kbus``.
+        (the task backbone, declared by ``TaskGrammar``), ``websocket``,
+        ``kbus`` and ``probes``.
+        """
+
+    @element(parent_tags="server", sub_tags="")
+    def probes(
+        self,
+        enabled: bool | BagResolver = None,
+        liveness: str | BagResolver = None,
+        readiness: str | BagResolver = None,
+    ) -> None:
+        """The health probe paths, server-domain: the server answers them itself.
+
+        ``liveness`` and ``readiness`` are comma-separated paths (default
+        ``/healthz,/livez`` and ``/readyz``); an empty string turns that kind
+        off, and ``enabled=False`` turns both off. Without this word every
+        server answers the defaults.
         """
 
     @element(parent_tags="server", sub_tags="")

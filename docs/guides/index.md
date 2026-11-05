@@ -54,7 +54,7 @@ configuration
 ## Run a site
 
 - [CLI](cli.md): configuration files, named sites and reload.
-- [Lifecycle](lifecycle.md): startup, admission and shutdown.
+- [Lifecycle](lifecycle.md): startup, admission, shutdown and the health probes.
 
 ## Configure and extend
 
