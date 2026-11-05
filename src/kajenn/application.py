@@ -352,7 +352,7 @@ class BaseApplication:
             if not WELL_KNOWN_PATTERN.match(path):
                 raise ValueError(
                     f"{cls.__name__}: {declared!r} is not a well-known path "
-                    "(/.well-known/..., /robots.txt, /favicon.ico)"
+                    "(/.well-known/..., /robots.txt, /favicon.ico, /healthz, /livez, /readyz)"
                 )
             resolved[path] = target
         return resolved
