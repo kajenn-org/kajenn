@@ -7,8 +7,9 @@ reached. Both are the **server's own**, not a middleware: they hold on a bare
 `BaseServer` with no chain, and there is no switch to turn them off.
 
 - A **well-known path** is a path matching one fixed pattern:
-  `/.well-known/...` (RFC 8615), `/robots.txt` or `/favicon.ico`. It is
-  answered only when an application declares it. Otherwise the answer is 404,
+  `/.well-known/...` (RFC 8615), `/robots.txt`, `/favicon.ico` or one of the
+  health probes `/healthz`, `/livez`, `/readyz`. It is answered only when an
+  application declares it. Otherwise the answer is 404,
   `text/plain`, body `unimplemented well-known URL`.
 - A **hidden path** is any other path whose first segment starts with a dot:
   `/.git/config`, `/.env`, `/.foo`. It answers 404 `Not Found`.
@@ -35,14 +36,22 @@ Every other path is ordinary, the conventional probes included:
 | `/.well-known/security.txt` | `_server` as a default, from its `security_txt` word | `contact` or `expires` missing, `expires` not ISO 8601 | the word is not written |
 | `/robots.txt` | `_server` as a default, from its `robots` word | no `agent`, an empty `user_agent`, a rule not starting with `/` or `*`, a sitemap not an absolute http(s) URL | the word is not written and no application declares it |
 | `/favicon.ico` | `_server` as a default, the file `static/favicon.ico` of the site home | — | the file does not exist and no application declares it |
+| `/healthz`, `/livez`, `/readyz` | `_server` as a default, always: `200 ok` from its `k8s` section | — | never |
 | `/.well-known/apple-app-site-association` | An application with `MobileMixin`, from its `ios` word | `ios` written without `paths` | `ios` is not written |
 | `/.well-known/assetlinks.json` | An application with `MobileMixin`, from its `android` word | — | `android` is not written |
 
-`_server` gives its three documents as defaults (`default_well_known`): an
-application that declares the same path in `well_known` answers it instead,
-for example a favicon per host. When `_server` does not configure a document
-(its word is not written, its file does not exist), the path answers only if
-an application declares it.
+`_server` gives its three documents and the three health probes as defaults
+(`default_well_known`): an application that declares the same path in
+`well_known` answers it instead, for example a favicon per host or a `/readyz`
+that checks the application's own database. When `_server` does not configure
+a document (its word is not written, its file does not exist), the path
+answers only if an application declares it.
+
+The probes answer `200 ok` (`text/plain`, no authentication) from
+`/_server/k8s/healthz`, `/_server/k8s/livez` and `/_server/k8s/readyz`. While
+the server is not RUNNING it refuses every request with `503 Server
+restarting` before the demux, the probes included: during shutdown a balancer
+reading `/readyz` stops sending traffic before the server closes.
 
 ```console
 $ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/.env

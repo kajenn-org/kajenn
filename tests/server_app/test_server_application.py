@@ -72,7 +72,7 @@ class TestServerEndpoints:
         sent = await http_request(server, "/_server/")
         assert response_status(sent) == 200
         data = json.loads(response_body(sent))
-        assert data["sections"] == ["auth", "databases", "monitor", "tasks", "tokens", "users"]
+        assert data["sections"] == ["auth", "databases", "k8s", "monitor", "tasks", "tokens", "users"]
 
     async def test_meta_schema_json_is_exposed(
         self, http_request, response_status, response_body
@@ -123,5 +123,5 @@ class TestSections:
         sent = await http_request(server, "/_server/")
         data = json.loads(response_body(sent))
         assert data["sections"] == [
-            "auth", "databases", "demo", "monitor", "tasks", "tokens", "users"
+            "auth", "databases", "demo", "k8s", "monitor", "tasks", "tokens", "users"
         ]

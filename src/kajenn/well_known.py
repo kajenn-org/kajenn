@@ -17,7 +17,8 @@
 A path whose first segment starts with ``HIDDEN_SEGMENT_PREFIX`` is hidden or
 of service: nothing of the site lives there, and the server answers 404. A
 path matching ``WELL_KNOWN_PATTERN`` — ``/.well-known/...`` (RFC 8615),
-``/robots.txt`` or ``/favicon.ico`` — is a well-known path: it is answered
+``/robots.txt``, ``/favicon.ico`` or one of the health probes ``/healthz``,
+``/livez``, ``/readyz`` (#105) — is a well-known path: it is answered
 only when an application declares it in its class dict ``well_known``
 (public path → route), and otherwise answers 404 "unimplemented well-known
 URL", whatever the root application is:
@@ -37,7 +38,9 @@ __all__ = ["HIDDEN_SEGMENT_PREFIX", "WELL_KNOWN_PATTERN", "as_list"]
 HIDDEN_SEGMENT_PREFIX = "."
 """What a first path segment starts with to be hidden."""
 
-WELL_KNOWN_PATTERN = re.compile(r"^/(\.well-known/.+|robots\.txt|favicon\.ico)$")
+WELL_KNOWN_PATTERN = re.compile(
+    r"^/(\.well-known/.+|robots\.txt|favicon\.ico|healthz|livez|readyz)$"
+)
 """The public paths an application may declare in ``well_known``."""
 
 

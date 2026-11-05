@@ -95,6 +95,7 @@ from .oidc_method import OidcMethod
 from .server_sections import (
     AuthSection,
     DatabasesSection,
+    K8sSection,
     MonitorSection,
     TasksSection,
     TokensSection,
@@ -216,8 +217,10 @@ class ServerApplication(OpenApiApplication):
     ``/.well-known/security.txt`` and ``/robots.txt`` from the ``security_txt``
     and ``robots`` words, validated there so a bad value stops the server at
     construction, and ``/favicon.ico`` from ``static/favicon.ico`` of the site
-    home. An application declaring one of these paths in ``well_known``
-    answers it instead.
+    home. It answers the health probes ``/healthz``, ``/livez`` and
+    ``/readyz`` as defaults too, always, from its ``k8s`` section (#105). An
+    application declaring one of these paths in ``well_known`` answers it
+    instead.
     """
 
     openapi_info: ClassVar[dict[str, Any]] = {
@@ -231,6 +234,9 @@ class ServerApplication(OpenApiApplication):
         "/.well-known/security.txt": "security_txt",
         "/robots.txt": "robots_txt",
         "/favicon.ico": "favicon_ico",
+        "/healthz": "k8s/healthz",
+        "/livez": "k8s/livez",
+        "/readyz": "k8s/readyz",
     }
 
     def __init__(self, **kwargs: Any) -> None:
@@ -250,6 +256,7 @@ class ServerApplication(OpenApiApplication):
         self.attach_section(TasksSection(self), name="tasks")
         self.attach_section(MonitorSection(self), name="monitor")
         self.attach_section(DatabasesSection(self), name="databases")
+        self.attach_section(K8sSection(self), name="k8s")
 
     @BaseApplication.server.setter
     def server(self, value: Any) -> None:
