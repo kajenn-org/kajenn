@@ -41,10 +41,10 @@ application has the code `_server`.
 
 ## Project
 
-- Documentation: https://kajenn.org
+- Website: https://kajenn.org
+- Documentation: https://kajenn.readthedocs.io/en/latest/
 - Organization: https://github.com/kajenn-org
 - Orchestration: [kajenn-orchestra](https://github.com/kajenn-org/kajenn-orchestra)
-- Django adapter: [kajenn-django](https://github.com/kajenn-org/kajenn-django)
 
 ## License
 
