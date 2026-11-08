@@ -2,7 +2,7 @@
 
 **Version**: 0.1 · **Last Updated**: 2026-08-24 · **Status**: 🔴 DA REVISIONARE
 
-Verification: `kajenn-meta/verification/10_server/080_task-thermometers.md` — DIVERGENT, 0 CONVERGE / 0 DIVERGE / 0 SILENT.
+Verification: `kajenn-meta/verification/10_server/080_task-thermometers.md` (2026-09-17) — not verifiable: decisions.md carried no entry, so the table has 0 rows.
 
 Whoever launches a long batch sees it move while it runs, and stops it politely
 without corrupting its work. `TaskManager.publish_progress` writes the

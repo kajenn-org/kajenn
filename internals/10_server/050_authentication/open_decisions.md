@@ -2,6 +2,10 @@
 
 **Version**: 0.1 · **Last Updated**: 2026-09-17 · **Status**: 🔴 DA REVISIONARE
 
+Paths under `src/genro_asgi/` and the test paths in this file quote the verification of
+2026-09-17, before the package rename. They are not current anchors. The current state is in
+[status.md](status.md).
+
 Source report: `kajenn-meta/verification/10_server/050_authentication.md`.
 
 Rows of that report whose verdict is `DIVERGE` or `SILENT`, with the matching `Divergences` blocks. Both are verbatim from the report.

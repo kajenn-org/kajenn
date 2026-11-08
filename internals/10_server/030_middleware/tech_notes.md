@@ -1,15 +1,18 @@
 # Middleware — tech notes
 
-**Version**: 0.2 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.3 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
 
 
 ## Renewal evidence — 2026-09-08
 
 The current implementation is recorded in [status](status.md), verified against
-`2465fcc`. The August notes below are archival: their line references, coverage
+`63fb326`. `AuthMiddleware` was removed in 0.4.0 (commit `05411ad`): the chain
+has four layers, and `RoutedApplication.authenticate_scope` sets
+`scope["auth"]`. The August notes below are archival: their line references, coverage
 numbers, test paths, missing-consumer assertions and proposed next steps are not
 fresh measurements or current work authorization. The original detailed status
-can be recovered with `git show 2465fcc:internals/10_server/030_middleware/status.md`.
+was verified against `2465fcc`. That revision is not an object in this
+repository.
 
 The five complete server/configuration/application/routing/middleware recipes
 are now collected by `tests/test_documentation_recipes.py`; the documentation
@@ -39,15 +42,16 @@ those live.
 
 Fifth and last of the server skeleton. It assumes
 [020 applications](../020_applications/README.md) — the exceptions it answers are the
-ones the route resolution raises — and it is where two later entries put their
-own layer: sessions and authentication own a layer each and are described
-elsewhere.
+ones the route resolution raises — and it is where a later entry puts its
+own layer: sessions own a layer and are described elsewhere. Authentication
+owns no layer since 0.4.0.
 
 ## Who stands on this
 
 | They lean on it as | Entries |
 |---|---|
-| the layer that puts their thing on the request | [040 sessions](../040_sessions/README.md), [050 authentication](../050_authentication/README.md) |
+| the layer that puts their thing on the request | [040 sessions](../040_sessions/README.md) |
+| the error layer that answers their 401 with `WWW-Authenticate` | [050 authentication](../050_authentication/README.md) |
 | the middleware chain that answers what they raise | [020 applications](../020_applications/README.md) |
 | the other side of its login challenge | [090 server-application](../090_server-application/README.md) |
 | the thing it is confused with | [025 routing system](../025_routing-system/README.md) |
@@ -58,16 +62,17 @@ inside one layer reaches only what that layer does.
 
 ## The boundary with 040 and 050
 
-Two of the five layers are the visible half of entries that come later:
+One of the four layers is the visible half of an entry that comes later:
 `SessionMiddleware` is where [040 sessions](../040_sessions/README.md) touches a
-request, and `AuthMiddleware` is where
-[050 authentication](../050_authentication/README.md) does. This entry owns
-**where they sit in the middleware chain and what they leave on the request**;
-what a session *is* and how an identity is resolved are theirs.
+request. [050 authentication](../050_authentication/README.md) has no layer:
+`RoutedApplication.authenticate_scope` puts the identity on `scope["auth"]`
+inside `execute` and `discover`. This entry owns **where the session layer sits
+in the middleware chain and what it leaves on the request**; what a session
+*is* and how an identity is resolved are theirs.
 
-The line to hold when auditing those two: `session.py` and
-`authentication.py` are 137 and 48 lines and are largely described here already
-— the substance is in `session/` and `auth/`, which this entry does not touch.
+The line to hold when auditing: `middleware/session.py` is 153 lines and is
+largely described here already — the substance is in `session/` and `auth/`,
+which this entry does not touch.
 
 ## The working trail
 
@@ -106,8 +111,9 @@ anonymous, 403 for the known — and it is the same commit
 - **`level` on the access log is a severity, not a threshold** — and a
   misspelled one silently becomes INFO. Frictions S4 and S5.
 - **The `next` of the login redirect is validated, not echoed.** It goes
-  through `safe_next_path` (imported from `..auth`). Anyone touching that path
-  is touching an open-redirect defence.
+  through `safe_next_path` (server_app/auth_method.py:56), outside the
+  middleware chain. Anyone touching that path is touching an open-redirect
+  defence.
 - **A layer may not answer after the answer has started.** `ErrorMiddleware`
   tracks it and re-raises. A new layer that wraps `send` must not swallow that
   signal.
@@ -116,24 +122,26 @@ anonymous, 403 for the known — and it is the same commit
   (errors.py:93). So a layer that adds a header on the way out adds nothing to
   an error response — including the cross-origin header, without which a
   browser cannot read the error at all. Friction S9.
-- **`middleware_default = False` on the session and identity layers is
-  misleading.** Their own mixins `setdefault` them on, so on an `AsgiServer`
-  they are in the middleware chain regardless of the description. Reading the
-  class attribute alone gives the wrong answer about a shipped server.
+- **`middleware_default = False` on the session layer is misleading.**
+  `SessionMixin` calls `setdefault` on it (session/mixin.py:69), so on an
+  `AsgiServer` it is in the middleware chain regardless of the description.
+  Reading the class attribute alone gives the wrong answer about a shipped
+  server.
 - **`errors=False` is writable and nothing refuses it.** With the outermost
   layer gone, raises escape the server. Friction S10.
-- **The middleware grammar element has five named parameters and no
-  `**kwargs`.** Unlike the plugins section, it physically cannot name a sixth
-  middleware. Friction S3.
+- **The middleware grammar element has four named parameters and `**extra`.**
+  A middleware merged through `middleware_registry=` is switched by its own
+  name (config/elements.py:254-268). The August friction S3 no longer holds.
 
 ## What was verified live while writing this
 
 Five probes, all driving composed servers at the ASGI level:
 
-- the full recipe: the chain walked outwards gives the five in declared order,
-  and every row of the answer table is the probe's own output — including
-  the same 401 answered as a **401 with a login URL** to a JSON caller and as a
-  **302 to the login page** to a browser;
+- the full recipe: the chain walked outwards gave the five August layers in
+  declared order, `AuthMiddleware` included. Since 0.4.0 the chain has four.
+  The same probe answered a 401 as a **401 with a login URL** to a JSON caller
+  and as a **302 to the login page** to a browser. D-SA-4 replaced both with
+  the bare 401;
 - the access log's `level` option: `WARNING` and `debug` resolve as written,
   while **`verbose` and `nonsense` both silently become INFO** (friction S4);
 - **an error response against an ordinary one**, same route family, same
