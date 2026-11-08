@@ -1,7 +1,7 @@
 <!-- generated from live-applications.xml by xmldocs: do not edit, edit the XML -->
 
 ## Applications added, switched off and removed on a running server
-*Proposal · proposal/live-applications · 2026-11-08 · review*
+*Proposal · proposal/live-applications · 2026-11-08 · accepted*
 
 ### Problem
 
@@ -44,6 +44,8 @@ An application is either disabled or enabled. There is no error state. An applic
 2. The server, subscribed to the `applications` branch, builds the application and registers it disabled.
 3. The application reaches its working state, retrying on its own if something it needs is missing, and sends `ready`.
 4. The server enables it. An application that gives up removes itself.
+
+Without an override, the base class sends `ready` as soon as the activation of the application ends. An application that must wait for something overrides it.
 
 Every application follows this road: those added while the server runs and those declared in the recipe at boot. The boot is the same mounting, once per declared application.
 
@@ -147,9 +149,10 @@ Every route of the section requires the administrator role. The rule is applied 
 - **d-add-payload** `decided` — What does add receive?
    1. **The class path, the code and the extra parameters, as the application node of a recipe**
    → Choice: **The class path, the code and the extra parameters, as the application node of a recipe** (GP, 2026-11-08) — It says what, under which name and with which extra parameters; what is always an application class.
-- **d-ready-base** `open` — Does the base class send ready at the end of the startup of an application that adds nothing?
+- **d-ready-base** `decided` — Does the base class send ready at the end of the startup of an application that adds nothing?
    1. **Yes: an application overrides it only when it needs more**
    2. **No: every application writes its own call**
+   → Choice: **Yes: an application overrides it only when it needs more** (GP, 2026-11-08) — Without an override the application sends ready as soon as its activation ends.
 
 ### Consequences
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<proposal id="proposal/live-applications" title="Applications added, switched off and removed on a running server" date="2026-11-08" lang="en" author="Giovanni Porcari" status="review">
+<proposal id="proposal/live-applications" title="Applications added, switched off and removed on a running server" date="2026-11-08" lang="en" author="Giovanni Porcari" status="accepted">
 
   <problem>
     <p>The set of applications is fixed when the server is built. To intervene on a running server, for example to mount a debug application, use it and take it away, the server must be restarted.</p>
@@ -40,6 +40,7 @@
         <item>The application reaches its working state, retrying on its own if something it needs is missing, and sends <c>ready</c>.</item>
         <item>The server enables it. An application that gives up removes itself.</item>
       </list>
+      <p>Without an override, the base class sends <c>ready</c> as soon as the activation of the application ends. An application that must wait for something overrides it.</p>
       <p>Every application follows this road: those added while the server runs and those declared in the recipe at boot. The boot is the same mounting, once per declared application.</p>
     </section>
 
@@ -176,10 +177,11 @@
       <option id="d-add-node" title="The class path, the code and the extra parameters, as the application node of a recipe"/>
       <choice option="d-add-node" by="GP" date="2026-11-08">It says what, under which name and with which extra parameters; what is always an application class.</choice>
     </decision>
-    <decision id="d-ready-base" status="open">
+    <decision id="d-ready-base" status="decided">
       <question>Does the base class send ready at the end of the startup of an application that adds nothing?</question>
       <option id="d-ready-base-yes" title="Yes: an application overrides it only when it needs more"/>
       <option id="d-ready-base-no" title="No: every application writes its own call"/>
+      <choice option="d-ready-base-yes" by="GP" date="2026-11-08">Without an override the application sends ready as soon as its activation ends.</choice>
     </decision>
   </decisions>
 
