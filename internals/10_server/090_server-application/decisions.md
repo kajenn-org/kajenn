@@ -42,8 +42,7 @@ The owner names the replacement.
 
 **S4 [proposal] — proposal "Channel faces on every routed application, one _meta segment, and the server GUI as a separate component".**
 The proposal `xmldocs/proposal/channels-meta-and-server-gui.md` is dated
-2026-10-28 with status `review`. It is on the branch
-`docs/channels-meta-server-gui-proposal`, not on develop. Its decided points
+2026-11-08 with status `accepted`, on develop. Its decided points
 that touch `_server`:
 
 - `ServerApplication` inherits from `RoutedApplication` and gains an MCP face

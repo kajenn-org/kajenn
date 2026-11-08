@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<proposal id="proposal/live-applications" title="Applications added, switched off and removed on a running server" date="2026-11-08" lang="en" author="Giovanni Porcari" status="review">
+
+  <problem>
+    <p>The set of applications is fixed when the server is built. To intervene on a running server, for example to mount a debug application, use it and take it away, the server must be restarted.</p>
+    <p>The design of the server asks for the opposite: installing and removing an application are operations on a running machine, not reasons to restart it. The configuration is meant as a live tree that notifies whoever watches it. Neither exists in the code (kajenn-org/kajenn#75).</p>
+  </problem>
+
+  <current>
+    <fact source="src/kajenn/server.py:253" method="read" verified="2026-11-08"><c>register_application</c> is called only while the server is built. Its docstring says the set of applications is fixed at construction. No method removes an application.</fact>
+    <fact source="src/kajenn/application.py:236" method="read" verified="2026-11-08">An application accepts its owning server once; a second assignment raises <c>RuntimeError</c>.</fact>
+    <fact source="src/kajenn/config/handler.py:80" method="read" verified="2026-11-08"><c>ConfigurationHandler</c> only reads the configuration tree. Nothing subscribes to it.</fact>
+  </current>
+
+  <solution>
+    <section title="Server and application: who does what">
+      <p>The server keeps the state of each application and answers for it. The application is responsible for behaving well: it talks to the server and tells it what it needs to know.</p>
+      <list>
+        <item>The server holds the state of each application, disabled or enabled, answers for a disabled one, and takes the signals the applications send.</item>
+        <item>The application retries what it needs (an external service, a database), says when it is ready, closes its own calls in progress when switched off, and removes itself when it gives up.</item>
+      </list>
+    </section>
+
+    <section title="Two states: disabled and enabled">
+      <p>An application is either disabled or enabled. There is no error state. An application that fails removes itself, and the reason stays in the log.</p>
+      <table title="What a client receives">
+        <row head="true"><cell>Situation</cell><cell>Answer</cell></row>
+        <row><cell>Being mounted, not ready yet</cell><cell>503 with <c>Retry-After</c></cell></row>
+        <row><cell>Switched off</cell><cell>503 without <c>Retry-After</c></cell></row>
+        <row><cell>Being removed</cell><cell>503 without <c>Retry-After</c></cell></row>
+        <row><cell>Removed</cell><cell>404</cell></row>
+        <row><cell>Enabled</cell><cell>The application answers</cell></row>
+      </table>
+    </section>
+
+    <section title="Mounting: disabled first, enabled on ready">
+      <list ordered="true">
+        <item>The <c>application</c> node is written into the live configuration.</item>
+        <item>The server, subscribed to the <c>applications</c> branch, builds the application and registers it disabled.</item>
+        <item>The application reaches its working state, retrying on its own if something it needs is missing, and sends <c>ready</c>.</item>
+        <item>The server enables it. An application that gives up removes itself.</item>
+      </list>
+      <p>Every application follows this road: those added while the server runs and those declared in the recipe at boot. The boot is the same mounting, once per declared application.</p>
+    </section>
+
+    <section title="Switching off and removing">
+      <list>
+        <item>Switching off is an operation of its own. The application becomes disabled, new requests receive 503, the calls in progress reach their end, and the instance stays registered.</item>
+        <item>Switching on makes the same instance enabled again, without building it again.</item>
+        <item>Removing first switches the application off, then takes it away when the application says it has finished. After that the mount answers 404.</item>
+        <item>An application is never moved to another mount. It can be switched off and on, or removed and mounted again.</item>
+      </list>
+    </section>
+
+    <section title="Every signal travels on the KajennBus">
+      <p>An application may run in the process of the server or in a process of its own (<c>spawner="subprocess"</c>). Every signal between an application and the server is therefore a KajennBus <c>call</c> to a route of <c>_server</c>, whatever process the application runs in. A <c>call</c>, not a <c>send</c>: the application receives the answer of the server, including a refusal.</p>
+    </section>
+
+    <section title="The applications section of _server">
+      <table title="Routes under /_server/applications/">
+        <row head="true"><cell>Route</cell><cell>Called by</cell><cell>Effect</cell></row>
+        <row><cell><c>add</c></cell><cell>administrator</cell><cell>Writes the node and builds the application disabled</cell></row>
+        <row><cell><c>ready</c></cell><cell>the application</cell><cell>Enables it</cell></row>
+        <row><cell><c>disable</c></cell><cell>administrator</cell><cell>Switches it off</cell></row>
+        <row><cell><c>enable</c></cell><cell>administrator</cell><cell>Switches it on again</cell></row>
+        <row><cell><c>remove</c></cell><cell>administrator, or the application itself</cell><cell>Switches it off, waits for the application to finish, removes it</cell></row>
+        <row><cell><c>list</c></cell><cell>administrator</cell><cell>The applications, with their state and the capabilities they bring</cell></row>
+      </table>
+      <p><c>add</c> receives what the <c>application</c> node of a recipe holds: the import path of the application class, its <c>code</c>, and the extra parameters handed to its constructor. What is added is always an application class.</p>
+      <p>Every route of the section requires the administrator role. The rule is applied through the route plugins, with no mechanism of its own.</p>
+    </section>
+
+    <section title="Mandatory applications and capabilities">
+      <list>
+        <item>The <c>application</c> node takes the attribute <c>mandatory</c>. When a mandatory application fails, the server logs it and stays up, so that <c>_server</c> keeps answering and the administrator can intervene.</item>
+        <item>An application declares the capabilities it brings. While it is not enabled, those capabilities are missing.</item>
+        <item>A route requiring a missing capability answers 503, as the routing register already records. What to do about it is the logic of each application, case by case. The server takes no action on a missing capability.</item>
+      </list>
+    </section>
+
+    <section title="Not in this proposal">
+      <list>
+        <item>Persistence. Whoever adds an application will choose whether the change survives a restart. The persistent case needs an extra configuration file holding the updates, and is designed later. Until then a hot change lasts until the restart.</item>
+      </list>
+    </section>
+  </solution>
+
+  <decisions>
+    <decision id="d-validate" status="decided">
+      <question>When is a hot-added application checked?</question>
+      <option id="d-validate-before" title="Before the node is written"/>
+      <option id="d-validate-after" title="After the node is written, inside the subscription"/>
+      <option id="d-validate-disabled" title="Mounted disabled, enabled when it works, removed otherwise"/>
+      <choice option="d-validate-disabled" by="GP" date="2026-11-08">The application is built and registered disabled; it is enabled once it is in working state, and removed otherwise.</choice>
+    </decision>
+    <decision id="d-answers" status="decided">
+      <question>What does a client receive from an application that is not enabled?</question>
+      <option id="d-answers-503" title="503, with Retry-After only while it is being mounted; 404 once removed"/>
+      <option id="d-answers-404" title="404 in every case"/>
+      <choice option="d-answers-503" by="GP" date="2026-11-08">A client tells an application on its way in from one on its way out, and both from one that is gone.</choice>
+    </decision>
+    <decision id="d-ready-who" status="decided">
+      <question>Which applications send ready?</question>
+      <option id="d-ready-all" title="Every application, hot-added or declared at boot"/>
+      <option id="d-ready-declared" title="Only those that declare they need it"/>
+      <choice option="d-ready-all" by="GP" date="2026-11-08">One rule for every application; the boot is the same mounting.</choice>
+    </decision>
+    <decision id="d-signal-road" status="decided">
+      <question>How does an application signal the server?</question>
+      <option id="d-signal-direct" title="A Python call on the server"/>
+      <option id="d-signal-kbus" title="A KajennBus call to a route of _server"/>
+      <choice option="d-signal-kbus" by="GP" date="2026-11-08">An application can run in a process of its own; everything goes through the KajennBus.</choice>
+    </decision>
+    <decision id="d-retry" status="decided">
+      <question>Who retries when something an application needs is missing?</question>
+      <option id="d-retry-app" title="The application"/>
+      <option id="d-retry-server" title="The server, through a readiness check of the application"/>
+      <choice option="d-retry-app" by="GP" date="2026-11-08">The server only waits for the signal.</choice>
+    </decision>
+    <decision id="d-give-up" status="decided">
+      <question>What does an application do when it stops retrying?</question>
+      <option id="d-give-up-remove" title="It removes itself"/>
+      <option id="d-give-up-error" title="It goes into an error state and stays registered"/>
+      <choice option="d-give-up-remove" by="GP" date="2026-11-08">No error state is kept; the reason stays in the log.</choice>
+    </decision>
+    <decision id="d-mandatory" status="decided">
+      <question>What marks an application whose failure matters?</question>
+      <option id="d-mandatory-attr" title="The attribute mandatory on the application node, alongside the capabilities"/>
+      <option id="d-mandatory-caps" title="Only the capabilities other applications require"/>
+      <choice option="d-mandatory-attr" by="GP" date="2026-11-08">The administrator can mark an application mandatory even when no other application needs it.</choice>
+    </decision>
+    <decision id="d-mandatory-fails" status="decided">
+      <question>What does the server do when a mandatory application fails?</question>
+      <option id="d-mandatory-stop" title="It stops"/>
+      <option id="d-mandatory-up" title="It stays up"/>
+      <choice option="d-mandatory-up" by="GP" date="2026-11-08">_server keeps answering, so the administrator can intervene.</choice>
+    </decision>
+    <decision id="d-capabilities" status="decided">
+      <question>Who acts when a capability is missing?</question>
+      <option id="d-capabilities-server" title="The server, by not enabling the applications that need it"/>
+      <option id="d-capabilities-routes" title="Nobody: the routes requiring it are unavailable, and each application decides"/>
+      <choice option="d-capabilities-routes" by="GP" date="2026-11-08">Its routes are simply not available; the logic of the application decides case by case.</choice>
+    </decision>
+    <decision id="d-switch-off" status="decided">
+      <question>Is switching off an operation of its own?</question>
+      <option id="d-switch-off-yes" title="Yes, and it is the first step of removing"/>
+      <option id="d-switch-off-no" title="No: switching off means removing"/>
+      <choice option="d-switch-off-yes" by="GP" date="2026-11-08">Removing passes through switching off, which lets the calls end and blocks new ones.</choice>
+    </decision>
+    <decision id="d-move" status="decided">
+      <question>Can an application be moved to another mount?</question>
+      <option id="d-move-no" title="No"/>
+      <option id="d-move-yes" title="Yes, as an operation of its own"/>
+      <choice option="d-move-no" by="GP" date="2026-11-08">It can be switched off and on, not moved.</choice>
+    </decision>
+    <decision id="d-persist" status="decided">
+      <question>Does a hot change survive a restart?</question>
+      <option id="d-persist-caller" title="Whoever adds the application decides"/>
+      <option id="d-persist-never" title="Never"/>
+      <option id="d-persist-always" title="Always"/>
+      <choice option="d-persist-caller" by="GP" date="2026-11-08">The persistent case needs an extra configuration file with the updates; it is designed later.</choice>
+    </decision>
+    <decision id="d-routes" status="decided">
+      <question>Which routes does _server expose?</question>
+      <option id="d-routes-applications" title="Section applications: add, ready, disable, enable, remove, list"/>
+      <choice option="d-routes-applications" by="GP" date="2026-11-08">One section for the whole life of an application.</choice>
+    </decision>
+    <decision id="d-auth" status="decided">
+      <question>Who may call the routes of the applications section?</question>
+      <option id="d-auth-admin" title="One rule: the administrator role on every route"/>
+      <option id="d-auth-own" title="Two rules: an application may call ready and remove on its own code"/>
+      <choice option="d-auth-admin" by="GP" date="2026-11-08">One rule for now, applied through the route plugins.</choice>
+    </decision>
+    <decision id="d-add-payload" status="decided">
+      <question>What does add receive?</question>
+      <option id="d-add-node" title="The class path, the code and the extra parameters, as the application node of a recipe"/>
+      <choice option="d-add-node" by="GP" date="2026-11-08">It says what, under which name and with which extra parameters; what is always an application class.</choice>
+    </decision>
+    <decision id="d-ready-base" status="open">
+      <question>Does the base class send ready at the end of the startup of an application that adds nothing?</question>
+      <option id="d-ready-base-yes" title="Yes: an application overrides it only when it needs more"/>
+      <option id="d-ready-base-no" title="No: every application writes its own call"/>
+    </decision>
+  </decisions>
+
+  <consequences>
+    <list>
+      <item>The set of applications is no longer fixed at construction. The server gains a road to remove an application.</item>
+      <item>The server subscribes to the <c>applications</c> branch of the live configuration. It is the first subscriber of that tree.</item>
+      <item>Every application, at boot too, answers 503 until it sends <c>ready</c>.</item>
+      <item>The design of the server stops listing the move of an application to another prefix among the operations on a running server.</item>
+    </list>
+  </consequences>
+
+  <related>
+    <doc id="proposal/channels-meta-and-server-gui">The _meta segment and the faces of every routed application, released together</doc>
+  </related>
+</proposal>

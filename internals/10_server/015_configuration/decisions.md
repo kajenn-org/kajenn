@@ -23,6 +23,12 @@ declares no mutator, and nothing subscribes to anything (searches in
 [status.md](status.md)). The machinery it would stand on exists and is unused —
 the tree is already a `Bag` subclass and `Bag.subscribe` already exists.
 
+The first subscriber is settled for the application set (owner, 2026-11-08,
+`xmldocs/proposal/live-applications.md`):
+the server subscribes to the `applications` branch, builds a new application
+disabled and enables it when the application sends `ready`. The rest of §5
+stays open.
+
 This is the largest distance between arrival and present here, and it is the
 same subject as S5/S6 of [010 server](../010_server/decisions.md) seen from the
 other side: there the question is what falls away when immobility goes, here it

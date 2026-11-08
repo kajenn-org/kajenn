@@ -11,8 +11,7 @@ No ratified decision. See [open_decisions.md](open_decisions.md).
 
 **S1 [extension pages] — proposal "Channel faces on every routed application, one _meta segment, and the server GUI as a separate component".**
 The proposal `xmldocs/proposal/channels-meta-and-server-gui.md` is dated
-2026-10-28 with status `review`. It is on the branch
-`docs/channels-meta-server-gui-proposal`, not on develop. Its decision
+2026-11-08 with status `accepted`, on develop. Its decision
 d-ext-pages keeps `attach_section(section, name)` for the REST routes of an
 extension. It adds GUI pages registered on the GUI component, only when the
 component exists; `ServerApplication` exposes the component, or `None`. gramlot

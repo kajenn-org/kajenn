@@ -352,9 +352,10 @@ a tree that can be read, written, and that notifies whoever is watching it.
 That is what makes the installed set changeable while the server runs.
 Commands on the administrative surface write into the tree; the write notifies
 the server; the server brings the installed set in line with what the tree now
-says. Installing an application, removing one, moving one to a different
-prefix: each is an operation someone performs on a running machine, not a
-reason to restart it.
+says. Installing an application, switching one off and on, removing one: each
+is an operation someone performs on a running machine, not a reason to restart
+it. An application is never moved to another prefix: it is removed and mounted
+again.
 
 A change that cannot be honoured is **refused, and refused loudly** — two
 applications claiming one code, two claiming one mount, a default naming

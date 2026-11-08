@@ -36,6 +36,10 @@ requires the reason to be written where a static limit is accepted. The
 docstring gives no reason. No method of `BaseServer` removes an application.
 genro-routes 0.30.1 has `BaseRouter.remove_branch` and
 `BaseRouter.detach_instance`. Neither is called in `src/` or `tests/`.
+The owner settled the target on 2026-11-08 in
+`xmldocs/proposal/live-applications.md`:
+applications are mounted disabled, enabled on `ready`, switched off and removed
+while the server runs, and never moved. The code still has the limit.
 
 **S14 [lifespan] — a failing startup can stop the boot.**
 [design.md](design.md) §5 states that a hook that fails is recorded and the

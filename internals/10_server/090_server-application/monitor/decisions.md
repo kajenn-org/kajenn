@@ -11,8 +11,7 @@ No ratified decision. See [open_decisions.md](open_decisions.md).
 
 **S1 [server GUI] — proposal "Channel faces on every routed application, one _meta segment, and the server GUI as a separate component".**
 The proposal `xmldocs/proposal/channels-meta-and-server-gui.md` is dated
-2026-10-28 with status `review`. It is on the branch
-`docs/channels-meta-server-gui-proposal`, not on develop. It places the
+2026-11-08 with status `accepted`, on develop. It places the
 browser interface of `_server` in a component of the repository
 `kajenn-serverapp-gui`, enabled by `gui(gui_class=...)` on the server element
 and served at `/_server/ui/` (d-gui-switch, d-gui-shape). The component reads
