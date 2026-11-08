@@ -58,6 +58,8 @@ mixin's paths stay declared beside the class's own, and the more derived class
 wins on the same path. A ``{mount}`` marker in a path is replaced by the
 instance's mount; on the root mount ``""`` the segment ``/{mount}`` goes away
 whole. The server indexes what ``active_well_known()`` returns.
+``default_well_known`` has the same shape: a default answers a path only when
+no application declares it, whatever the order of registration.
 
 An application reaches its databases with ``db(name=None)`` (the object the
 current call took) and ``async_db(name=None)`` (its awaitable face, for an
@@ -170,9 +172,11 @@ class BaseApplication:
     default rule. All three default to the class attributes below, so a
     subclass can set them declaratively.
 
-    ``well_known`` is read from the class dicts along the MRO, merged base
-    first, and stored on the instance with ``{mount}`` resolved; a path that
-    does not match ``WELL_KNOWN_PATTERN`` raises ``ValueError`` naming it.
+    ``well_known`` and ``default_well_known`` are read from the class dicts
+    along the MRO, merged base first, and stored on the instance with
+    ``{mount}`` resolved; a path that does not match ``WELL_KNOWN_PATTERN``
+    raises ``ValueError`` naming it. A default answers only a path that no
+    application declares in ``well_known``.
     """
 
     code: str = ""
@@ -180,6 +184,7 @@ class BaseApplication:
     db_name: str | None = None
     grammar: type = ApplicationGrammar
     well_known: dict[str, str] = {}
+    default_well_known: dict[str, str] = {}
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -212,21 +217,8 @@ class BaseApplication:
         # ``is None`` and never truthiness: ``mount=""`` IS the site root, and
         # ``mount or code`` would silently move a root app to ``/code``.
         self.mount = code if mount is None else mount
-        merged: dict[str, str] = {}
-        for klass in reversed(cls.__mro__):
-            merged.update(klass.__dict__.get("well_known", {}))
-        self.well_known: dict[str, str] = {}
-        for declared, target in merged.items():
-            if self.mount:
-                path = declared.replace("{mount}", self.mount)
-            else:
-                path = declared.replace("/{mount}", "")
-            if not WELL_KNOWN_PATTERN.match(path):
-                raise ValueError(
-                    f"{cls.__name__}: {declared!r} is not a well-known path "
-                    "(/.well-known/..., /robots.txt, /favicon.ico)"
-                )
-            self.well_known[path] = target
+        self.well_known: dict[str, str] = self.resolve_well_known("well_known")
+        self.default_well_known: dict[str, str] = self.resolve_well_known("default_well_known")
         self._server: BaseServer | None = None
         if kwargs:
             unexpected = ", ".join(sorted(kwargs))
@@ -340,6 +332,31 @@ class BaseApplication:
         """
         return None
 
+    def resolve_well_known(self, attribute: str) -> dict[str, str]:
+        """The class dicts named ``attribute`` along the MRO, merged base first.
+
+        ``{mount}`` is replaced by ``self.mount``; on the root mount ``""`` the
+        segment ``/{mount}`` goes away whole. A path that does not match
+        ``WELL_KNOWN_PATTERN`` raises ``ValueError`` naming it.
+        """
+        cls = type(self)
+        merged: dict[str, str] = {}
+        for klass in reversed(cls.__mro__):
+            merged.update(klass.__dict__.get(attribute, {}))
+        resolved: dict[str, str] = {}
+        for declared, target in merged.items():
+            if self.mount:
+                path = declared.replace("{mount}", self.mount)
+            else:
+                path = declared.replace("/{mount}", "")
+            if not WELL_KNOWN_PATTERN.match(path):
+                raise ValueError(
+                    f"{cls.__name__}: {declared!r} is not a well-known path "
+                    "(/.well-known/..., /robots.txt, /favicon.ico, /healthz, /livez, /readyz)"
+                )
+            resolved[path] = target
+        return resolved
+
     def active_well_known(self) -> dict[str, str]:
         """The well-known paths the server indexes for this application: path → route.
 
@@ -348,6 +365,14 @@ class BaseApplication:
         its own configuration and leave out what is not configured.
         """
         return dict(self.well_known)
+
+    def active_default_well_known(self) -> dict[str, str]:
+        """The default well-known paths the server indexes: path → route.
+
+        A copy of ``default_well_known``, called like ``active_well_known``.
+        A default answers only a path no application declares.
+        """
+        return dict(self.default_well_known)
 
     @property
     def app_snapshot(self) -> dict[str, Any]:
