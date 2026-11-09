@@ -27,6 +27,13 @@ the fixtures above do not pack. The two mechanisms coexist on purpose — the
 fixtures have a dozen consumers among the contract tests, and unifying them is
 its own task, never smuggled into another change.
 
+``start_server(server)`` runs the server's real lifespan startup once and waits
+until every application answers: an ``AsgiServer`` registers its applications
+disabled and each one answers 503 until its ``on_startup`` returned and
+``_server`` received its ``ready``. The request helpers call it before driving
+an ``AsgiServer``; ``stop_started_servers`` (autouse) runs the matching
+shutdown at the end of the test.
+
 ``kajenn_home`` is autouse: no test ever reads the developer's real
 ``~/.kajenn``, whose ``config.py`` would otherwise layer itself under every
 ``AsgiServer(config=...)`` built here.
@@ -65,6 +72,38 @@ def kajenn_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return home
 
 
+#: The lifespans ``start_server`` opened in the running test, by server identity.
+STARTED: dict[int, LifespanRunner] = {}
+
+
+async def start_server(server: Any) -> Any:
+    """Run ``server``'s lifespan startup once and wait until every application answers.
+
+    A server whose applications all answer already (a ``BaseServer``, an
+    application driven alone) is returned as it is. Returns ``server``.
+    """
+    if not hasattr(server, "is_enabled") or id(server) in STARTED:
+        return server
+    if all(server.is_enabled(code) for code in server.applications):
+        return server
+    runner = STARTED[id(server)] = LifespanRunner(server)
+    await runner.startup()
+    async with asyncio.timeout(10):
+        while not all(server.is_enabled(code) for code in server.applications):
+            await asyncio.sleep(0.005)
+    return server
+
+
+@pytest.fixture(autouse=True)
+async def stop_started_servers() -> Any:
+    """Autouse: shut down every lifespan ``start_server`` opened during the test."""
+    yield
+    runners = list(STARTED.values())
+    STARTED.clear()
+    for runner in runners:
+        await runner.shutdown()
+
+
 @pytest.fixture
 def http_request() -> Callable[..., object]:
     """Fixture: drive one request through a server at the ASGI level."""
@@ -84,6 +123,7 @@ def http_request() -> Callable[..., object]:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)  # type: ignore[operator]
         return sent
 
@@ -194,6 +234,7 @@ def sse_request() -> Callable[..., object]:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         task = asyncio.get_running_loop().create_task(server(scope, receive, send))  # type: ignore[operator]
         # wait for the http.response.start so callers can read headers at once
         deadline = asyncio.get_running_loop().time() + 2.0
@@ -224,6 +265,7 @@ class LifespanRunner:
         self._living: asyncio.Task[None] | None = None
 
     async def startup(self) -> None:
+        STARTED[id(self.server)] = self
         self._living = asyncio.ensure_future(
             self.server({"type": "lifespan"}, self._inbox.get, self._send)
         )
@@ -231,6 +273,11 @@ class LifespanRunner:
         await self._answered("lifespan.startup.")
 
     async def shutdown(self) -> None:
+        """Shut the lifespan down; a second call does nothing."""
+        if STARTED.get(id(self.server)) is self:
+            del STARTED[id(self.server)]
+        if self._living is None or self._living.done():
+            return
         await self._inbox.put({"type": "lifespan.shutdown"})
         await self._living
 
@@ -276,6 +323,7 @@ async def ask_app(
     async def send(message: dict[str, Any]) -> None:
         sent.append(message)
 
+    await start_server(app)
     await app(scope, receive, send)
     start = next(message for message in sent if message["type"] == "http.response.start")
     body = b"".join(

@@ -117,6 +117,8 @@ async def test_a_join_presenting_a_held_path_is_refused(tmp_path):
 
     recipe = write_recipe(tmp_path, local_well_known='{"/.well-known/probe": "probe"}')
     async with running(recipe, wait=False) as server:
+        while not server.is_enabled("local"):  # the in-process application sends its ready
+            await asyncio.sleep(0.01)
         # A spawned process joins well within this bound (see the test above).
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:

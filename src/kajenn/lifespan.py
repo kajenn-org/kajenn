@@ -16,8 +16,11 @@
 
 ``Lifespan`` is constructed with the server it manages (dual parent-child:
 ``self.server``, SPECIFICATION.md §4). On ``lifespan.startup`` it runs
-``on_startup`` on the server's applications in registration order; on
-``lifespan.shutdown`` it runs ``on_shutdown`` in REVERSE order. Hooks may
+``on_startup`` of the applications already enabled in registration order, and
+starts the activation of every application registered disabled in a task the
+startup does not wait for (``on_startup``, then ``server.application_ready``);
+on ``lifespan.shutdown`` it cancels the activations still pending and runs
+``on_shutdown`` in REVERSE order. Hooks may
 be sync or async, detected with ``inspect.iscoroutinefunction`` at call time.
 The server's database handlers bracket the hooks: each handler's ``open()``
 runs before the first ``on_startup``, its ``close()`` after the last
@@ -26,10 +29,14 @@ runs before the first ``on_startup``, its ``close()`` after the last
 A hook that raises is logged and the sequence CONTINUES: one app's error
 never blocks the others, and uvicorn always receives the matching
 ``.complete`` message — app errors are isolated, never abort the protocol.
-``FatalBootError`` is the ONE exception to that isolation: an ``on_startup``
-hook raises it to declare its failure fatal, the startup stops there and
-uvicorn receives ``lifespan.startup.failed``, so the server exits instead
-of running without what the hook was there to build.
+``FatalBootError`` is the ONE exception to that isolation: a failure of the
+server itself (a database handler that does not open, an enabled
+application's ``on_startup`` raising it) stops the startup and uvicorn
+receives ``lifespan.startup.failed``, so the server exits instead of running
+without what the step was there to build — unless the server was built with
+``abort_on_fatal_boot_error=False``: then the startup goes on with the public
+part closed and only the management application answers. In the activation of
+an application registered disabled it is an ordinary error.
 
 **The server's lifecycle states live here** — the lifespan is the lifecycle.
 ``RUNNING`` takes new requests in charge; anything else refuses them with 503.
@@ -47,6 +54,7 @@ still being served. A state somebody already set is respected: whoever writes
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 from typing import TYPE_CHECKING, Iterable
@@ -98,6 +106,7 @@ class Lifespan:
     def __init__(self, server: BaseServer) -> None:
         self.server = server
         self._logger = logging.getLogger(__name__)
+        self._activations: set[asyncio.Task[None]] = set()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:  # noqa: ARG002
         """Drive the ASGI lifespan protocol: startup then shutdown, both acked.
@@ -120,11 +129,19 @@ class Lifespan:
                 return
 
     async def startup(self) -> None:
-        """Open the database handlers, then run ``on_startup`` in registration order.
+        """Open the database handlers, then start every application.
 
-        A handler whose ``open`` raises is a ``FatalBootError``, like one raised
-        by a hook: the startup stops there and the handlers already opened are
-        closed before the error reaches ``__call__``.
+        A handler whose ``open`` raises is a ``FatalBootError``. With the
+        server's ``abort_on_fatal_boot_error`` (the default) the startup stops
+        there and the handlers already opened are closed before the error
+        reaches ``__call__``; without it the error is logged, the server closes
+        its public part and the startup goes on.
+
+        An application already enabled runs ``on_startup`` here, in
+        registration order, and a ``FatalBootError`` it raises stops the
+        startup as above. An application registered disabled is activated in
+        a task of its own that the startup does not wait for: ``on_startup``,
+        then ``server.application_ready``. Until then it answers 503.
         """
         opened: list[DbHandlerBase] = []
         try:
@@ -136,11 +153,42 @@ class Lifespan:
                         f"{type(handler).__name__}.open failed: {failure}"
                     ) from failure
                 opened.append(handler)
+        except FatalBootError:
+            if self.server.abort_on_fatal_boot_error:
+                await self._close_handlers(opened)
+                raise
+            self._logger.exception("Fatal boot error: the server stays up for management only")
+            self.server.close_public()
+        try:
             for app in self._apps():
-                await self._run_hook(app, "on_startup")
+                if self.server.is_enabled(app.code):
+                    await self._run_hook(app, "on_startup")
+                else:
+                    task = asyncio.create_task(self.activate(app))
+                    self._activations.add(task)
+                    task.add_done_callback(self._activations.discard)
         except FatalBootError:
             await self._close_handlers(opened)
             raise
+
+    async def activate(self, app: BaseApplication) -> None:
+        """Run ``app``'s ``on_startup``, then tell the server it is ready.
+
+        A hook that raises leaves the application disabled: the error is
+        logged and no ready is sent. A ``FatalBootError`` here is an ordinary
+        error: a failure of one application is not a failure of the server.
+        """
+        handler = app.on_startup
+        try:
+            if inspect.iscoroutinefunction(handler):
+                await handler()
+            else:
+                handler()
+        except Exception:
+            self._logger.exception("%s.on_startup raised: the application stays disabled",
+                                   type(app).__name__)
+            return
+        await self.server.application_ready(app)
 
     async def shutdown(self) -> None:
         """Stop accepting, drain what is in flight, THEN run the hooks in reverse.
@@ -155,6 +203,10 @@ class Lifespan:
         closed; a ``close`` that raises is logged and the next one still runs.
         """
         self.server.start_leaving()
+        pending = list(self._activations)
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
         still_in_flight = await self.server.requests.await_drain(SHUTDOWN_DRAIN_TIMEOUT_SECONDS)
         if still_in_flight:
             self._logger.warning(

@@ -34,6 +34,7 @@ from kajenn import AsgiServer, BaseApplication, RoutedApplication
 from kajenn.config import AsgiConfigBuilder
 from kajenn.types import Message, Scope
 from kajenn.wsx import WsxConnection, WsxEnvelope
+from tests.conftest import start_server
 
 
 class Faces(RoutedApplication):
@@ -75,6 +76,7 @@ async def drive(server: AsgiServer, path: str, *, method: str = "GET", body: byt
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     raw = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
     return json.loads(raw)
@@ -104,9 +106,11 @@ class TestTheScopeKey:
         # wf:contract: serve_kbus_message writes the message's channel; without one the
         # wf:contract: application's http_channel applies.
         server = faces_server()
+        await start_server(server)
         assert await server.kbus_call("/plain/channel", {}, channel="telegram") == {
             "channel": "telegram"
         }
+        await start_server(server)
         assert await server.kbus_call("/plain/channel", {}) == {"channel": "api"}
 
     async def test_a_wsx_message_is_on_the_wsx_channel(self) -> None:
@@ -147,6 +151,7 @@ class TestTheScopeKey:
             "query_string": b"",
             "subprotocols": [],
         }
+        await start_server(server)
         connection = WsxConnection(server, scope, receive, send)
         await connection.serve()
         assert seen["handshake"] == "wsx"
@@ -194,6 +199,7 @@ class TestResolutionReadsTheScope:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)
         assert next(m["status"] for m in sent if m["type"] == "http.response.start") == 404
         envelope = {

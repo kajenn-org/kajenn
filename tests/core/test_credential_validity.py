@@ -35,6 +35,7 @@ from genro_routes import route
 from kajenn import ApiKeyStore, AsgiServer, BaseApplication, RoutedApplication
 from kajenn.exceptions import HTTPUnauthorized
 from kajenn.server_app import ServerApplication
+from tests.conftest import start_server
 
 JWT_SECRET = "sign-me-please"
 
@@ -96,10 +97,12 @@ async def test_an_expired_jwt_is_refused_even_when_cached() -> None:
     server = make_server()
     token = jwt.encode({"sub": "carol", "exp": int(time.time()) + 2}, JWT_SECRET, algorithm="HS256")
     credential = f"Bearer {token}"
+    await start_server(server)
     avatar = await server.authenticate_credential(credential, "api")
     assert avatar.identity == "carol"
     await asyncio.sleep(2.5)
     with pytest.raises(HTTPUnauthorized):
+        await start_server(server)
         await server.authenticate_credential(credential, "api")
 
 
@@ -112,12 +115,14 @@ async def judged_like_pyjwt(exp: Any, expires: int) -> None:
     server = make_server()
     token = jwt.encode({"sub": "carol", "exp": exp}, JWT_SECRET, algorithm="HS256")
     credential = f"Bearer {token}"
+    await start_server(server)
     avatar = await server.authenticate_credential(credential, "api")
     assert avatar.identity == "carol"
     await asyncio.sleep(expires + 0.2 - time.time())
     with pytest.raises(jwt.ExpiredSignatureError):
         jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     with pytest.raises(HTTPUnauthorized):
+        await start_server(server)
         await server.authenticate_credential(credential, "api")
 
 
@@ -145,10 +150,12 @@ async def test_an_expired_api_key_is_refused_even_when_cached() -> None:
     server = make_server()
     key = server.api_key_store.issue("ci-deploy", ["admin"], expires_at=time.time() + 1)
     credential = f"Bearer {key}"
+    await start_server(server)
     avatar = await server.authenticate_credential(credential, "api")
     assert avatar.identity == "ci-deploy"
     await asyncio.sleep(1.5)
     with pytest.raises(HTTPUnauthorized):
+        await start_server(server)
         await server.authenticate_credential(credential, "api")
 
 
@@ -159,10 +166,13 @@ async def test_a_channel_route_reporting_valid_until_bounds_the_cache() -> None:
     server = make_server()
     idp: Idp = server.applications["idp"]
     idp.valid_until = time.time() + 1
+    await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
+    await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
     assert len(idp.calls) == 1
     await asyncio.sleep(1.5)
+    await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
     assert len(idp.calls) == 2
 
@@ -173,7 +183,9 @@ async def test_a_channel_route_without_valid_until_keeps_the_ttl() -> None:
     # wf:contract: (TTL 300 s).
     server = make_server()
     idp: Idp = server.applications["idp"]
+    await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
     await asyncio.sleep(1.5)
+    await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
     assert len(idp.calls) == 1

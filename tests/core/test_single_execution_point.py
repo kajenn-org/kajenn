@@ -35,6 +35,7 @@ from kajenn import AsgiServer, BaseApplication, RoutedApplication
 from kajenn.request import Request
 from kajenn.mcp.engine import McpEngine
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 
 class Tools(RoutedApplication):
@@ -105,6 +106,7 @@ async def drive(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     return sent
 

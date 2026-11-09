@@ -96,12 +96,16 @@ from .plugin_mixin import PluginMixin
 from .remote_application import PROXY_OPTIONS, RemoteApplication
 from .server import BaseServer
 from .server_app.server_app import ServerApplication
-from .session import SessionMixin
+from .server_app.server_sections.applications_section import SERVER_ADMIN_TAG
+from .session import Avatar, SessionMixin
 from .site_home import SiteHome
 from .storage_mixin import StorageMixin
 from .tasks import TaskMixin
 
 __all__ = ["AsgiServer"]
+
+#: The code of the management application every ``AsgiServer`` hosts.
+MANAGEMENT_CODE = "_server"
 
 ConfigSource = str | Path | type | BuilderBase | ConfigurationHandler
 
@@ -135,7 +139,7 @@ class AsgiServer(
             kwargs["kbus_source"] = str(config)
         self._config = self._build_config(config, kwargs)
         kwargs = {**self._configured_kwargs(self.config, role), **kwargs}
-        if role is None and not any(app.code == "_server" for app in kwargs["applications"]):
+        if role is None and not any(app.code == MANAGEMENT_CODE for app in kwargs["applications"]):
             kwargs["applications"] = [*kwargs["applications"], ServerApplication()]
         self._site_name: str | None = kwargs.pop("site_name", None)
         site_home = kwargs.pop("site_home", None)
@@ -262,6 +266,29 @@ class AsgiServer(
         """
         return self._config
 
+    def starts_enabled(self, app: Any) -> bool:
+        """Only ``_server`` answers at once; every other application waits for its ``ready``.
+
+        In an application's dedicated process (``kbus_role``) there is no
+        ``_server`` to receive a ``ready``: its applications answer at once.
+        """
+        return self.kbus_role is not None or app.code == MANAGEMENT_CODE
+
+    def is_management(self, app: Any) -> bool:
+        """``_server`` is the management application."""
+        return bool(app.code == MANAGEMENT_CODE)
+
+    async def application_ready(self, app: Any) -> None:
+        """Send ``ready`` for ``app`` to ``_server`` over the KajennBus.
+
+        The call carries the identity of the application with the
+        administrator tag the ``applications`` section of ``_server`` asks for.
+        """
+        await self.kbus_call(
+            f"/{MANAGEMENT_CODE}/applications/ready", {"code": app.code},
+            auth=Avatar(f"application:{app.code}", [SERVER_ADMIN_TAG]),
+        )
+
     def _check_oidc_external_url(self) -> None:
         """Refuse to boot when a provider is configured without ``external_url``.
 
@@ -276,7 +303,7 @@ class AsgiServer(
         so loudly instead of failing at the first login attempt with a
         provider-side error.
         """
-        providers = getattr(self.applications.get("_server"), "oidc_providers", None)
+        providers = getattr(self.applications.get(MANAGEMENT_CODE), "oidc_providers", None)
         if providers and self.external_url is None:
             codes = ", ".join(sorted(providers))
             raise ValueError(

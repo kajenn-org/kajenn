@@ -36,6 +36,7 @@ from genro_routes import RoutingClass, route
 from kajenn import AsgiServer, BaseApplication, McpEngine, RoutedApplication
 from kajenn.types import Message, Scope
 from kajenn.server_app import ServerApplication
+from tests.conftest import start_server
 
 ROUTES = {"public", "admin_only", "user_only"}
 
@@ -95,6 +96,7 @@ async def drive(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     start = next(m for m in sent if m["type"] == "http.response.start")
     raw = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")

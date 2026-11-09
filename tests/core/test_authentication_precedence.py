@@ -40,6 +40,7 @@ from kajenn.mcp.engine import McpEngine
 from kajenn.mcp.jsonrpc import McpError
 from kajenn.types import Message, Scope
 from kajenn.server_app import ServerApplication
+from tests.conftest import start_server
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
 
@@ -108,6 +109,7 @@ async def drive(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     start = next(m for m in sent if m["type"] == "http.response.start")
     raw = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
@@ -148,6 +150,7 @@ class TestTheHeaderComesFirst:
     async def test_a_scope_without_channel_is_read_as_rest(self) -> None:
         server = api_server()
         scope: Scope = {"type": "http", "headers": bearer("sk_live_xyz")}
+        await start_server(server)
         avatar = await server.authenticate(scope)
         assert avatar.identity == "svc"
 
@@ -159,6 +162,7 @@ class TestTheCacheAndTheRoute:
             channels={"mcp": {"authentication_route": "/idp/check"}},
         )
         idp = server.applications["idp"]
+        await start_server(server)
         first = asyncio.create_task(server.authenticate_credential("Bearer good", "mcp"))
         await asyncio.sleep(0)
         server.forget_all_credentials()
@@ -170,6 +174,7 @@ class TestTheCacheAndTheRoute:
     async def test_forget_credential_tolerates_a_concurrent_write(self) -> None:
         """Insert one unrelated entry while revocation is removing a cached credential."""
         server = api_server()
+        await start_server(server)
         await server.authenticate_credential("Bearer sk_live_xyz", "api")
         revoking = threading.Event()
         written = threading.Event()
@@ -216,6 +221,7 @@ class TestTheCacheAndTheRoute:
             channels={"mcp": {"authentication_route": "/idp/check"}},
         )
         with pytest.raises(HTTPException) as failed:
+            await start_server(server)
             await server.authenticate_credential("Bearer x", "mcp")
         assert failed.value.status == 503
 
@@ -228,6 +234,7 @@ class TestTheCacheAndTheRoute:
             server, "/_server/auth/forget_credential", method="POST", body=json.dumps({"credential": "x"}).encode()
         )
         assert status == 403
+        await start_server(server)
         answer = await server.kbus_call(
             "/_server/auth/authenticate", {"credential": "Bearer sk_live_xyz", "channel": "api"}
         )
@@ -333,7 +340,7 @@ class TestCoverageOfTheCorrections:
         assert (await call("ghost")).code == -32601
 
     async def test_an_unreachable_route_is_503(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        server = api_server()
+        server = await start_server(api_server())
 
         async def lost(*args: Any, **kwargs: Any) -> Any:
             raise TimeoutError("no reply")
@@ -354,5 +361,6 @@ class TestCoverageOfTheCorrections:
             channels={"mcp": {"authentication_route": "/idp/check"}},
         )
         with pytest.raises(HTTPException) as refused:
+            await start_server(server)
             await server.authenticate_credential("Bearer x", "mcp")
         assert refused.value.status == 403

@@ -40,6 +40,7 @@ from kajenn import AsgiServer, RoutedApplication
 from kajenn.lifespan import STOPPING
 from kajenn.tasks import new_descriptor
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 
 class Primary(RoutedApplication):
@@ -74,6 +75,7 @@ async def drive(server: Any, path: str, *, method: str = "GET",
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     return sent
 
@@ -161,12 +163,10 @@ class TestExecutorBridge:
     """A task carrying session_id publishes started/settled while it runs."""
 
     async def test_lifecycle_events_stream(self, server: AsgiServer, sse_request) -> None:
-        stage(server, "t-bridge", "sess-5")
+        # The stream starts the server, whose worker runs the staged task.
         conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-5")])
         try:
-            server.tasks.spool.assign("t-bridge", "local")
-            outcome = await server.tasks.executor.execute("t-bridge", "local")
-            assert outcome == "ok"
+            stage(server, "t-bridge", "sess-5")
             frames = await conn.wait_frames(2)
             events = [payload(f) for f in frames]
             assert events[0] == {"task_id": "t-bridge", "type": "started"}

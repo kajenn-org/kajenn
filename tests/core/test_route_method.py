@@ -30,6 +30,7 @@ from genro_routes import route
 
 from kajenn import AsgiServer, RoutedApplication
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 
 class Orders(RoutedApplication):
@@ -83,6 +84,7 @@ async def drive(server: AsgiServer, method: str, path: str) -> list[Message]:
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     return sent
 
@@ -145,6 +147,7 @@ class TestUndeclaredMethod:
 class TestNotHttp:
     async def test_a_kbus_call_reaches_a_get_route(self) -> None:
         server = make_server()
+        await start_server(server)
         assert await server.kbus_call("/orders/lookup", {"item": "book"}) == {"found": "book"}
 
     async def test_discovery_still_lists_routes_of_every_method(self) -> None:
@@ -152,3 +155,12 @@ class TestNotHttp:
         scope: Scope = {"type": "http", "method": "GET", "path": "/", "headers": []}
         listing = await orders(server).discover(scope)
         assert {"submit", "remove", "lookup", "free"} <= set(listing["entries"])
+
+
+class TestDeclaredMethodOnTheServerApplication:
+    async def test_get_on_the_login_route_is_405(self, http_request, response_status) -> None:
+        # The routes of _server keep their declared method whatever resolved
+        # them first: the well-known check at registration, the task scheduler.
+        server = AsgiServer(applications=[(Orders, {"code": "orders"})])
+        sent = await http_request(server, "/_server/login")
+        assert response_status(sent) == 405

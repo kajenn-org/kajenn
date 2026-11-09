@@ -160,6 +160,7 @@ class BaseServer:
         default: str | None = kwargs.pop("default", None)
         max_threads: int | None = kwargs.pop("max_threads", None)
         debug: bool | str = kwargs.pop("debug", False)
+        abort_on_fatal: bool = kwargs.pop("abort_on_fatal_boot_error", True)
         websocket: dict[str, Any] = kwargs.pop("websocket", None) or {}
         shutdown_timeout: float = float(
             kwargs.pop("shutdown_timeout_seconds", None) or SHUTDOWN_TIMEOUT_SECONDS
@@ -172,6 +173,16 @@ class BaseServer:
         super().__init__()
         self._applications: dict[str, BaseApplication] = {}
         self._by_mount: dict[str, BaseApplication] = {}
+        self._enabled: set[str] = set()
+        self._public_closed = False
+        self.abort_on_fatal_boot_error = abort_on_fatal
+        """What a ``FatalBootError`` of the startup does.
+
+        ``True`` (the default) ends the process: the lifespan answers
+        ``lifespan.startup.failed``. ``False`` keeps the server up for its
+        management application only: every other application answers 503 and
+        the server reports itself not ready.
+        """
         self._well_known_routes: dict[str, tuple[BaseApplication, str]] = {}
         self._default_well_known_routes: dict[str, tuple[BaseApplication, str]] = {}
         self._databases: dict[str, DbHandlerBase] = {}
@@ -271,6 +282,64 @@ class BaseServer:
         self.claim_well_known(app, app.active_well_known(), app.active_default_well_known())
         self.applications[app.code] = app
         self._by_mount[mount] = app
+        if self.starts_enabled(app):
+            self._enabled.add(app.code)
+
+    def starts_enabled(self, app: BaseApplication) -> bool:
+        """Whether ``app`` answers as soon as it is registered.
+
+        On the base server every application does: it has no management
+        application to receive a ``ready``. A composition that has one
+        registers its applications disabled until they send it.
+        """
+        return True
+
+    def is_management(self, app: BaseApplication) -> bool:
+        """Whether ``app`` is the management application: none on the base server."""
+        return False
+
+    def is_enabled(self, code: str) -> bool:
+        """Whether the application ``code`` answers its requests."""
+        return code in self._enabled
+
+    def enable_application(self, code: str) -> None:
+        """Make the application ``code`` answer; ``LookupError`` when none has that code."""
+        if code not in self.applications:
+            raise LookupError(f"no application with code {code!r}")
+        self._enabled.add(code)
+
+    async def application_ready(self, app: BaseApplication) -> None:
+        """``app`` finished its activation: enable it.
+
+        A composition with a management application overrides this to send
+        the signal to it instead.
+        """
+        self.enable_application(app.code)
+
+    @property
+    def public_closed(self) -> bool:
+        """Whether only the management application answers (a fatal boot kept the server up)."""
+        return self._public_closed
+
+    def close_public(self) -> None:
+        """Answer 503 for every application except the management one."""
+        self._public_closed = True
+
+    def refusal(self, app: BaseApplication) -> Response | None:
+        """The 503 ``app`` answers instead of serving, or ``None`` when it serves.
+
+        An application not enabled yet is being mounted: 503 with
+        ``Retry-After``. With the public part closed every application but the
+        management one answers 503 without it.
+        """
+        if self._public_closed and not self.is_management(app):
+            return Response(content="Service Unavailable", status_code=503,
+                            media_type="text/plain")
+        if app.code not in self._enabled:
+            return Response(content="Service Unavailable", status_code=503,
+                            media_type="text/plain",
+                            headers={"retry-after": str(REFUSED_RETRY_AFTER_SECONDS)})
+        return None
 
     def claim_well_known(
         self, app: BaseApplication, routes: dict[str, str], defaults: dict[str, str]
@@ -584,12 +653,15 @@ class BaseServer:
             return Response(content="Not Found", status_code=404, media_type="text/plain"), scope
         app = self.application_at(segment)
         if app is not None:
+            refused = self.refusal(app)
+            if refused is not None:
+                return refused, scope
             sub_scope = dict(scope)
             sub_scope["path"] = "/" + remainder
             return app, sub_scope
         root = self.root_application
         if root is not None:
-            return root, scope
+            return self.refusal(root) or root, scope
         default = self.default_application if not rest else None
         if default is not None:
             return self.redirect_to_default(default, scope), scope
@@ -612,6 +684,9 @@ class BaseServer:
                 content="unimplemented well-known URL", status_code=404, media_type="text/plain"
             ), scope
         app, route = declared
+        refused = self.refusal(app)
+        if refused is not None:
+            return refused, scope
         sub_scope = dict(scope)
         sub_scope["path"] = "/" + route
         return app, sub_scope

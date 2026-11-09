@@ -292,7 +292,7 @@ class KBusMixin:
             environment={}, pid=pid)
 
     def _external_joined(self, code: str, meta: dict[str, Any]) -> None:
-        """Index the well-known paths of a process that joined and record its pid.
+        """Index the well-known paths of a process that joined, record its pid, wake its mount.
 
         ``meta["well_known"]`` and ``meta["default_well_known"]`` — the paths
         its application answers and the ones it gives as default, public path →
@@ -314,6 +314,7 @@ class KBusMixin:
             raise kbus.Refused(f"application {code!r} refused: {exc}") from exc
         self.kbus_spawners[app.spawner].joined(f"application:{code}")
         self.kbus_pids[code] = meta["pid"]
+        app.mark_joined()
 
     async def serve_kbus_call(self, message: kbus.Message, reply: Any) -> None:
         """The handler of the member: an http or websocket stream, ``joined``

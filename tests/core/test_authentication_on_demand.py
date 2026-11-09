@@ -37,6 +37,7 @@ from kajenn.middleware import default_registry
 from kajenn.types import Message, Scope
 from kajenn.wsx import WsxConnection, WsxEnvelope
 from kajenn.server_app import ServerApplication
+from tests.conftest import start_server
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
 
@@ -91,6 +92,7 @@ async def drive(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     start = next(m for m in sent if m["type"] == "http.response.start")
     raw = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
@@ -249,6 +251,7 @@ class TestTheBus:
         # wf:contract: a scope already carrying an avatar (info.auth on the bus) is not
         # wf:contract: authenticated again: the ruled route answers with that identity.
         server = api_server()
+        await start_server(server)
         answer = await server.kbus_call("/api/secret", {}, auth=Avatar("bus", ["admin"]))
         assert answer == {"identity": "bus"}
 
@@ -291,6 +294,7 @@ class TestWsx:
                 "query_string": b"",
                 "subprotocols": [],
             }
+            await start_server(server)
             connection = WsxConnection(server, scope, receive, send)
             await connection.serve()
             return connection, sent

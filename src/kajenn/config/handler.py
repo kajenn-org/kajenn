@@ -33,7 +33,7 @@ The helpers read the tree by two rules, and the grammar decides which applies:
 Section → constructor kwarg:
 
 - ``site`` → ``site_name``/``site_home`` (the folder the site owns).
-- ``server`` → ``host``/``port``/``external_url``/``max_threads``/``shutdown_timeout_seconds``/``debug``, its
+- ``server`` → ``host``/``port``/``external_url``/``max_threads``/``shutdown_timeout_seconds``/``debug``/``abort_on_fatal_boot_error``, its
   ``session`` child → ``session_ttl``, its ``tasks`` child → ``tasks``.
 - ``middleware`` → ``middleware`` ({name: bool | dict} switches).
 - ``authentication`` → ``users``/``tokens`` (the store descriptors ``AuthMixin``
@@ -115,6 +115,7 @@ class ConfigurationHandler(ConfigHandler):
             "max_threads",
             "shutdown_timeout_seconds",
             "debug",
+            "abort_on_fatal_boot_error",
         )
         session = self.node("server.session")
         if session is not None:

@@ -46,6 +46,7 @@ from kajenn.exceptions import HTTPUnauthorized
 from kajenn.middleware.base import BaseMiddleware
 from kajenn.storage_mixin import DEFAULT_HOME_MOUNT, DEFAULT_SITE_MOUNT
 from kajenn.types import Message, Receive, Scope, Send
+from tests.conftest import start_server
 
 
 
@@ -120,6 +121,7 @@ async def http_get(server: AsgiServer, path: str) -> bytes:
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     return b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
 
@@ -137,6 +139,7 @@ async def http_status_headers(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     start = next(m for m in sent if m["type"] == "http.response.start")
     return start["status"], start["headers"]
@@ -294,6 +297,7 @@ class TestSession:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)
         assert scope.get("session") is not None
         assert server.session(scope) is scope["session"]

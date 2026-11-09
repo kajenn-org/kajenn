@@ -165,8 +165,17 @@ class RemoteApplication(BaseApplication):
         self.request_timeout = request_timeout
         self.max_calls = max_calls
         self._slots = asyncio.Semaphore(max_calls)
+        self._joined = asyncio.Event()
         if hasattr(app_class, "serve_websocket"):
             self.serve_websocket = self._forward_websocket
+
+    def mark_joined(self) -> None:
+        """Record that the spawned process sent ``joined``."""
+        self._joined.set()
+
+    async def on_startup(self) -> None:
+        """Return once the spawned process has joined: then the server sends ``ready``."""
+        await self._joined.wait()
 
     async def __call__(self, scope, receive, send) -> None:
         """Forward one request to the member and write its answer as it streams.
