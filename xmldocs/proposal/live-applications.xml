@@ -41,6 +41,9 @@
         <item>The server enables it. An application that gives up removes itself.</item>
       </list>
       <p>Without an override, the base class sends <c>ready</c> as soon as the activation of the application ends. An application that must wait for something overrides it.</p>
+      <p>The end of activation is the return of <c>on_startup</c>. At boot the lifespan opens the databases of the server and starts the <c>on_startup</c> of every application without waiting for them, so the server serves at once: an application being mounted answers 503 with <c>Retry-After</c>, and <c>_server</c> is reachable. For a hot-added application the server runs <c>on_startup</c> right after registering it.</p>
+      <p>An application with <c>spawner</c> has its counterpart in the process of the server, a <c>RemoteApplication</c>. Its <c>on_startup</c> waits for the <c>joined</c> message of the child process, then returns; <c>joined</c> stays internal between the child and its counterpart.</p>
+      <p>The mechanism lives in <c>AsgiServer</c>, which has the KajennBus and <c>_server</c>. On a bare <c>BaseServer</c> the applications are enabled at once.</p>
       <p>Every application follows this road: those added while the server runs and those declared in the recipe at boot. The boot is the same mounting, once per declared application.</p>
     </section>
 
@@ -50,6 +53,8 @@
         <item>Switching on makes the same instance enabled again, without building it again.</item>
         <item>Removing first switches the application off, then takes it away when the application says it has finished. After that the mount answers 404.</item>
         <item>An application is never moved to another mount. It can be switched off and on, or removed and mounted again.</item>
+        <item><c>_server</c> is never disabled: <c>disable</c> and <c>remove</c> on <c>_server</c> answer 400.</item>
+        <item>Removing calls the hook <c>on_remove</c> of the application after it is disabled, and waits for it. When <c>on_remove</c> returns, the application has finished. <c>on_shutdown</c> stays for the shutdown of the server.</item>
       </list>
     </section>
 
@@ -77,6 +82,10 @@
         <item>An application declares the capabilities it brings. While it is not enabled, those capabilities are missing.</item>
         <item>A route requiring a missing capability answers 503, as the routing register already records. What to do about it is the logic of each application, case by case. The server takes no action on a missing capability.</item>
       </list>
+    </section>
+
+    <section title="FatalBootError">
+      <p><c>FatalBootError</c> is a problem of the server as a whole, for example a database of the server that does not open. An <c>on_startup</c> no longer raises it: an application whose failure matters is <c>mandatory</c>. The option <c>abort_on_fatal_boot_error</c> of the <c>server</c> element chooses the effect: <c>True</c>, the default, ends the process as today; <c>False</c> keeps the server up for <c>_server</c> only.</p>
     </section>
 
     <section title="Not in this proposal">
@@ -148,6 +157,48 @@
       <option id="d-switch-off-yes" title="Yes, and it is the first step of removing"/>
       <option id="d-switch-off-no" title="No: switching off means removing"/>
       <choice option="d-switch-off-yes" by="GP" date="2026-11-08">Removing passes through switching off, which lets the calls end and blocks new ones.</choice>
+    </decision>
+    <decision id="d-server-self" status="decided">
+      <question>Can _server be switched off or removed?</question>
+      <option id="d-server-self-no" title="No: disable and remove on _server answer 400"/>
+      <option id="d-server-self-yes" title="Yes"/>
+      <choice option="d-server-self-no" by="GP" date="2026-11-09">_server is the door the administrator intervenes from.</choice>
+    </decision>
+    <decision id="d-remove-hook" status="decided">
+      <question>How does the server ask an application to finish before removing it?</question>
+      <option id="d-remove-hook-shutdown" title="on_shutdown"/>
+      <option id="d-remove-hook-own" title="A hook of its own, on_remove, called after the application is disabled"/>
+      <choice option="d-remove-hook-own" by="GP" date="2026-11-09">on_shutdown stays for the shutdown of the server. Lifecycle hooks are named on_&lt;verb&gt; when they run before the event completes and on_&lt;verb&gt;_done when they run after.</choice>
+    </decision>
+    <decision id="d-activation" status="decided">
+      <question>What is the end of activation, after which the base class sends ready?</question>
+      <option id="d-activation-startup" title="The return of on_startup"/>
+      <option id="d-activation-new" title="A new hook"/>
+      <choice option="d-activation-startup" by="GP" date="2026-11-09">Simpler to use on_startup.</choice>
+    </decision>
+    <decision id="d-boot-detached" status="decided">
+      <question>At boot, does the lifespan wait for the on_startup of the applications?</question>
+      <option id="d-boot-await" title="Yes, as today: nothing is served until they all return"/>
+      <option id="d-boot-detached-yes" title="No: the server serves at once, applications being mounted answer 503"/>
+      <choice option="d-boot-detached-yes" by="GP" date="2026-11-09"/>
+    </decision>
+    <decision id="d-joined" status="decided">
+      <question>How does an application in a separate process become ready?</question>
+      <option id="d-joined-ready" title="Its process calls ready, and joined disappears"/>
+      <option id="d-joined-remote" title="The on_startup of its RemoteApplication waits for joined, then the base class sends ready"/>
+      <choice option="d-joined-remote" by="GP" date="2026-11-09">The counterpart in the server process sends ready when it knows its child is ready.</choice>
+    </decision>
+    <decision id="d-bare-server" status="decided">
+      <question>How do the applications of a bare BaseServer, with no KajennBus and no _server, become enabled?</question>
+      <option id="d-bare-enabled" title="They are enabled at once"/>
+      <option id="d-bare-kbus" title="The KajennBus and _server move into BaseServer"/>
+      <choice option="d-bare-enabled" by="GP" date="2026-11-09">The mechanism lives in AsgiServer, the server of every real site.</choice>
+    </decision>
+    <decision id="d-fatal" status="decided">
+      <question>What is FatalBootError once the lifespan no longer waits for on_startup?</question>
+      <option id="d-fatal-server" title="A problem of the server as a whole; its effect is chosen by abort_on_fatal_boot_error, default True"/>
+      <option id="d-fatal-mandatory" title="Removed in favour of mandatory"/>
+      <choice option="d-fatal-server" by="GP" date="2026-11-09">FatalBootError concerns the server, mandatory concerns one application. Default delegated: True, the behaviour of today.</choice>
     </decision>
     <decision id="d-move" status="decided">
       <question>Can an application be moved to another mount?</question>
