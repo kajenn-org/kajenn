@@ -231,9 +231,9 @@ class TestNoImportSideEffect:
 
 class TestLazyArming:
     def test_unmounted_app_arms_nothing_extra(self) -> None:
-        app = ApiApp()  # no server → only the plugs of __init__: auth, channel, pydantic
+        app = ApiApp()  # no server → only the plugs of __init__, the ones the faces read
         assert {plugin.name for plugin in app.route.iter_plugins()} == {
-            "auth", "channel", "pydantic"}
+            "auth", "channel", "pydantic", "openapi"}
 
     def test_mounted_app_arms_on_first_route_access(self) -> None:
         server = AsgiServer(applications=[(ApiApp, {"mount": ""})], plugins={"openapi": True})
