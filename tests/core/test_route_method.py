@@ -152,3 +152,12 @@ class TestNotHttp:
         scope: Scope = {"type": "http", "method": "GET", "path": "/", "headers": []}
         listing = await orders(server).discover(scope)
         assert {"submit", "remove", "lookup", "free"} <= set(listing["entries"])
+
+
+class TestDeclaredMethodOnTheServerApplication:
+    async def test_get_on_the_login_route_is_405(self, http_request, response_status) -> None:
+        # The routes of _server keep their declared method although the
+        # well-known check resolved them at registration, before the arming.
+        server = AsgiServer(applications=[(Orders, {"code": "orders"})])
+        sent = await http_request(server, "/_server/login")
+        assert response_status(sent) == 405
