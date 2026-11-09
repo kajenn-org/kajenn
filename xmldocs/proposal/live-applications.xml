@@ -38,7 +38,7 @@
         <item>The <c>application</c> node is written into the live configuration.</item>
         <item>The server, subscribed to the <c>applications</c> branch, builds the application and registers it disabled.</item>
         <item>The application reaches its working state, retrying on its own if something it needs is missing, and sends <c>ready</c>.</item>
-        <item>The server enables it. An application that gives up removes itself.</item>
+        <item>The server enables it. An application that gives up removes itself, with an explicit call. An <c>on_startup</c> that raises leaves the application disabled: the error is logged and nothing else happens.</item>
       </list>
       <p>Without an override, the base class sends <c>ready</c> as soon as the activation of the application ends. An application that must wait for something overrides it.</p>
       <p>The end of activation is the return of <c>on_startup</c>. At boot the lifespan opens the databases of the server and starts the <c>on_startup</c> of every application without waiting for them, so the server serves at once: an application being mounted answers 503 with <c>Retry-After</c>, and <c>_server</c> is reachable. For a hot-added application the server runs <c>on_startup</c> right after registering it.</p>
@@ -132,6 +132,12 @@
       <option id="d-give-up-remove" title="It removes itself"/>
       <option id="d-give-up-error" title="It goes into an error state and stays registered"/>
       <choice option="d-give-up-remove" by="GP" date="2026-11-08">No error state is kept; the reason stays in the log.</choice>
+    </decision>
+    <decision id="d-startup-raise" status="decided">
+      <question>What happens to an application whose on_startup raises?</question>
+      <option id="d-startup-raise-remove" title="It removes itself, as an application giving up"/>
+      <option id="d-startup-raise-disabled" title="It stays disabled; giving up is an explicit call of the application"/>
+      <choice option="d-startup-raise-disabled" by="GP" date="2026-11-10">The exception is logged; an application that stops retrying says so itself.</choice>
     </decision>
     <decision id="d-mandatory" status="decided">
       <question>What marks an application whose failure matters?</question>

@@ -207,12 +207,12 @@ DEBUG = f"{__name__}:Debug"
 
 
 class GivingUp(RoutedApplication):
-    """A mandatory application whose activation fails."""
+    """A mandatory application that stops retrying and gives up."""
 
     mandatory = True
 
-    def on_startup(self) -> None:
-        raise ConnectionError("service unreachable")
+    async def on_startup(self) -> None:
+        await self.server.application_failed(self)
 
 
 async def bus_status(server: AsgiServer, path: str, data: Any) -> int:
@@ -328,14 +328,15 @@ class TestLiveApplications:
         finally:
             await runner.shutdown()
 
-    async def test_a_failing_application_that_is_not_mandatory_only_removes_itself(self) -> None:
-        server = AsgiServer(applications=[(Broken, {"code": "broken"})])
+    async def test_a_raising_on_startup_leaves_the_application_disabled(self, caplog) -> None:
+        server = AsgiServer(applications=[(Broken, {"code": "broken", "mandatory": True})])
         runner = LifespanRunner(server)
         await runner.startup()
         try:
-            async with asyncio.timeout(5):
-                while "broken" in server.applications:
-                    await asyncio.sleep(0.005)
+            await asyncio.sleep(0.05)
+            assert (await ask_app(server, "/broken/ping"))["status"] == 503
+            assert server.application_state("broken") == ("disabled", "mounting")
             assert (await ask_app(server, "/readyz"))["status"] == 200
+            assert "the application stays disabled" in caplog.text
         finally:
             await runner.shutdown()

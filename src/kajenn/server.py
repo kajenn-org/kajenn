@@ -386,7 +386,12 @@ class BaseServer:
         self._disabled.pop(app.code, None)
 
     async def application_failed(self, app: BaseApplication) -> None:
-        """``app`` gave up during its activation: remove it as a failed application."""
+        """``app`` gives up: it is removed as a failed application.
+
+        Called by the application itself, when it stops retrying what it
+        needs. A composition with a management application overrides this to
+        send ``remove`` to it instead.
+        """
         await self.remove_application(app.code, failed=True)
 
     async def application_ready(self, app: BaseApplication) -> None:

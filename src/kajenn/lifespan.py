@@ -180,10 +180,12 @@ class Lifespan:
     async def activate(self, app: BaseApplication) -> None:
         """Run ``app``'s ``on_startup``, then tell the server it is ready.
 
-        A hook that raises is the application giving up: the error is logged
-        and the server removes it as a failed application. A
-        ``FatalBootError`` here is an ordinary error: a failure of one
-        application is not a failure of the server.
+        A hook that raises leaves the application disabled: the error is
+        logged and no ready is sent. An application that gives up says so
+        itself, with ``server.application_failed``. A ``FatalBootError`` here
+        is an ordinary error: a failure of one application is not a failure
+        of the server. An application removed while its hook ran sends no
+        ready.
         """
         handler = app.on_startup
         try:
@@ -192,11 +194,11 @@ class Lifespan:
             else:
                 handler()
         except Exception:
-            self._logger.exception("%s.on_startup raised: the application gives up",
+            self._logger.exception("%s.on_startup raised: the application stays disabled",
                                    type(app).__name__)
-            await self.server.application_failed(app)
             return
-        await self.server.application_ready(app)
+        if self.server.applications.get(app.code) is app:
+            await self.server.application_ready(app)
 
     @property
     def started(self) -> bool:

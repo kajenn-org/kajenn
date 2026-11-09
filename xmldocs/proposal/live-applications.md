@@ -43,7 +43,7 @@ An application is either disabled or enabled. There is no error state. An applic
 1. The `application` node is written into the live configuration.
 2. The server, subscribed to the `applications` branch, builds the application and registers it disabled.
 3. The application reaches its working state, retrying on its own if something it needs is missing, and sends `ready`.
-4. The server enables it. An application that gives up removes itself.
+4. The server enables it. An application that gives up removes itself, with an explicit call. An `on_startup` that raises leaves the application disabled: the error is logged and nothing else happens.
 
 Without an override, the base class sends `ready` as soon as the activation of the application ends. An application that must wait for something overrides it.
 
@@ -126,6 +126,10 @@ Every route of the section requires the administrator role. The rule is applied 
    1. **It removes itself**
    2. **It goes into an error state and stays registered**
    → Choice: **It removes itself** (GP, 2026-11-08) — No error state is kept; the reason stays in the log.
+- **d-startup-raise** `decided` — What happens to an application whose on\_startup raises?
+   1. **It removes itself, as an application giving up**
+   2. **It stays disabled; giving up is an explicit call of the application**
+   → Choice: **It stays disabled; giving up is an explicit call of the application** (GP, 2026-11-10) — The exception is logged; an application that stops retrying says so itself.
 - **d-mandatory** `decided` — What marks an application whose failure matters?
    1. **The attribute mandatory on the application node, alongside the capabilities**
    2. **Only the capabilities other applications require**
