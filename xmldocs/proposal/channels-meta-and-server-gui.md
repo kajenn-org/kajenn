@@ -26,11 +26,12 @@ The server application `_server` extends `OpenApiApplication`, so it has no MCP 
 
 #### Channel faces on RoutedApplication
 
-- The REST/OpenAPI face and the MCP face move into `RoutedApplication`. Every application with routes has both, with no switch to turn them off.
+- The OpenAPI face and the MCP face move into `RoutedApplication`. Every application with routes has both, with no switch to turn them off.
+- The channel of a plain HTTP request is named `api`, short for OpenAPI, in place of `rest`: kajenn calls a method by path and describes it with OpenAPI, it is not REST. A route for both faces declares `channel_channels="mcp,api"`. Under `_meta` every branch is named after its channel: `api` and `mcp`.
 - The `channel` plugin keeps deciding visibility. Turning MCP on everywhere exposes nothing that is not declared for channel `mcp`.
 - `OpenApiApplication`, `McpOpenApiApplication` and `McpApplication` are removed in the release that brings the faces, with no deprecated alias. No new class name is needed.
 - `RoutedApplication` takes no external `RoutingClass`: the parameters `routing_class`, `module` and `api_name` are gone. To expose a `RoutingClass` that already exists, an application class contains it.
-- The parameter `docs="off"` stays and turns off only the Swagger UI page `_meta/openapi/docs`. The REST face and `_meta/openapi/schema_json` stay.
+- The parameter `docs="off"` stays and turns off only the Swagger UI page `_meta/api/docs`. The OpenAPI face and `_meta/api/schema_json` stay.
 - `BaseApplication` stays for applications without routes: `RemoteApplication` and raw ASGI applications.
 
 #### One reserved segment: _meta
@@ -42,8 +43,8 @@ Inside a `RoutedApplication` the only reserved segment is `_meta`. It holds the 
 | Path | Content | Today |
 |---|---|---|
 | `_meta/index` | Application page with links to the channel descriptions | `_meta/index` |
-| `_meta/openapi/schema_json` | OpenAPI 3.1 document | `_meta/schema_json` |
-| `_meta/openapi/docs` | Swagger UI | `_meta/docs` |
+| `_meta/api/schema_json` | OpenAPI 3.1 document | `_meta/schema_json` |
+| `_meta/api/docs` | Swagger UI | `_meta/docs` |
 | `POST _meta/mcp` | MCP JSON-RPC entry | `mcp` |
 | `GET _meta/mcp/tools` | List of the MCP tools, readable without speaking MCP | none |
 
@@ -53,19 +54,19 @@ Discovery documents are not under `_meta`: an application declares its well-know
 
 #### SpaConsole in kajenn-orchestra
 
-`SpaConsoleMcpApplication` becomes a `RoutedApplication`. The routes of `SpaConsole` are declared for channel `mcp`, so the REST face refuses them. Its MCP client moves from `/<mount>/` to `/<mount>/_meta/mcp`.
+`SpaConsoleMcpApplication` becomes a `RoutedApplication`. The routes of `SpaConsole` are declared for channel `mcp`, so the OpenAPI face refuses them. Its MCP client moves from `/<mount>/` to `/<mount>/_meta/mcp`.
 
 #### Server application: API in kajenn, GUI in its own repository
 
-- `ServerApplication` stays in kajenn and serves REST and MCP only. It gains MCP by inheriting from `RoutedApplication`. kajenn does not depend on gramlot.
+- `ServerApplication` stays in kajenn and serves OpenAPI and MCP only. It gains MCP by inheriting from `RoutedApplication`. kajenn does not depend on gramlot.
 - The GUI is a component in the repository `kajenn-serverapp-gui`, which depends on kajenn and gramlot.
 - The recipe enables it on the server element: `gui(gui_class=...)`. Without the element there is no GUI. The core never names the GUI package.
 - `ServerApplication` builds the component as `gui_class(self)` (dual relationship) and passes every request on `ui/...` to it. The component releases its resources in `on_shutdown`. The URL is `/_server/ui/`.
-- The GUI reads and writes only through the REST routes of `_server`, like any other client.
+- The GUI reads and writes only through the OpenAPI face of `_server`, like any other client.
 
 #### Extension pages
 
-- The REST routes of an extension keep using `attach_section(section, name)` of the core.
+- The routes of an extension keep using `attach_section(section, name)` of the core.
 - The GUI pages of an extension register on the GUI component, only when the component exists. `ServerApplication` exposes the component, or `None`.
 - gramlot is an optional extra of the extension, for example `kajenn-orchestra[gui]`.
 - Pages generated from the OpenAPI description of each section are a future direction. They are not designed here.
@@ -104,7 +105,13 @@ Discovery documents are not under `_meta`: an application declares its well-know
 - **d-docs-off** `decided` — Does the parameter docs="off" stay?
    1. **Removed: the Swagger UI page is always there**
    2. **Kept, for the Swagger UI page only**
-   → Choice: **Kept, for the Swagger UI page only** (GP, 2026-11-08) — It turns off the page, not the REST face nor the schema.
+   → Choice: **Kept, for the Swagger UI page only** (GP, 2026-11-08) — It turns off the page, not the OpenAPI face nor the schema.
+- **d-channel-name** `decided` — What is the channel of a plain HTTP request called, and the branch of \_meta that describes it?
+   1. **rest, as today**
+   2. **openapi**
+   3. **api, short for openapi**
+   4. **http**
+   → Choice: **api, short for openapi** (GP, 2026-11-09) — kajenn is not REST: a route is a method called by path and described by OpenAPI. The channel is openapi, and api is its short name.
 - **d-gui-switch** `decided` — How does a recipe enable the server GUI?
    1. **Optional import of the GUI package**
    2. **app_class on the _server application**
@@ -126,8 +133,9 @@ Discovery documents are not under `_meta`: an application declares its well-know
 
 ### Consequences
 
-- Two URLs change: `/<app>/_meta/schema_json` becomes `/<app>/_meta/openapi/schema_json`, and `/<app>/mcp` becomes `/<app>/_meta/mcp`. The old URLs answer with a deprecation warning for a period fixed case by case, as for every deprecation.
+- Three URLs change: `/<app>/_meta/schema_json` becomes `/<app>/_meta/api/schema_json`, `/<app>/_meta/docs` becomes `/<app>/_meta/api/docs`, and `/<app>/mcp` becomes `/<app>/_meta/mcp`. The old URLs answer with a deprecation warning for a period fixed case by case, as for every deprecation.
 - MCP clients and links to the docs must be updated.
+- Every route declaring the channel `rest` declares `api`.
 - Every routed application reserves `_meta`. A route named `_meta` must fail at registration.
 - `ServerApplication` gains an MCP face.
 - Every application built on `OpenApiApplication`, `McpOpenApiApplication` or `McpApplication` moves to `RoutedApplication` in the release that removes them. genropy-kajenn uses `OpenApiApplication` through `GenropyProxyOpenApiApplication`.

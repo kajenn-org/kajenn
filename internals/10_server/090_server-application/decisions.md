@@ -48,7 +48,7 @@ that touch `_server`:
 - `ServerApplication` inherits from `RoutedApplication` and gains an MCP face
   (d-faces);
 - the OpenAPI document moves from `_meta/schema_json` to
-  `_meta/openapi/schema_json`, and `_meta` is the only reserved segment (d-segment);
+  `_meta/api/schema_json`, and `_meta` is the only reserved segment (d-segment);
 - the recipe enables a GUI with `gui(gui_class=...)` on the server element; the
   core never names the GUI package (d-gui-switch);
 - `ServerApplication` builds the component as `gui_class(self)` and passes every

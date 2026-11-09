@@ -21,11 +21,12 @@
   <solution>
     <section title="Channel faces on RoutedApplication">
       <list>
-        <item>The REST/OpenAPI face and the MCP face move into <c>RoutedApplication</c>. Every application with routes has both, with no switch to turn them off.</item>
+        <item>The OpenAPI face and the MCP face move into <c>RoutedApplication</c>. Every application with routes has both, with no switch to turn them off.</item>
+        <item>The channel of a plain HTTP request is named <c>api</c>, short for OpenAPI, in place of <c>rest</c>: kajenn calls a method by path and describes it with OpenAPI, it is not REST. A route for both faces declares <c>channel_channels="mcp,api"</c>. Under <c>_meta</c> every branch is named after its channel: <c>api</c> and <c>mcp</c>.</item>
         <item>The <c>channel</c> plugin keeps deciding visibility. Turning MCP on everywhere exposes nothing that is not declared for channel <c>mcp</c>.</item>
         <item><c>OpenApiApplication</c>, <c>McpOpenApiApplication</c> and <c>McpApplication</c> are removed in the release that brings the faces, with no deprecated alias. No new class name is needed.</item>
         <item><c>RoutedApplication</c> takes no external <c>RoutingClass</c>: the parameters <c>routing_class</c>, <c>module</c> and <c>api_name</c> are gone. To expose a <c>RoutingClass</c> that already exists, an application class contains it.</item>
-        <item>The parameter <c>docs="off"</c> stays and turns off only the Swagger UI page <c>_meta/openapi/docs</c>. The REST face and <c>_meta/openapi/schema_json</c> stay.</item>
+        <item>The parameter <c>docs="off"</c> stays and turns off only the Swagger UI page <c>_meta/api/docs</c>. The OpenAPI face and <c>_meta/api/schema_json</c> stay.</item>
         <item><c>BaseApplication</c> stays for applications without routes: <c>RemoteApplication</c> and raw ASGI applications.</item>
       </list>
     </section>
@@ -35,8 +36,8 @@
       <table title="_meta layout">
         <row head="true"><cell>Path</cell><cell>Content</cell><cell>Today</cell></row>
         <row><cell><c>_meta/index</c></cell><cell>Application page with links to the channel descriptions</cell><cell><c>_meta/index</c></cell></row>
-        <row><cell><c>_meta/openapi/schema_json</c></cell><cell>OpenAPI 3.1 document</cell><cell><c>_meta/schema_json</c></cell></row>
-        <row><cell><c>_meta/openapi/docs</c></cell><cell>Swagger UI</cell><cell><c>_meta/docs</c></cell></row>
+        <row><cell><c>_meta/api/schema_json</c></cell><cell>OpenAPI 3.1 document</cell><cell><c>_meta/schema_json</c></cell></row>
+        <row><cell><c>_meta/api/docs</c></cell><cell>Swagger UI</cell><cell><c>_meta/docs</c></cell></row>
         <row><cell><c>POST _meta/mcp</c></cell><cell>MCP JSON-RPC entry</cell><cell><c>mcp</c></cell></row>
         <row><cell><c>GET _meta/mcp/tools</c></cell><cell>List of the MCP tools, readable without speaking MCP</cell><cell>none</cell></row>
       </table>
@@ -45,22 +46,22 @@
     </section>
 
     <section title="SpaConsole in kajenn-orchestra">
-      <p><c>SpaConsoleMcpApplication</c> becomes a <c>RoutedApplication</c>. The routes of <c>SpaConsole</c> are declared for channel <c>mcp</c>, so the REST face refuses them. Its MCP client moves from <c>/&lt;mount&gt;/</c> to <c>/&lt;mount&gt;/_meta/mcp</c>.</p>
+      <p><c>SpaConsoleMcpApplication</c> becomes a <c>RoutedApplication</c>. The routes of <c>SpaConsole</c> are declared for channel <c>mcp</c>, so the OpenAPI face refuses them. Its MCP client moves from <c>/&lt;mount&gt;/</c> to <c>/&lt;mount&gt;/_meta/mcp</c>.</p>
     </section>
 
     <section title="Server application: API in kajenn, GUI in its own repository">
       <list>
-        <item><c>ServerApplication</c> stays in kajenn and serves REST and MCP only. It gains MCP by inheriting from <c>RoutedApplication</c>. kajenn does not depend on gramlot.</item>
+        <item><c>ServerApplication</c> stays in kajenn and serves OpenAPI and MCP only. It gains MCP by inheriting from <c>RoutedApplication</c>. kajenn does not depend on gramlot.</item>
         <item>The GUI is a component in the repository <c>kajenn-serverapp-gui</c>, which depends on kajenn and gramlot.</item>
         <item>The recipe enables it on the server element: <c>gui(gui_class=...)</c>. Without the element there is no GUI. The core never names the GUI package.</item>
         <item><c>ServerApplication</c> builds the component as <c>gui_class(self)</c> (dual relationship) and passes every request on <c>ui/...</c> to it. The component releases its resources in <c>on_shutdown</c>. The URL is <c>/_server/ui/</c>.</item>
-        <item>The GUI reads and writes only through the REST routes of <c>_server</c>, like any other client.</item>
+        <item>The GUI reads and writes only through the OpenAPI face of <c>_server</c>, like any other client.</item>
       </list>
     </section>
 
     <section title="Extension pages">
       <list>
-        <item>The REST routes of an extension keep using <c>attach_section(section, name)</c> of the core.</item>
+        <item>The routes of an extension keep using <c>attach_section(section, name)</c> of the core.</item>
         <item>The GUI pages of an extension register on the GUI component, only when the component exists. <c>ServerApplication</c> exposes the component, or <c>None</c>.</item>
         <item>gramlot is an optional extra of the extension, for example <c>kajenn-orchestra[gui]</c>.</item>
         <item>Pages generated from the OpenAPI description of each section are a future direction. They are not designed here.</item>
@@ -116,7 +117,15 @@
       <question>Does the parameter docs="off" stay?</question>
       <option id="d-docs-off-remove" title="Removed: the Swagger UI page is always there"/>
       <option id="d-docs-off-ui" title="Kept, for the Swagger UI page only"/>
-      <choice option="d-docs-off-ui" by="GP" date="2026-11-08">It turns off the page, not the REST face nor the schema.</choice>
+      <choice option="d-docs-off-ui" by="GP" date="2026-11-08">It turns off the page, not the OpenAPI face nor the schema.</choice>
+    </decision>
+    <decision id="d-channel-name" status="decided">
+      <question>What is the channel of a plain HTTP request called, and the branch of _meta that describes it?</question>
+      <option id="d-channel-rest" title="rest, as today"/>
+      <option id="d-channel-openapi" title="openapi"/>
+      <option id="d-channel-api" title="api, short for openapi"/>
+      <option id="d-channel-http" title="http"/>
+      <choice option="d-channel-api" by="GP" date="2026-11-09">kajenn is not REST: a route is a method called by path and described by OpenAPI. The channel is openapi, and api is its short name.</choice>
     </decision>
     <decision id="d-gui-switch" status="decided">
       <question>How does a recipe enable the server GUI?</question>
@@ -148,8 +157,9 @@
 
   <consequences>
     <list>
-      <item>Two URLs change: <c>/&lt;app&gt;/_meta/schema_json</c> becomes <c>/&lt;app&gt;/_meta/openapi/schema_json</c>, and <c>/&lt;app&gt;/mcp</c> becomes <c>/&lt;app&gt;/_meta/mcp</c>. The old URLs answer with a deprecation warning for a period fixed case by case, as for every deprecation.</item>
+      <item>Three URLs change: <c>/&lt;app&gt;/_meta/schema_json</c> becomes <c>/&lt;app&gt;/_meta/api/schema_json</c>, <c>/&lt;app&gt;/_meta/docs</c> becomes <c>/&lt;app&gt;/_meta/api/docs</c>, and <c>/&lt;app&gt;/mcp</c> becomes <c>/&lt;app&gt;/_meta/mcp</c>. The old URLs answer with a deprecation warning for a period fixed case by case, as for every deprecation.</item>
       <item>MCP clients and links to the docs must be updated.</item>
+      <item>Every route declaring the channel <c>rest</c> declares <c>api</c>.</item>
       <item>Every routed application reserves <c>_meta</c>. A route named <c>_meta</c> must fail at registration.</item>
       <item><c>ServerApplication</c> gains an MCP face.</item>
       <item>Every application built on <c>OpenApiApplication</c>, <c>McpOpenApiApplication</c> or <c>McpApplication</c> moves to <c>RoutedApplication</c> in the release that removes them. genropy-kajenn uses <c>OpenApiApplication</c> through <c>GenropyProxyOpenApiApplication</c>.</item>
