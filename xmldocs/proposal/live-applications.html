@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<!-- generated from live-applications.xml by xmldocs: do not edit, edit the XML -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Applications added, switched off and removed on a running server</title><style>
+:root {
+  --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e2dfd8; --panel: #f3f1ec;
+  --code-bg: #f0eee8; --accent: #2f5d8a;
+  --ok: #2e7d4f; --warn: #a86b00; --bad: #b23b3b; --info: #2f5d8a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #18181a; --fg: #e8e6e1; --muted: #9a9890; --line: #33332f; --panel: #212123;
+    --code-bg: #26262a; --accent: #8fb4dc;
+    --ok: #6cc28f; --warn: #e0a940; --bad: #e57373; --info: #8fb4dc;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #18181a; --fg: #e8e6e1; --muted: #9a9890; --line: #33332f; --panel: #212123;
+  --code-bg: #26262a; --accent: #8fb4dc;
+  --ok: #6cc28f; --warn: #e0a940; --bad: #e57373; --info: #8fb4dc;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 4px 0 8px; }
+h2 { font-size: 1.35rem; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.12rem; margin: 28px 0 8px; }
+h4 { font-size: 1rem; margin: 20px 0 6px; }
+a { color: var(--accent); }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg);
+  padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { margin: 0; overflow-x: auto; }
+pre code { display: block; padding: 12px 14px; background: none; }
+figure { margin: 16px 0; }
+figure.code { background: var(--code-bg); border-radius: 8px; }
+figure.code figcaption { font-size: 0.8rem; color: var(--muted); padding: 8px 14px 0; }
+figure.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+figure.embed { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+figure.embed figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 8px; }
+figure.embed svg { max-width: 100%; height: auto; }
+.tag-script { color: var(--bad); }
+figure.diagram figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 8px; }
+figure.diagram svg { max-width: 100%; height: auto; }
+.diagram-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .diagram-light { display: none; }
+  :root:not([data-theme="light"]) .diagram-dark { display: block; }
+}
+:root[data-theme="dark"] .diagram-light { display: none; }
+:root[data-theme="dark"] .diagram-dark { display: block; }
+.doc-type { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: var(--muted); }
+.doc-meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 0.9rem; }
+.muted { color: var(--muted); font-size: 0.9em; }
+.box { border: 1px solid var(--line); border-left: 4px solid var(--line); background: var(--panel);
+  border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+.box-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.box-foot { margin-top: 6px; }
+.box.fact { border-left-color: var(--info); }
+.box.rule-must { border-left-color: var(--ok); }
+.box.rule-must-not { border-left-color: var(--bad); }
+.box.rule-should { border-left-color: var(--warn); }
+.box.limit { border-left-color: var(--warn); }
+.box.decision-open, .box.decision-proposed { border-left-color: var(--warn); }
+.box.decision-decided { border-left-color: var(--ok); }
+.box.decision-rejected { border-left-color: var(--bad); }
+.box.example { border-left-color: var(--accent); }
+.box.done { border-left-color: var(--ok); }
+.tag-done { color: var(--ok); }
+.tag-doing, .tag-in-progress { color: var(--info); }
+.tag-todo { color: var(--muted); }
+.tag-approved { color: var(--ok); }
+.source { font-size: 0.8rem; }
+.why { margin-top: 4px; }
+.tag { display: inline-block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 1px 7px; border-radius: 10px; border: 1px solid currentColor; color: var(--muted); }
+.tag-test, .tag-run, .tag-must, .tag-decided, .tag-accepted { color: var(--ok); }
+.tag-read, .tag-review { color: var(--info); }
+.tag-should, .tag-open, .tag-proposed, .tag-draft { color: var(--warn); }
+.tag-must-not, .tag-rejected { color: var(--bad); }
+.options li { margin: 6px 0; }
+.options li.chosen b { color: var(--ok); }
+.choice { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.step-num { color: var(--muted); font-weight: 400; margin-right: 6px; }
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+caption { text-align: left; color: var(--muted); padding-bottom: 6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--panel); }
+  </style></head><body><main><header class="doc-head"><div class="doc-type">Proposal</div><h1>Applications added, switched off and removed on a running server</h1><div class="doc-meta"><span>proposal/live-applications</span><span>2026-11-08</span><span>Giovanni Porcari</span><span class="tag tag-accepted">accepted</span></div></header><section class="part problem"><h2>Problem</h2>
+    <p>The set of applications is fixed when the server is built. To intervene on a running server, for example to mount a debug application, use it and take it away, the server must be restarted.</p>
+    <p>The design of the server asks for the opposite: installing and removing an application are operations on a running machine, not reasons to restart it. The configuration is meant as a live tree that notifies whoever watches it. Neither exists in the code (kajenn-org/kajenn#75).</p>
+  </section><section class="part current"><h2>Current state</h2>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:253</code><span class="muted">2026-11-08</span></div><div><code>register_application</code> is called only while the server is built. Its docstring says the set of applications is fixed at construction. No method removes an application.</div></div>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/application.py:236</code><span class="muted">2026-11-08</span></div><div>An application accepts its owning server once; a second assignment raises <code>RuntimeError</code>.</div></div>
+    <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/config/handler.py:80</code><span class="muted">2026-11-08</span></div><div><code>ConfigurationHandler</code> only reads the configuration tree. Nothing subscribes to it.</div></div>
+  </section><section class="part solution"><h2>Proposed solution</h2>
+    <section class="section"><h3>Server and application: who does what</h3>
+      <p>The server keeps the state of each application and answers for it. The application is responsible for behaving well: it talks to the server and tells it what it needs to know.</p>
+      <ul>
+        <li>The server holds the state of each application, disabled or enabled, answers for a disabled one, and takes the signals the applications send.</li>
+        <li>The application retries what it needs (an external service, a database), says when it is ready, closes its own calls in progress when switched off, and removes itself when it gives up.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>Two states: disabled and enabled</h3>
+      <p>An application is either disabled or enabled. There is no error state. An application that fails removes itself, and the reason stays in the log.</p>
+      <div class="table-wrap"><table><caption>What a client receives</caption>
+        <tr><th>Situation</th><th>Answer</th></tr>
+        <tr><td>Being mounted, not ready yet</td><td>503 with <code>Retry-After</code></td></tr>
+        <tr><td>Switched off</td><td>503 without <code>Retry-After</code></td></tr>
+        <tr><td>Being removed</td><td>503 without <code>Retry-After</code></td></tr>
+        <tr><td>Removed</td><td>404</td></tr>
+        <tr><td>Enabled</td><td>The application answers</td></tr>
+      </table></div>
+    </section>
+
+    <section class="section"><h3>Mounting: disabled first, enabled on ready</h3>
+      <ol>
+        <li>The <code>application</code> node is written into the live configuration.</li>
+        <li>The server, subscribed to the <code>applications</code> branch, builds the application and registers it disabled.</li>
+        <li>The application reaches its working state, retrying on its own if something it needs is missing, and sends <code>ready</code>.</li>
+        <li>The server enables it. An application that gives up removes itself.</li>
+      </ol>
+      <p>Without an override, the base class sends <code>ready</code> as soon as the activation of the application ends. An application that must wait for something overrides it.</p>
+      <p>The end of activation is the return of <code>on_startup</code>. At boot the lifespan opens the databases of the server and starts the <code>on_startup</code> of every application without waiting for them, so the server serves at once: an application being mounted answers 503 with <code>Retry-After</code>, and <code>_server</code> is reachable. For a hot-added application the server runs <code>on_startup</code> right after registering it.</p>
+      <p>An application with <code>spawner</code> has its counterpart in the process of the server, a <code>RemoteApplication</code>. Its <code>on_startup</code> waits for the <code>joined</code> message of the child process, then returns; <code>joined</code> stays internal between the child and its counterpart.</p>
+      <p>The mechanism lives in <code>AsgiServer</code>, which has the KajennBus and <code>_server</code>. On a bare <code>BaseServer</code> the applications are enabled at once.</p>
+      <p>Every application follows this road: those added while the server runs and those declared in the recipe at boot. The boot is the same mounting, once per declared application.</p>
+    </section>
+
+    <section class="section"><h3>Switching off and removing</h3>
+      <ul>
+        <li>Switching off is an operation of its own. The application becomes disabled, new requests receive 503, the calls in progress reach their end, and the instance stays registered.</li>
+        <li>Switching on makes the same instance enabled again, without building it again.</li>
+        <li>Removing first switches the application off, then takes it away when the application says it has finished. After that the mount answers 404.</li>
+        <li>An application is never moved to another mount. It can be switched off and on, or removed and mounted again.</li>
+        <li><code>_server</code> is never disabled: <code>disable</code> and <code>remove</code> on <code>_server</code> answer 400.</li>
+        <li>Removing calls the hook <code>on_remove</code> of the application after it is disabled, and waits for it. When <code>on_remove</code> returns, the application has finished. <code>on_shutdown</code> stays for the shutdown of the server.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>Every signal travels on the KajennBus</h3>
+      <p>An application may run in the process of the server or in a process of its own (<code>spawner="subprocess"</code>). Every signal between an application and the server is therefore a KajennBus <code>call</code> to a route of <code>_server</code>, whatever process the application runs in. A <code>call</code>, not a <code>send</code>: the application receives the answer of the server, including a refusal.</p>
+    </section>
+
+    <section class="section"><h3>The applications section of _server</h3>
+      <div class="table-wrap"><table><caption>Routes under /_server/applications/</caption>
+        <tr><th>Route</th><th>Called by</th><th>Effect</th></tr>
+        <tr><td><code>add</code></td><td>administrator</td><td>Writes the node and builds the application disabled</td></tr>
+        <tr><td><code>ready</code></td><td>the application</td><td>Enables it</td></tr>
+        <tr><td><code>disable</code></td><td>administrator</td><td>Switches it off</td></tr>
+        <tr><td><code>enable</code></td><td>administrator</td><td>Switches it on again</td></tr>
+        <tr><td><code>remove</code></td><td>administrator, or the application itself</td><td>Switches it off, waits for the application to finish, removes it</td></tr>
+        <tr><td><code>list</code></td><td>administrator</td><td>The applications, with their state</td></tr>
+      </table></div>
+      <p><code>add</code> receives what the <code>application</code> node of a recipe holds: the import path of the application class, its <code>code</code>, and the extra parameters handed to its constructor. What is added is always an application class.</p>
+      <p>Every route of the section requires the administrator role. The rule is applied through the route plugins, with no mechanism of its own.</p>
+    </section>
+
+    <section class="section"><h3>Mandatory applications and capabilities</h3>
+      <ul>
+        <li>The <code>application</code> node takes the attribute <code>mandatory</code>. A mandatory application is one without which the server can do none of its work. When it fails, the server logs it and stays up for <code>_server</code> only: every other application answers 503, and the readiness probe <code>/readyz</code> answers not ready. The administrator intervenes through <code>_server</code>.</li>
+        <li>An application declares the capabilities it brings. While it is not enabled, those capabilities are missing. The declaration arrives with the env capabilities of the request (kajenn-org/kajenn#104), which are what reads it; <code>list</code> then shows them too.</li>
+        <li>A route requiring a missing capability answers 503, as the routing register already records. What to do about it is the logic of each application, case by case. The server takes no action on a missing capability.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>FatalBootError</h3>
+      <p><code>FatalBootError</code> is a problem of the server as a whole, for example a database of the server that does not open. An <code>on_startup</code> no longer raises it: an application whose failure matters is <code>mandatory</code>. The option <code>abort_on_fatal_boot_error</code> of the <code>server</code> element chooses the effect: <code>True</code>, the default, ends the process as today; <code>False</code> keeps the server up for <code>_server</code> only.</p>
+    </section>
+
+    <section class="section"><h3>Not in this proposal</h3>
+      <ul>
+        <li>Persistence. Whoever adds an application will choose whether the change survives a restart. The persistent case needs an extra configuration file holding the updates, and is designed later. Until then a hot change lasts until the restart.</li>
+      </ul>
+    </section>
+  </section><section class="part decisions"><h2>Decisions</h2>
+    <div class="box decision decision-decided" id="d-validate"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-validate</span></div><div class="question">When is a hot-added application checked?</div><ol class="options"><li id="d-validate-before"><b>Before the node is written</b></li><li id="d-validate-after"><b>After the node is written, inside the subscription</b></li><li id="d-validate-disabled" class="chosen"><b>Mounted disabled, enabled when it works, removed otherwise</b></li></ol><div class="choice"><b>Choice: Mounted disabled, enabled when it works, removed otherwise</b><span class="muted"> (GP, 2026-11-08)</span><div>The application is built and registered disabled; it is enabled once it is in working state, and removed otherwise.</div></div></div>
+    <div class="box decision decision-decided" id="d-answers"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-answers</span></div><div class="question">What does a client receive from an application that is not enabled?</div><ol class="options"><li id="d-answers-503" class="chosen"><b>503, with Retry-After only while it is being mounted; 404 once removed</b></li><li id="d-answers-404"><b>404 in every case</b></li></ol><div class="choice"><b>Choice: 503, with Retry-After only while it is being mounted; 404 once removed</b><span class="muted"> (GP, 2026-11-08)</span><div>A client tells an application on its way in from one on its way out, and both from one that is gone.</div></div></div>
+    <div class="box decision decision-decided" id="d-ready-who"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-ready-who</span></div><div class="question">Which applications send ready?</div><ol class="options"><li id="d-ready-all" class="chosen"><b>Every application, hot-added or declared at boot</b></li><li id="d-ready-declared"><b>Only those that declare they need it</b></li></ol><div class="choice"><b>Choice: Every application, hot-added or declared at boot</b><span class="muted"> (GP, 2026-11-08)</span><div>One rule for every application; the boot is the same mounting.</div></div></div>
+    <div class="box decision decision-decided" id="d-signal-road"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-signal-road</span></div><div class="question">How does an application signal the server?</div><ol class="options"><li id="d-signal-direct"><b>A Python call on the server</b></li><li id="d-signal-kbus" class="chosen"><b>A KajennBus call to a route of _server</b></li></ol><div class="choice"><b>Choice: A KajennBus call to a route of _server</b><span class="muted"> (GP, 2026-11-08)</span><div>An application can run in a process of its own; everything goes through the KajennBus.</div></div></div>
+    <div class="box decision decision-decided" id="d-retry"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-retry</span></div><div class="question">Who retries when something an application needs is missing?</div><ol class="options"><li id="d-retry-app" class="chosen"><b>The application</b></li><li id="d-retry-server"><b>The server, through a readiness check of the application</b></li></ol><div class="choice"><b>Choice: The application</b><span class="muted"> (GP, 2026-11-08)</span><div>The server only waits for the signal.</div></div></div>
+    <div class="box decision decision-decided" id="d-give-up"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-give-up</span></div><div class="question">What does an application do when it stops retrying?</div><ol class="options"><li id="d-give-up-remove" class="chosen"><b>It removes itself</b></li><li id="d-give-up-error"><b>It goes into an error state and stays registered</b></li></ol><div class="choice"><b>Choice: It removes itself</b><span class="muted"> (GP, 2026-11-08)</span><div>No error state is kept; the reason stays in the log.</div></div></div>
+    <div class="box decision decision-decided" id="d-mandatory"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-mandatory</span></div><div class="question">What marks an application whose failure matters?</div><ol class="options"><li id="d-mandatory-attr" class="chosen"><b>The attribute mandatory on the application node, alongside the capabilities</b></li><li id="d-mandatory-caps"><b>Only the capabilities other applications require</b></li></ol><div class="choice"><b>Choice: The attribute mandatory on the application node, alongside the capabilities</b><span class="muted"> (GP, 2026-11-08)</span><div>The administrator can mark an application mandatory even when no other application needs it.</div></div></div>
+    <div class="box decision decision-decided" id="d-mandatory-fails"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-mandatory-fails</span></div><div class="question">What does the server do when a mandatory application fails?</div><ol class="options"><li id="d-mandatory-stop"><b>It stops</b></li><li id="d-mandatory-up"><b>It stays up</b></li><li id="d-mandatory-server-only" class="chosen"><b>It stays up for _server only: the public part answers 503 and the server reports not ready</b></li></ol><div class="choice"><b>Choice: It stays up for _server only: the public part answers 503 and the server reports not ready</b><span class="muted"> (GP, 2026-11-09)</span><div>Without a mandatory application the server can do none of its work; it stays alive only so that _server can answer. Refines the choice of 2026-11-08, It stays up.</div></div></div>
+    <div class="box decision decision-decided" id="d-capabilities"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-capabilities</span></div><div class="question">Who acts when a capability is missing?</div><ol class="options"><li id="d-capabilities-server"><b>The server, by not enabling the applications that need it</b></li><li id="d-capabilities-routes" class="chosen"><b>Nobody: the routes requiring it are unavailable, and each application decides</b></li></ol><div class="choice"><b>Choice: Nobody: the routes requiring it are unavailable, and each application decides</b><span class="muted"> (GP, 2026-11-08)</span><div>Its routes are simply not available; the logic of the application decides case by case.</div></div></div>
+    <div class="box decision decision-decided" id="d-switch-off"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-switch-off</span></div><div class="question">Is switching off an operation of its own?</div><ol class="options"><li id="d-switch-off-yes" class="chosen"><b>Yes, and it is the first step of removing</b></li><li id="d-switch-off-no"><b>No: switching off means removing</b></li></ol><div class="choice"><b>Choice: Yes, and it is the first step of removing</b><span class="muted"> (GP, 2026-11-08)</span><div>Removing passes through switching off, which lets the calls end and blocks new ones.</div></div></div>
+    <div class="box decision decision-decided" id="d-server-self"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-server-self</span></div><div class="question">Can _server be switched off or removed?</div><ol class="options"><li id="d-server-self-no" class="chosen"><b>No: disable and remove on _server answer 400</b></li><li id="d-server-self-yes"><b>Yes</b></li></ol><div class="choice"><b>Choice: No: disable and remove on _server answer 400</b><span class="muted"> (GP, 2026-11-09)</span><div>_server is the door the administrator intervenes from.</div></div></div>
+    <div class="box decision decision-decided" id="d-remove-hook"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-remove-hook</span></div><div class="question">How does the server ask an application to finish before removing it?</div><ol class="options"><li id="d-remove-hook-shutdown"><b>on_shutdown</b></li><li id="d-remove-hook-own" class="chosen"><b>A hook of its own, on_remove, called after the application is disabled</b></li></ol><div class="choice"><b>Choice: A hook of its own, on_remove, called after the application is disabled</b><span class="muted"> (GP, 2026-11-09)</span><div>on_shutdown stays for the shutdown of the server. Lifecycle hooks are named on_&lt;verb&gt; when they run before the event completes and on_&lt;verb&gt;_done when they run after.</div></div></div>
+    <div class="box decision decision-decided" id="d-activation"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-activation</span></div><div class="question">What is the end of activation, after which the base class sends ready?</div><ol class="options"><li id="d-activation-startup" class="chosen"><b>The return of on_startup</b></li><li id="d-activation-new"><b>A new hook</b></li></ol><div class="choice"><b>Choice: The return of on_startup</b><span class="muted"> (GP, 2026-11-09)</span><div>Simpler to use on_startup.</div></div></div>
+    <div class="box decision decision-decided" id="d-boot-detached"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-boot-detached</span></div><div class="question">At boot, does the lifespan wait for the on_startup of the applications?</div><ol class="options"><li id="d-boot-await"><b>Yes, as today: nothing is served until they all return</b></li><li id="d-boot-detached-yes" class="chosen"><b>No: the server serves at once, applications being mounted answer 503</b></li></ol><div class="choice"><b>Choice: No: the server serves at once, applications being mounted answer 503</b><span class="muted"> (GP, 2026-11-09)</span></div></div>
+    <div class="box decision decision-decided" id="d-joined"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-joined</span></div><div class="question">How does an application in a separate process become ready?</div><ol class="options"><li id="d-joined-ready"><b>Its process calls ready, and joined disappears</b></li><li id="d-joined-remote" class="chosen"><b>The on_startup of its RemoteApplication waits for joined, then the base class sends ready</b></li></ol><div class="choice"><b>Choice: The on_startup of its RemoteApplication waits for joined, then the base class sends ready</b><span class="muted"> (GP, 2026-11-09)</span><div>The counterpart in the server process sends ready when it knows its child is ready.</div></div></div>
+    <div class="box decision decision-decided" id="d-bare-server"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-bare-server</span></div><div class="question">How do the applications of a bare BaseServer, with no KajennBus and no _server, become enabled?</div><ol class="options"><li id="d-bare-enabled" class="chosen"><b>They are enabled at once</b></li><li id="d-bare-kbus"><b>The KajennBus and _server move into BaseServer</b></li></ol><div class="choice"><b>Choice: They are enabled at once</b><span class="muted"> (GP, 2026-11-09)</span><div>The mechanism lives in AsgiServer, the server of every real site.</div></div></div>
+    <div class="box decision decision-decided" id="d-fatal"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-fatal</span></div><div class="question">What is FatalBootError once the lifespan no longer waits for on_startup?</div><ol class="options"><li id="d-fatal-server" class="chosen"><b>A problem of the server as a whole; its effect is chosen by abort_on_fatal_boot_error, default True</b></li><li id="d-fatal-mandatory"><b>Removed in favour of mandatory</b></li></ol><div class="choice"><b>Choice: A problem of the server as a whole; its effect is chosen by abort_on_fatal_boot_error, default True</b><span class="muted"> (GP, 2026-11-09)</span><div>FatalBootError concerns the server, mandatory concerns one application. Default delegated: True, the behaviour of today.</div></div></div>
+    <div class="box decision decision-decided" id="d-move"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-move</span></div><div class="question">Can an application be moved to another mount?</div><ol class="options"><li id="d-move-no" class="chosen"><b>No</b></li><li id="d-move-yes"><b>Yes, as an operation of its own</b></li></ol><div class="choice"><b>Choice: No</b><span class="muted"> (GP, 2026-11-08)</span><div>It can be switched off and on, not moved.</div></div></div>
+    <div class="box decision decision-decided" id="d-persist"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-persist</span></div><div class="question">Does a hot change survive a restart?</div><ol class="options"><li id="d-persist-caller" class="chosen"><b>Whoever adds the application decides</b></li><li id="d-persist-never"><b>Never</b></li><li id="d-persist-always"><b>Always</b></li></ol><div class="choice"><b>Choice: Whoever adds the application decides</b><span class="muted"> (GP, 2026-11-08)</span><div>The persistent case needs an extra configuration file with the updates; it is designed later.</div></div></div>
+    <div class="box decision decision-decided" id="d-routes"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-routes</span></div><div class="question">Which routes does _server expose?</div><ol class="options"><li id="d-routes-applications" class="chosen"><b>Section applications: add, ready, disable, enable, remove, list</b></li></ol><div class="choice"><b>Choice: Section applications: add, ready, disable, enable, remove, list</b><span class="muted"> (GP, 2026-11-08)</span><div>One section for the whole life of an application.</div></div></div>
+    <div class="box decision decision-decided" id="d-auth"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-auth</span></div><div class="question">Who may call the routes of the applications section?</div><ol class="options"><li id="d-auth-admin" class="chosen"><b>One rule: the administrator role on every route</b></li><li id="d-auth-own"><b>Two rules: an application may call ready and remove on its own code</b></li></ol><div class="choice"><b>Choice: One rule: the administrator role on every route</b><span class="muted"> (GP, 2026-11-08)</span><div>One rule for now, applied through the route plugins.</div></div></div>
+    <div class="box decision decision-decided" id="d-add-payload"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-add-payload</span></div><div class="question">What does add receive?</div><ol class="options"><li id="d-add-node" class="chosen"><b>The class path, the code and the extra parameters, as the application node of a recipe</b></li></ol><div class="choice"><b>Choice: The class path, the code and the extra parameters, as the application node of a recipe</b><span class="muted"> (GP, 2026-11-08)</span><div>It says what, under which name and with which extra parameters; what is always an application class.</div></div></div>
+    <div class="box decision decision-decided" id="d-ready-base"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-ready-base</span></div><div class="question">Does the base class send ready at the end of the startup of an application that adds nothing?</div><ol class="options"><li id="d-ready-base-yes" class="chosen"><b>Yes: an application overrides it only when it needs more</b></li><li id="d-ready-base-no"><b>No: every application writes its own call</b></li></ol><div class="choice"><b>Choice: Yes: an application overrides it only when it needs more</b><span class="muted"> (GP, 2026-11-08)</span><div>Without an override the application sends ready as soon as its activation ends.</div></div></div>
+  </section><section class="part consequences"><h2>Consequences</h2>
+    <ul>
+      <li>The set of applications is no longer fixed at construction. The server gains a road to remove an application.</li>
+      <li>The server subscribes to the <code>applications</code> branch of the live configuration. It is the first subscriber of that tree.</li>
+      <li>Every application, at boot too, answers 503 until it sends <code>ready</code>.</li>
+      <li>The design of the server stops listing the move of an application to another prefix among the operations on a running server.</li>
+    </ul>
+  </section><section class="part related"><h2>Related documents</h2><ul>
+    <li><a href="../proposal/channels-meta-and-server-gui.html">proposal/channels-meta-and-server-gui</a> — The _meta segment and the faces of every routed application, released together</li>
+  </ul></section></main></body></html>
