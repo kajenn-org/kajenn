@@ -107,6 +107,7 @@ class Lifespan:
         self.server = server
         self._logger = logging.getLogger(__name__)
         self._activations: set[asyncio.Task[None]] = set()
+        self._started = False
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:  # noqa: ARG002
         """Drive the ASGI lifespan protocol: startup then shutdown, both acked.
@@ -164,19 +165,25 @@ class Lifespan:
                 if self.server.is_enabled(app.code):
                     await self._run_hook(app, "on_startup")
                 else:
-                    task = asyncio.create_task(self.activate(app))
-                    self._activations.add(task)
-                    task.add_done_callback(self._activations.discard)
+                    self.start_activation(app)
         except FatalBootError:
             await self._close_handlers(opened)
             raise
+        self._started = True
+
+    def start_activation(self, app: BaseApplication) -> None:
+        """Activate ``app`` in a task of its own, cancelled if the server shuts down first."""
+        task = asyncio.create_task(self.activate(app))
+        self._activations.add(task)
+        task.add_done_callback(self._activations.discard)
 
     async def activate(self, app: BaseApplication) -> None:
         """Run ``app``'s ``on_startup``, then tell the server it is ready.
 
-        A hook that raises leaves the application disabled: the error is
-        logged and no ready is sent. A ``FatalBootError`` here is an ordinary
-        error: a failure of one application is not a failure of the server.
+        A hook that raises is the application giving up: the error is logged
+        and the server removes it as a failed application. A
+        ``FatalBootError`` here is an ordinary error: a failure of one
+        application is not a failure of the server.
         """
         handler = app.on_startup
         try:
@@ -185,10 +192,16 @@ class Lifespan:
             else:
                 handler()
         except Exception:
-            self._logger.exception("%s.on_startup raised: the application stays disabled",
+            self._logger.exception("%s.on_startup raised: the application gives up",
                                    type(app).__name__)
+            await self.server.application_failed(app)
             return
         await self.server.application_ready(app)
+
+    @property
+    def started(self) -> bool:
+        """Whether ``lifespan.startup`` ran: an application added now is activated at once."""
+        return self._started
 
     async def shutdown(self) -> None:
         """Stop accepting, drain what is in flight, THEN run the hooks in reverse.

@@ -455,3 +455,24 @@ async def test_a_wsx_message_reaches_the_spawned_application(tmp_path):
         await socket
     reply = WsxEnvelope(next(m["text"] for m in sent if m["type"] == "websocket.send"))
     assert (reply.id, reply.status, reply.data) == ("m1", 200, {"total": 4})
+
+
+async def test_removing_an_external_application_stops_its_process_for_good(tmp_path):
+    # The mount answers 404 and the process ends; no new process takes its place.
+    async with running(write_recipe(tmp_path)) as server:
+        pid = server.kbus_pids["billing"]
+        removed = await server.kbus_call("/_server/applications/remove", {"code": "billing"},
+                                         auth=Avatar("ops", ["SERVER_ADMIN"]))
+        assert removed == {"code": "billing", "state": "removed"}
+        assert (await request(server, "/billing/total", query=b"order=2"))[0] == 404
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            await asyncio.sleep(0.05)
+        else:
+            pytest.fail(f"process {pid} still alive after the removal")
+        await asyncio.sleep(0.5)
+        assert "billing" not in server.kbus_pids

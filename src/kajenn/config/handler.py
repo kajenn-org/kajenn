@@ -303,16 +303,22 @@ class ConfigurationHandler(ConfigHandler):
         node = self.node("applications")
         if node is None:
             return [], None
-        entries: list[tuple[type, dict[str, Any]]] = []
-        for child in node.value or ():
-            kwargs = self.open_attrs(child)
-            app_class = kwargs.pop("app_class")
-            if kwargs.get("code") == "_server" and not issubclass(app_class, ServerApplication):
-                raise ValueError(
-                    f"application '_server' must be a ServerApplication, got {app_class.__name__}"
-                )
-            entries.append((app_class, kwargs))
+        entries = [self.application_entry(child) for child in node.value or ()]
         return entries, self("applications.default", default=None)
+
+    def application_entry(self, node: Any) -> tuple[type, dict[str, Any]]:
+        """One ``application`` node as an ``(app_class, kwargs)`` pair.
+
+        Read the way ``applications`` reads every entry: the boot and an
+        application added to a running server go through the same reading.
+        """
+        kwargs = self.open_attrs(node)
+        app_class = kwargs.pop("app_class")
+        if kwargs.get("code") == "_server" and not issubclass(app_class, ServerApplication):
+            raise ValueError(
+                f"application '_server' must be a ServerApplication, got {app_class.__name__}"
+            )
+        return app_class, kwargs
 
     def databases(self) -> list[dict[str, Any]]:
         """Every declared database as ``{name, owner, handler_class, params}``.

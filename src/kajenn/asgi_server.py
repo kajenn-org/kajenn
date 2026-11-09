@@ -75,6 +75,8 @@ dedicated process, its application's alone.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +108,11 @@ __all__ = ["AsgiServer"]
 
 #: The code of the management application every ``AsgiServer`` hosts.
 MANAGEMENT_CODE = "_server"
+
+#: The branch of the configuration that lists the applications.
+APPLICATIONS_BRANCH = "applications"
+
+logger = logging.getLogger(__name__)
 
 ConfigSource = str | Path | type | BuilderBase | ConfigurationHandler
 
@@ -151,6 +158,91 @@ class AsgiServer(
         super().__init__(**kwargs)
         self._check_oidc_external_url()
         self._register_configured_databases(self.config)
+        self._removals: dict[str, asyncio.Task[None]] = {}
+        self._failed_removals: set[str] = set()
+        if role is None:
+            self.watch_applications()
+
+    def watch_applications(self) -> None:
+        """Subscribe to the ``applications`` branch of the live configuration.
+
+        A node written there builds its application, registers it disabled and,
+        once the lifespan started, activates it; a node taken away removes its
+        application. The subscription starts after the boot: the declared
+        applications are already registered.
+        """
+        node = self.config.node(APPLICATIONS_BRANCH)
+        if node is None:
+            self.config.builder.source[self.config.root_label].applications()
+            node = self.config.node(APPLICATIONS_BRANCH)
+        if node.value is None:
+            builder = self.config.builder
+            node.value = type(builder.source)(builder=builder)
+        node.value.subscribe(MANAGEMENT_CODE, insert=self._application_written,
+                             delete=self._application_taken)
+
+    @property
+    def application_nodes(self) -> Any:
+        """The ``applications`` branch of the live configuration, one node per application."""
+        return self.config.node(APPLICATIONS_BRANCH).value
+
+    def _application_written(self, node: Any, **_: Any) -> None:
+        """Build, register and activate the application of a node written at runtime.
+
+        A refusal (an unknown keyword, a claimed code or mount) raises to the
+        writer, which takes the node away again.
+        """
+        app_class, app_kwargs = self.config.application_entry(node)
+        app = (RemoteApplication(app_class=app_class, **app_kwargs) if "spawner" in app_kwargs
+               else app_class(**app_kwargs))
+        self.register_application(app)
+        if self.lifespan.started:
+            asyncio.get_running_loop().create_task(self._activate_added(app))
+
+    async def _activate_added(self, app: Any) -> None:
+        """Start the process of an external application, then activate the application."""
+        if getattr(app, "spawner", None) is not None:
+            try:
+                await self.start_external(app)
+            except Exception:
+                logger.exception("application %r: its process did not start", app.code)
+                await self.remove_application(app.code, failed=True)
+                return
+        self.lifespan.start_activation(app)
+
+    def _application_taken(self, node: Any, **_: Any) -> None:
+        """Remove the application of a node taken away from the configuration."""
+        code = node.attr.get("code") or node.label
+        if code not in self.applications or code in self._removals:
+            return
+        failed = code in self._failed_removals
+        self._failed_removals.discard(code)
+        task = asyncio.get_running_loop().create_task(
+            self.remove_application(code, failed=failed))
+        self._removals[code] = task
+        task.add_done_callback(lambda _: self._removals.pop(code, None))
+
+    async def remove_live(self, code: str, *, failed: bool = False) -> None:
+        """Remove the application ``code`` by taking its node out of the configuration.
+
+        An application that has no node (built by hand, not from the
+        configuration) is removed directly.
+        """
+        nodes = self.application_nodes
+        if nodes.get_node(code) is None:
+            await self.remove_application(code, failed=failed)
+            return
+        if failed:
+            self._failed_removals.add(code)
+        nodes.pop(code)
+        await self._removals[code]
+
+    async def application_failed(self, app: Any) -> None:
+        """Send ``remove`` for ``app`` to ``_server`` over the KajennBus, as the application itself."""
+        await self.kbus_call(
+            f"/{MANAGEMENT_CODE}/applications/remove", {"code": app.code},
+            auth=Avatar(f"application:{app.code}", [SERVER_ADMIN_TAG]),
+        )
 
     def _build_config(
         self, config: ConfigSource | None, kwargs: dict[str, Any]

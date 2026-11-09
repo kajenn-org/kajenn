@@ -265,6 +265,33 @@ class KBusMixin:
             shutil.rmtree(self.kbus_socket_dir, ignore_errors=True)
             self._kbus_socket_dir = None
 
+    async def unregister_application(self, app: Any) -> None:
+        """Stop the process of an external application, without relaunch, then unregister it."""
+        spawner = getattr(app, "spawner", None)
+        if spawner is not None:
+            self.kbus_pids.pop(app.code, None)
+            started = self.kbus_spawners.get(spawner)
+            if started is not None:
+                await started.stop(f"application:{app.code}")
+        await super().unregister_application(app)
+
+    async def start_external(self, app: Any) -> None:
+        """Start the process of an external application added to a running server.
+
+        ``RuntimeError`` when the server started no dispatcher: only a server
+        that declared an external application at boot listens for joins.
+        """
+        if self.kbus_dispatcher is None:
+            raise RuntimeError("this server started no KajennBus dispatcher: an external "
+                               "application must be declared at boot")
+        spawner = self.kbus_spawners.get(app.spawner)
+        if spawner is None:
+            spawner = self.kbus_spawners[app.spawner] = SPAWNERS[app.spawner](
+                self.kbus_source, shutdown_timeout=self.shutdown_timeout_seconds,
+                on_exit=self._relaunch_role)
+        await spawner.ensure(f"application:{app.code}", url=self._mint_url(app.code),
+                             environment={})
+
     def _mint_url(self, code: str) -> str:
         """A fresh URL for the process of ``code``; the previous token stops admitting."""
         token = secrets.token_hex(32)

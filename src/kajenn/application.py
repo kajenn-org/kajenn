@@ -181,6 +181,9 @@ class BaseApplication:
 
     code: str = ""
     mount: str | None = None
+    #: Whether the server can do none of its work without this application:
+    #: when it fails, only the management application keeps answering.
+    mandatory: bool = False
     db_name: str | None = None
     grammar: type = ApplicationGrammar
     well_known: dict[str, str] = {}
@@ -213,6 +216,7 @@ class BaseApplication:
         code: str = kwargs.pop("code", cls.code) or cls.__name__.lower()
         mount: str | None = kwargs.pop("mount", cls.mount)
         self.db_name = kwargs.pop("db_name", cls.db_name)
+        self.mandatory: bool = bool(kwargs.pop("mandatory", cls.mandatory))
         self.code = code
         # ``is None`` and never truthiness: ``mount=""`` IS the site root, and
         # ``mount or code`` would silently move a root app to ``/code``.
@@ -401,6 +405,15 @@ class BaseApplication:
 
     def on_shutdown(self) -> None:
         """Lifecycle hook run at server shutdown. Override as sync or async."""
+
+    def on_remove(self) -> None:
+        """Lifecycle hook run when the server removes this application.
+
+        It runs after the application is disabled — new requests answer 503 —
+        and before it is taken away: the application closes its calls in
+        progress and releases what it holds, and returns when it has
+        finished. ``on_shutdown`` is not called. Override as sync or async.
+        """
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         """ASGI entry point: concrete applications must implement it."""
