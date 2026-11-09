@@ -151,7 +151,7 @@ th { background: var(--panel); }
         <tr><td><code>disable</code></td><td>administrator</td><td>Switches it off</td></tr>
         <tr><td><code>enable</code></td><td>administrator</td><td>Switches it on again</td></tr>
         <tr><td><code>remove</code></td><td>administrator, or the application itself</td><td>Switches it off, waits for the application to finish, removes it</td></tr>
-        <tr><td><code>list</code></td><td>administrator</td><td>The applications, with their state and the capabilities they bring</td></tr>
+        <tr><td><code>list</code></td><td>administrator</td><td>The applications, with their state</td></tr>
       </table></div>
       <p><code>add</code> receives what the <code>application</code> node of a recipe holds: the import path of the application class, its <code>code</code>, and the extra parameters handed to its constructor. What is added is always an application class.</p>
       <p>Every route of the section requires the administrator role. The rule is applied through the route plugins, with no mechanism of its own.</p>
@@ -160,7 +160,7 @@ th { background: var(--panel); }
     <section class="section"><h3>Mandatory applications and capabilities</h3>
       <ul>
         <li>The <code>application</code> node takes the attribute <code>mandatory</code>. A mandatory application is one without which the server can do none of its work. When it fails, the server logs it and stays up for <code>_server</code> only: every other application answers 503, and the readiness probe <code>/readyz</code> answers not ready. The administrator intervenes through <code>_server</code>.</li>
-        <li>An application declares the capabilities it brings. While it is not enabled, those capabilities are missing.</li>
+        <li>An application declares the capabilities it brings. While it is not enabled, those capabilities are missing. The declaration arrives with the env capabilities of the request (kajenn-org/kajenn#104), which are what reads it; <code>list</code> then shows them too.</li>
         <li>A route requiring a missing capability answers 503, as the routing register already records. What to do about it is the logic of each application, case by case. The server takes no action on a missing capability.</li>
       </ul>
     </section>

@@ -70,7 +70,7 @@
         <row><cell><c>disable</c></cell><cell>administrator</cell><cell>Switches it off</cell></row>
         <row><cell><c>enable</c></cell><cell>administrator</cell><cell>Switches it on again</cell></row>
         <row><cell><c>remove</c></cell><cell>administrator, or the application itself</cell><cell>Switches it off, waits for the application to finish, removes it</cell></row>
-        <row><cell><c>list</c></cell><cell>administrator</cell><cell>The applications, with their state and the capabilities they bring</cell></row>
+        <row><cell><c>list</c></cell><cell>administrator</cell><cell>The applications, with their state</cell></row>
       </table>
       <p><c>add</c> receives what the <c>application</c> node of a recipe holds: the import path of the application class, its <c>code</c>, and the extra parameters handed to its constructor. What is added is always an application class.</p>
       <p>Every route of the section requires the administrator role. The rule is applied through the route plugins, with no mechanism of its own.</p>
@@ -79,7 +79,7 @@
     <section title="Mandatory applications and capabilities">
       <list>
         <item>The <c>application</c> node takes the attribute <c>mandatory</c>. A mandatory application is one without which the server can do none of its work. When it fails, the server logs it and stays up for <c>_server</c> only: every other application answers 503, and the readiness probe <c>/readyz</c> answers not ready. The administrator intervenes through <c>_server</c>.</item>
-        <item>An application declares the capabilities it brings. While it is not enabled, those capabilities are missing.</item>
+        <item>An application declares the capabilities it brings. While it is not enabled, those capabilities are missing. The declaration arrives with the env capabilities of the request (kajenn-org/kajenn#104), which are what reads it; <c>list</c> then shows them too.</item>
         <item>A route requiring a missing capability answers 503, as the routing register already records. What to do about it is the logic of each application, case by case. The server takes no action on a missing capability.</item>
       </list>
     </section>

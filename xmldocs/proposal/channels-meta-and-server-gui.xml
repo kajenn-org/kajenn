@@ -157,7 +157,7 @@
 
   <consequences>
     <list>
-      <item>Three URLs change: <c>/&lt;app&gt;/_meta/schema_json</c> becomes <c>/&lt;app&gt;/_meta/api/schema_json</c>, <c>/&lt;app&gt;/_meta/docs</c> becomes <c>/&lt;app&gt;/_meta/api/docs</c>, and <c>/&lt;app&gt;/mcp</c> becomes <c>/&lt;app&gt;/_meta/mcp</c>. The old URLs answer with a deprecation warning for a period fixed case by case, as for every deprecation.</item>
+      <item>Three URLs change: <c>/&lt;app&gt;/_meta/schema_json</c> becomes <c>/&lt;app&gt;/_meta/api/schema_json</c>, <c>/&lt;app&gt;/_meta/docs</c> becomes <c>/&lt;app&gt;/_meta/api/docs</c>, and <c>/&lt;app&gt;/mcp</c> becomes <c>/&lt;app&gt;/_meta/mcp</c>. The old URLs give the same answer as the new ones, with a <c>Deprecation</c> header and a log line, for a period fixed case by case, as for every deprecation. A redirect is not used: an MCP client posting JSON-RPC does not follow it.</item>
       <item>MCP clients and links to the docs must be updated.</item>
       <item>Every route declaring the channel <c>rest</c> declares <c>api</c>.</item>
       <item>Every routed application reserves <c>_meta</c>. A route named <c>_meta</c> must fail at registration.</item>

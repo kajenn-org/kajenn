@@ -133,7 +133,7 @@ Discovery documents are not under `_meta`: an application declares its well-know
 
 ### Consequences
 
-- Three URLs change: `/<app>/_meta/schema_json` becomes `/<app>/_meta/api/schema_json`, `/<app>/_meta/docs` becomes `/<app>/_meta/api/docs`, and `/<app>/mcp` becomes `/<app>/_meta/mcp`. The old URLs answer with a deprecation warning for a period fixed case by case, as for every deprecation.
+- Three URLs change: `/<app>/_meta/schema_json` becomes `/<app>/_meta/api/schema_json`, `/<app>/_meta/docs` becomes `/<app>/_meta/api/docs`, and `/<app>/mcp` becomes `/<app>/_meta/mcp`. The old URLs give the same answer as the new ones, with a `Deprecation` header and a log line, for a period fixed case by case, as for every deprecation. A redirect is not used: an MCP client posting JSON-RPC does not follow it.
 - MCP clients and links to the docs must be updated.
 - Every route declaring the channel `rest` declares `api`.
 - Every routed application reserves `_meta`. A route named `_meta` must fail at registration.

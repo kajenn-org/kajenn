@@ -79,7 +79,7 @@ An application may run in the process of the server or in a process of its own (
 | `disable` | administrator | Switches it off |
 | `enable` | administrator | Switches it on again |
 | `remove` | administrator, or the application itself | Switches it off, waits for the application to finish, removes it |
-| `list` | administrator | The applications, with their state and the capabilities they bring |
+| `list` | administrator | The applications, with their state |
 
 `add` receives what the `application` node of a recipe holds: the import path of the application class, its `code`, and the extra parameters handed to its constructor. What is added is always an application class.
 
@@ -88,7 +88,7 @@ Every route of the section requires the administrator role. The rule is applied 
 #### Mandatory applications and capabilities
 
 - The `application` node takes the attribute `mandatory`. A mandatory application is one without which the server can do none of its work. When it fails, the server logs it and stays up for `_server` only: every other application answers 503, and the readiness probe `/readyz` answers not ready. The administrator intervenes through `_server`.
-- An application declares the capabilities it brings. While it is not enabled, those capabilities are missing.
+- An application declares the capabilities it brings. While it is not enabled, those capabilities are missing. The declaration arrives with the env capabilities of the request (kajenn-org/kajenn#104), which are what reads it; `list` then shows them too.
 - A route requiring a missing capability answers 503, as the routing register already records. What to do about it is the logic of each application, case by case. The server takes no action on a missing capability.
 
 #### FatalBootError
