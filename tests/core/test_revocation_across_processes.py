@@ -122,7 +122,7 @@ class Recipe(CONFIGURATION_TEMPLATES["default"]):
         apps.application(code="idp", app_class=Idp)
 '''
 
-REST_CHANNEL = 'cfg.channels().channel(name="rest", authentication_route="/idp/check")'
+REST_CHANNEL = 'cfg.channels().channel(name="api", authentication_route="/idp/check")'
 SUPERADMIN = Avatar("root", ["SUPERADMIN"])
 
 

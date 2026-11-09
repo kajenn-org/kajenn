@@ -96,11 +96,11 @@ async def test_an_expired_jwt_is_refused_even_when_cached() -> None:
     server = make_server()
     token = jwt.encode({"sub": "carol", "exp": int(time.time()) + 2}, JWT_SECRET, algorithm="HS256")
     credential = f"Bearer {token}"
-    avatar = await server.authenticate_credential(credential, "rest")
+    avatar = await server.authenticate_credential(credential, "api")
     assert avatar.identity == "carol"
     await asyncio.sleep(2.5)
     with pytest.raises(HTTPUnauthorized):
-        await server.authenticate_credential(credential, "rest")
+        await server.authenticate_credential(credential, "api")
 
 
 async def judged_like_pyjwt(exp: Any, expires: int) -> None:
@@ -112,13 +112,13 @@ async def judged_like_pyjwt(exp: Any, expires: int) -> None:
     server = make_server()
     token = jwt.encode({"sub": "carol", "exp": exp}, JWT_SECRET, algorithm="HS256")
     credential = f"Bearer {token}"
-    avatar = await server.authenticate_credential(credential, "rest")
+    avatar = await server.authenticate_credential(credential, "api")
     assert avatar.identity == "carol"
     await asyncio.sleep(expires + 0.2 - time.time())
     with pytest.raises(jwt.ExpiredSignatureError):
         jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
     with pytest.raises(HTTPUnauthorized):
-        await server.authenticate_credential(credential, "rest")
+        await server.authenticate_credential(credential, "api")
 
 
 async def test_a_jwt_with_a_string_exp_is_cached_until_pyjwt_expires_it() -> None:
@@ -145,11 +145,11 @@ async def test_an_expired_api_key_is_refused_even_when_cached() -> None:
     server = make_server()
     key = server.api_key_store.issue("ci-deploy", ["admin"], expires_at=time.time() + 1)
     credential = f"Bearer {key}"
-    avatar = await server.authenticate_credential(credential, "rest")
+    avatar = await server.authenticate_credential(credential, "api")
     assert avatar.identity == "ci-deploy"
     await asyncio.sleep(1.5)
     with pytest.raises(HTTPUnauthorized):
-        await server.authenticate_credential(credential, "rest")
+        await server.authenticate_credential(credential, "api")
 
 
 async def test_a_channel_route_reporting_valid_until_bounds_the_cache() -> None:

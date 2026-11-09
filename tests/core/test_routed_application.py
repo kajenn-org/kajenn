@@ -69,11 +69,7 @@ class DemoApp(RoutedApplication):
 
 
 class TypedApp(RoutedApplication):
-    """Pydantic-plugged app: the body-spread reconciliation has fields to read."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self.route.plug("pydantic")
+    """Typed app: the body-spread reconciliation has fields to read (pydantic is always plugged)."""
 
     @route()
     def add(self, x: int = 0, y: int = 0) -> dict[str, int]:

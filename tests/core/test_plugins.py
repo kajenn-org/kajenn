@@ -231,8 +231,9 @@ class TestNoImportSideEffect:
 
 class TestLazyArming:
     def test_unmounted_app_arms_nothing_extra(self) -> None:
-        app = ApiApp()  # no server → only the auth plug from __init__
-        assert {plugin.name for plugin in app.route.iter_plugins()} == {"auth"}
+        app = ApiApp()  # no server → only the plugs of __init__: auth, channel, pydantic
+        assert {plugin.name for plugin in app.route.iter_plugins()} == {
+            "auth", "channel", "pydantic"}
 
     def test_mounted_app_arms_on_first_route_access(self) -> None:
         server = AsgiServer(applications=[(ApiApp, {"mount": ""})], plugins={"openapi": True})
@@ -242,10 +243,11 @@ class TestLazyArming:
 
     def test_no_plugins_config_still_arms_the_fixed_base(self) -> None:
         # A mixin-equipped server always arms the fixed base (pydantic/openapi)
-        # on top of the app's own ``auth`` plug, even with no plugins config.
+        # on top of the app's own plugs, even with no plugins config.
         app = AsgiServer(applications=[(ApiApp, {"mount": ""})]).applications["apiapp"]
         assert {plugin.name for plugin in app.route.iter_plugins()} == {
             "auth",
+            "channel",
             "pydantic",
             "openapi",
         }
@@ -315,8 +317,9 @@ class TestRouterOpenapi:
         return svc
 
     def test_flat_paths_carry_operations_and_schemas(self) -> None:
-        spec = router_openapi(self._armed_service().route)
-        assert set(spec["paths"]) == {"/add", "/remove", "/make"}
+        spec = router_openapi(self._armed_service().route, channel_channel="api")
+        own = {path for path in spec["paths"] if not path.startswith("/_meta/")}
+        assert own == {"/add", "/remove", "/make"}
         add_get = spec["paths"]["/add"]["get"]
         assert add_get["operationId"] == "add"
         # Input query params come from the cached request_schema: x required, y not.
@@ -326,11 +329,11 @@ class TestRouterOpenapi:
         assert "responses" in add_get
 
     def test_method_override_from_handler_config(self) -> None:
-        spec = router_openapi(self._armed_service().route)
+        spec = router_openapi(self._armed_service().route, channel_channel="api")
         assert "delete" in spec["paths"]["/remove"]
 
     def test_complex_param_becomes_post_request_body(self) -> None:
-        spec = router_openapi(self._armed_service().route)
+        spec = router_openapi(self._armed_service().route, channel_channel="api")
         make_post = spec["paths"]["/make"]["post"]
         assert "requestBody" in make_post
 
@@ -339,9 +342,9 @@ class TestRouterOpenapi:
         parent = ApiApp()
         parent.route.add_branches({"name": "sub", "instance": _Svc()})
         server.arm_router(parent.route)
-        flat = router_openapi(parent.route)
+        flat = router_openapi(parent.route, channel_channel="api")
         assert "/sub/ping" in flat["paths"]
-        hierarchical = router_openapi(parent.route, hierarchical=True)
+        hierarchical = router_openapi(parent.route, hierarchical=True, channel_channel="api")
         assert "/add" in hierarchical["paths"]
         assert "sub" in hierarchical["routers"]
         assert "/ping" in hierarchical["routers"]["sub"]["paths"]

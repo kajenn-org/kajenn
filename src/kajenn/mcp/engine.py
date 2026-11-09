@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING, Any
 
 from genro_routes import RoutingClass, route
 
-from ..routed_application import RoutedApplication
+from ..exceptions import ROUTER_ERRORS
 from .jsonrpc import JSONRPC_INVALID_REQUEST, JSONRPC_METHOD_NOT_FOUND, McpError
 from .tools import McpTools, _ToolArgumentsInvalid
 
@@ -152,13 +152,13 @@ class McpEngine:
 
         Resolution runs on the engine's channel with ``auth_tags`` as the auth
         filter; a failing code raises the core HTTP exception mapped to it
-        (``RoutedApplication.ROUTER_ERRORS``), bad arguments raise the tools'
+        (``ROUTER_ERRORS``), bad arguments raise the tools'
         marker. No parameter adaptation.
         """
         assert self.router is not None  # tools/call answers -32603 before invoking
         node = self.router.node(
             path,
-            errors={**RoutedApplication.ROUTER_ERRORS, "validation_error": _ToolArgumentsInvalid},
+            errors={**ROUTER_ERRORS, "validation_error": _ToolArgumentsInvalid},
             auth_tags=",".join(auth_tags) if isinstance(auth_tags, list) else auth_tags,
             channel_channel=self.channel,
         )

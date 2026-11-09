@@ -391,7 +391,7 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
 
     @element(parent_tags="configuration", sub_tags="channel", collection_key="name")
     def channels(self) -> None:
-        """Collection of channels, each labelled by its ``name`` (``rest``,
+        """Collection of channels, each labelled by its ``name`` (``api``,
         ``mcp``, ``wsx``, ...): per channel, the route that authenticates a
         credential presented on it."""
 
@@ -457,6 +457,5 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         """OpenAPI metadata: ``title``, ``version``, ``description``.
 
         Grammar only: no core consumer reads this section.
-        ``OpenApiApplication`` takes its document metadata from the
-        ``openapi_info`` attribute of the application or of the mounted routing
-        class, not from here."""
+        A routed application takes its document metadata from its own
+        ``openapi_info`` attribute, not from here."""

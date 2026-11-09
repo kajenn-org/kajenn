@@ -78,7 +78,7 @@ class TestServerEndpoints:
         self, http_request, response_status, response_body
     ) -> None:
         server = AsgiServer(applications=[ServerApplication, (BaseApplication, {"mount": ""})])
-        sent = await http_request(server, "/_server/_meta/schema_json")
+        sent = await http_request(server, "/_server/_meta/api/schema_json")
         assert response_status(sent) == 200
         doc = json.loads(response_body(sent))
         assert doc["openapi"] == "3.1.0"
@@ -90,7 +90,7 @@ class TestServerEndpoints:
         # REVIEW #6: the injected ``_request`` must NOT surface in the public
         # request body, and the route is POST by declaration (openapi_method).
         server = AsgiServer(applications=[ServerApplication, (BaseApplication, {"mount": ""})])
-        sent = await http_request(server, "/_server/_meta/schema_json")
+        sent = await http_request(server, "/_server/_meta/api/schema_json")
         doc = json.loads(response_body(sent))
         login = doc["paths"]["/login"]
         assert set(login) == {"post"}
@@ -104,7 +104,7 @@ class TestServerEndpoints:
 class TestDocs:
     async def test_server_serves_the_docs_page(self, http_request, response_status) -> None:
         server = AsgiServer(applications=[ServerApplication, (BaseApplication, {"mount": ""})])
-        sent = await http_request(server, "/_server/_meta/docs")
+        sent = await http_request(server, "/_server/_meta/api/docs")
         assert response_status(sent) == 200
 
 

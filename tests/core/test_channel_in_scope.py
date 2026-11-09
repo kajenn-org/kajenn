@@ -14,7 +14,7 @@
 
 """The channel travels in the scope; ``server.channels()`` is configured.
 
-Every face writes ``scope["kajenn.channel"]`` — ``rest`` for an HTTP request,
+Every face writes ``scope["kajenn.channel"]`` — ``api`` for an HTTP request,
 ``mcp`` for a tool call, ``wsx`` for a websocket message, whatever the frame
 said for the bus — and ``RoutedApplication.auth_filters`` resolves the route on
 it. The configuration declares, per channel, the route that authenticates.
@@ -30,20 +30,20 @@ import pytest
 
 from genro_routes import route
 
-from kajenn import AsgiServer, BaseApplication, McpOpenApiApplication, RoutedApplication
+from kajenn import AsgiServer, BaseApplication, RoutedApplication
 from kajenn.config import AsgiConfigBuilder
 from kajenn.types import Message, Scope
 from kajenn.wsx import WsxConnection, WsxEnvelope
 
 
-class Faces(McpOpenApiApplication):
-    @route(channel_channels="mcp,rest")
+class Faces(RoutedApplication):
+    @route(channel_channels="mcp,api")
     def channel(self, _request=None) -> dict[str, Any]:
         return {"channel": _request.scope.get("kajenn.channel")}
 
 
 class Plain(RoutedApplication):
-    @route()
+    @route(channel_channels="api,telegram")
     def channel(self, _request=None) -> dict[str, Any]:
         return {"channel": _request.scope.get("kajenn.channel")}
 
@@ -81,11 +81,11 @@ async def drive(server: AsgiServer, path: str, *, method: str = "GET", body: byt
 
 
 class TestTheScopeKey:
-    async def test_a_rest_request_is_on_the_rest_channel(self) -> None:
+    async def test_a_rest_request_is_on_the_http_channel(self) -> None:
         # wf:contract: dispatch sets scope["kajenn.channel"] to the application's
-        # wf:contract: http_channel ("rest") when the scope carries none.
-        assert await drive(faces_server(), "/faces/channel") == {"channel": "rest"}
-        assert await drive(faces_server(), "/plain/channel") == {"channel": "rest"}
+        # wf:contract: http_channel ("api") when the scope carries none.
+        assert await drive(faces_server(), "/faces/channel") == {"channel": "api"}
+        assert await drive(faces_server(), "/plain/channel") == {"channel": "api"}
 
     async def test_a_tool_call_is_on_the_mcp_channel(self) -> None:
         # wf:contract: the scope built for a tools/call carries kajenn.channel = "mcp".
@@ -96,7 +96,7 @@ class TestTheScopeKey:
             "params": {"name": "channel", "arguments": {}},
         }
         answer = await drive(
-            faces_server(), "/faces/mcp", method="POST", body=json.dumps(envelope).encode()
+            faces_server(), "/faces/_meta/mcp", method="POST", body=json.dumps(envelope).encode()
         )
         assert answer["result"]["structuredContent"] == {"channel": "mcp"}
 
@@ -107,7 +107,7 @@ class TestTheScopeKey:
         assert await server.kbus_call("/plain/channel", {}, channel="telegram") == {
             "channel": "telegram"
         }
-        assert await server.kbus_call("/plain/channel", {}) == {"channel": "rest"}
+        assert await server.kbus_call("/plain/channel", {}) == {"channel": "api"}
 
     async def test_a_wsx_message_is_on_the_wsx_channel(self) -> None:
         # wf:contract: WsxConnection._request_scope sets kajenn.channel = "wsx" on the
@@ -154,24 +154,23 @@ class TestTheScopeKey:
 
     def test_http_channel_is_a_class_attribute(self) -> None:
         # wf:contract: RoutedApplication.http_channel names the channel of a plain HTTP
-        # wf:contract: request; the MCP/OpenAPI application resolves it to rest_channel.
-        assert RoutedApplication.http_channel == "rest"
-        assert McpOpenApiApplication.http_channel == McpOpenApiApplication.rest_channel
+        # wf:contract: request; the MCP/OpenAPI application resolves it to http_channel.
+        assert RoutedApplication.http_channel == "api"
+        assert RoutedApplication.http_channel == RoutedApplication.http_channel
 
 
 class TestResolutionReadsTheScope:
     def test_auth_filters_carry_the_channel(self) -> None:
         # wf:contract: RoutedApplication.auth_filters(scope) returns channel_channel from
-        # wf:contract: scope["kajenn.channel"]; the MCP application no longer overrides it.
+        # wf:contract: scope["kajenn.channel"].
         app = Plain(code="plain")
         filters = app.auth_filters({"type": "http", "kajenn.channel": "telegram"})
         assert filters["channel_channel"] == "telegram"
-        assert "auth_filters" not in McpOpenApiApplication.__dict__
 
     async def test_a_tool_only_route_is_invisible_to_rest(self) -> None:
         # wf:contract: a route declared on channel "mcp" only is not resolved by a REST
         # wf:contract: request (404), and is resolved by a tool call.
-        class McpOnly(McpOpenApiApplication):
+        class McpOnly(RoutedApplication):
             @route(channel_channels="mcp")
             def hidden(self) -> dict[str, bool]:
                 return {"hidden": True}
@@ -203,7 +202,7 @@ class TestResolutionReadsTheScope:
             "method": "tools/call",
             "params": {"name": "hidden", "arguments": {}},
         }
-        answer = await drive(server, "/m/mcp", method="POST", body=json.dumps(envelope).encode())
+        answer = await drive(server, "/m/_meta/mcp", method="POST", body=json.dumps(envelope).encode())
         assert answer["result"]["structuredContent"] == {"hidden": True}
 
 

@@ -72,20 +72,16 @@ router exposes exactly what the auth plugin leaves untagged.
 from __future__ import annotations
 
 import asyncio
-import importlib
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from genro_routes import RoutingClass, is_result_wrapper
 
 from .application import BaseApplication
-from .exceptions import (
-    HTTPBadRequest,
-    HTTPException,
-    HTTPForbidden,
-    HTTPNotFound,
-    HTTPUnauthorized,
-)
+from .applications.mcp import McpTransport
+from .applications.openapi import ApplicationMeta
+from .exceptions import ROUTER_ERRORS, HTTPBadRequest, HTTPException
 from .plugins.openapi.plugin import METHOD_NOT_ALLOWED
 from .request import Request
 from .streaming import StreamingResponse
@@ -96,6 +92,22 @@ if TYPE_CHECKING:
     from .types import Receive, Scope, Send
 
 __all__ = ["RoutedApplication"]
+
+logger = logging.getLogger(__name__)
+
+#: The one segment the kernel reserves inside a routed application.
+META_SEGMENT = "_meta"
+
+#: Where the MCP JSON-RPC face answers, relative to the application.
+META_MCP = META_SEGMENT + "/mcp"
+
+#: The URLs of 0.8.0 and where they moved. They give the new answer, with a
+#: ``Deprecation`` header and a log line, until their removal is decided.
+MOVED_URLS = {
+    "_meta/schema_json": "_meta/api/schema_json",
+    "_meta/docs": "_meta/api/docs",
+    "mcp": META_MCP,
+}
 
 
 class _HandlerSignatureInvalid(Exception):
@@ -117,55 +129,90 @@ class _HandlerArgumentsInvalid(Exception):
     """
 
 
-class _ChallengedUnauthorized(HTTPUnauthorized):
-    """The ``not_authenticated`` 401: no identity, the ``WWW-Authenticate`` challenge."""
-
-    def __init__(self, detail: str | None = None) -> None:
-        super().__init__(detail, headers=[(b"www-authenticate", b"Bearer")])
-
-
 class RoutedApplication(BaseApplication, RoutingClass):
     """Application base serving ``@route`` handlers through the app router.
 
-    Constructor kwargs flow down the D16 chain (``code``/``mount``/``db_name``
-    to ``BaseApplication``).
+    Every routed application has two faces on the same router. The ``api``
+    face answers a plain HTTP request on the route's path and is described by
+    OpenAPI under ``_meta/api``; the MCP face answers JSON-RPC on
+    ``_meta/mcp``. The ``channel`` plugin decides what each face shows: a route
+    that declares no ``channel_channels`` answers on ``api`` only, a tool is a
+    route declaring ``mcp`` (``@route(channel_channels="mcp,api")`` for both).
+    ``_meta`` is the one segment the application cannot use for a route of its
+    own.
+
+    Constructor kwargs peeled here: ``docs`` (``"swagger"``, the default, or
+    ``"off"``, which turns off only the Swagger UI page), ``mcp_name``,
+    ``mcp_version``, ``tool_separator`` (class attributes give the defaults)
+    and ``allowed_origins`` (the Origin gate of the MCP face, ``None`` for no
+    restriction). The rest flows down the D16 chain (``code``/``mount``/
+    ``db_name`` to ``BaseApplication``).
     """
 
-    # genro-routes resolution error codes mapped to core HTTP exceptions (the
-    # node.error string-code contract): an unknown or unavailable path answers
-    # 404; a ruled entry denied answers on the HTTP distinction the router
-    # already draws — 401 "I do not know who you are" when no identity was
-    # presented, 403 "I know, and it is not enough" when the presented tags do
-    # not match. The 401 is what ``ErrorMiddleware`` negotiates into a login
-    # challenge, so a browser reaching a protected route lands on the login
-    # page instead of a dead end.
-    ROUTER_ERRORS: dict[str, type[Exception]] = {
-        "not_found": HTTPNotFound,
-        "not_available": HTTPNotFound,
-        "not_authorized": HTTPForbidden,
-        "not_authenticated": _ChallengedUnauthorized,
-    }
+    ROUTER_ERRORS: dict[str, type[Exception]] = ROUTER_ERRORS
 
     # The channel of a request that reaches ``__call__`` without one: a plain
-    # HTTP request, a kbus frame that names none.
-    http_channel: ClassVar[str] = "rest"
+    # HTTP request, a kbus frame that names none. It is also the default of
+    # every route that declares no channel.
+    http_channel: ClassVar[str] = "api"
+    mcp_channel: ClassVar[str] = "mcp"
+    mcp_name: ClassVar[str] = "kajenn-mcp"
+    mcp_version: ClassVar[str] = "1.0.0"
+    tool_separator: ClassVar[str] = "."
+    openapi_info: ClassVar[dict[str, Any]] = {}
 
     def __init__(self, **kwargs: Any) -> None:
+        cls = type(self)
         self._armed: bool = False
+        self._docs_style: str = kwargs.pop("docs", "swagger")
+        name = kwargs.pop("mcp_name", cls.mcp_name)
+        version = kwargs.pop("mcp_version", cls.mcp_version)
+        separator = kwargs.pop("tool_separator", cls.tool_separator)
+        allowed_origins = kwargs.pop("allowed_origins", None)
         super().__init__(**kwargs)
-        self.route.plug("auth")
+        router = self.route
+        router.plug("auth")
+        router.plug("channel")
+        router.channel.configure(channels=cls.http_channel)
+        nodes = router.nodes(lazy=True, forbidden=True)
+        if META_SEGMENT in {*nodes.get("entries", ()), *nodes.get("routers", ())}:
+            raise ValueError(
+                f"{cls.__name__}: {META_SEGMENT!r} is reserved and cannot name a route"
+            )
+        router.add_branches({"name": META_SEGMENT, "instance": ApplicationMeta(self)})
+        self._mcp_transport = McpTransport(
+            self,
+            name=name,
+            version=version,
+            tool_separator=separator,
+            channel=cls.mcp_channel,
+            allowed_origins=allowed_origins,
+        )
+        self._mcp_transport.build_engine(router)
 
-    def _import_routing_class(self, module_path: str) -> RoutingClass:
-        """Import and instantiate a ``RoutingClass`` from a ``"pkg.mod:Class"`` path.
+    @property
+    def docs_style(self) -> str:
+        """Documentation style — ``"swagger"`` or ``"off"``."""
+        return self._docs_style
 
-        The class is instantiated with no arguments; an API needing constructor
-        arguments is supplied as a ready ``routing_class=`` instance instead.
-        Shared by the ``OpenApiApplication`` and ``McpApplication`` subclasses.
-        """
-        module_name, class_name = module_path.split(":")
-        mod = importlib.import_module(module_name)
-        cls = getattr(mod, class_name)
-        return cls()  # type: ignore[no-any-return]
+    @property
+    def api_info(self) -> dict[str, Any]:
+        """The OpenAPI info dict of the application: ``openapi_info``."""
+        return self.openapi_info
+
+    @property
+    def mcp_transport(self) -> McpTransport:
+        """The MCP face of this application."""
+        return self._mcp_transport
+
+    @property
+    def mcp_engine(self) -> Any:
+        """The MCP engine driving this application's tools."""
+        return self.mcp_transport.engine
+
+    def meta_url(self, path: str) -> str:
+        """The public URL of ``_meta/<path>`` of this application."""
+        return f"/{self.mount}/{META_SEGMENT}/{path}" if self.mount else f"/{META_SEGMENT}/{path}"
 
     @property
     def route(self) -> Router:
@@ -222,7 +269,23 @@ class RoutedApplication(BaseApplication, RoutingClass):
         triple and nothing is buffered. Any other result is answered through
         ``request.response`` with the resolved node's metadata (a result
         wrapper's own metadata on top).
+
+        ``_meta/mcp`` goes to the MCP face. A URL of 0.8.0 (``MOVED_URLS``)
+        gives the answer of its new address, with a ``Deprecation`` header and
+        a log line; ``mcp`` moves only while the application has no route of
+        that name.
         """
+        path = str(scope.get("path", "/")).strip("/")
+        moved = self.moved_url(path)
+        if moved is not None:
+            logger.warning("deprecated URL %r of application %r: use %r",
+                           path, self.code, moved)
+            send = self.deprecated_send(send, self.meta_url(moved.removeprefix(META_SEGMENT + "/")))
+            path = moved
+            scope = {**scope, "path": "/" + moved, "raw_path": ("/" + moved).encode()}
+        if path == META_MCP:
+            await self.mcp_transport.handle(scope, receive, send)
+            return
         scope.setdefault("kajenn.channel", self.http_channel)
         request = Request(scope, receive, server=self.server, application=self)
         await request.init()
@@ -236,6 +299,29 @@ class RoutedApplication(BaseApplication, RoutingClass):
         else:
             request.response.set_result(result, node.metadata)
         await request.response(scope, receive, send)
+
+    def moved_url(self, path: str) -> str | None:
+        """The new address of ``path`` when it is a URL of 0.8.0, else ``None``."""
+        moved = MOVED_URLS.get(path)
+        if moved is None or path != "mcp":
+            return moved
+        nodes = super().route.nodes(lazy=True, forbidden=True)
+        taken = {*nodes.get("entries", ()), *nodes.get("routers", ())}
+        return None if path in taken else moved
+
+    def deprecated_send(self, send: Send, successor: str) -> Send:
+        """``send`` with ``Deprecation`` and a ``successor-version`` link on the response start."""
+
+        async def deprecated(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [
+                    *message.get("headers", []),
+                    (b"deprecation", b"true"),
+                    (b"link", f'<{successor}>; rel="successor-version"'.encode()),
+                ]}
+            await send(message)
+
+        return deprecated
 
     async def execute(self, request: Request) -> Any:
         """Resolve ``request.path`` in the app router, run the handler, return its result.
@@ -422,7 +508,7 @@ class RoutedApplication(BaseApplication, RoutingClass):
         else:
             keeps_body = True
         if isinstance(body, dict) and (
-            request.scope.get("kajenn.channel") == getattr(self, "mcp_channel", "mcp")
+            request.scope.get("kajenn.channel") == self.mcp_channel
             or not keeps_body
         ):
             del kwargs["body_data"]

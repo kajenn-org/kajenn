@@ -64,7 +64,7 @@ class Billing(RoutedApplication):
 class Idp(RoutedApplication):
     @route()
     def check(self, credential: str = "", channel: str = ""):
-        assert channel == "rest"
+        assert channel == "api"
         return {"identity": "idp-user", "tags": ["admin"], "data": IDP_DATA[credential]}
 
 
@@ -81,7 +81,7 @@ class Recipe(CONFIGURATION_TEMPLATES["default"]):
         apps = cfg.applications()
         apps.application(code="billing", app_class=Billing, DECLARATION)
         apps.application(code="idp", app_class=Idp)
-        cfg.channels().channel(name="rest", authentication_route="/idp/check")
+        cfg.channels().channel(name="api", authentication_route="/idp/check")
 '''
 
 

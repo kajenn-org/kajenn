@@ -34,7 +34,10 @@ text = message.encode()
 assert WsxEnvelope(text).data == {"name": "Ada"}
 ```
 
-Against the getting-started server, a Python client can make that call.
+Against the getting-started server, a Python client can make that call: its
+`greet` route declares the channel `wsx` (`@route(channel_channels="api,wsx")`).
+A route that declares no channel answers plain HTTP requests only, and a
+websocket message to it answers `404`.
 `AsgiServer` already supplies pydantic parameter validation. Run the client in
 a separate process:
 

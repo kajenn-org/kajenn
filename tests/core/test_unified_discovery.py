@@ -14,7 +14,7 @@
 
 """One discovery, filtered by the same filters as execution, for both formats.
 
-The OpenAPI schema (``_meta/schema_json``) and the MCP ``tools/list`` read the
+The OpenAPI schema (``_meta/api/schema_json``) and the MCP ``tools/list`` read the
 application's discovery method with the request's scope: the identity is
 resolved exactly as ``execute`` resolves it, and the tree is filtered by the
 channel of the request and by the caller's tags. What a caller sees listed is
@@ -33,7 +33,7 @@ import pytest
 
 from genro_routes import RoutingClass, route
 
-from kajenn import AsgiServer, BaseApplication, McpEngine, McpOpenApiApplication
+from kajenn import AsgiServer, BaseApplication, McpEngine, RoutedApplication
 from kajenn.types import Message, Scope
 from kajenn.server_app import ServerApplication
 
@@ -47,16 +47,16 @@ AUTH = {
 }
 
 
-class Api(McpOpenApiApplication):
-    @route(channel_channels="mcp,rest")
+class Api(RoutedApplication):
+    @route(channel_channels="mcp,api")
     def public(self) -> dict[str, str]:
         return {"route": "public"}
 
-    @route(channel_channels="mcp,rest", auth_rule="admin")
+    @route(channel_channels="mcp,api", auth_rule="admin")
     def admin_only(self) -> dict[str, str]:
         return {"route": "admin_only"}
 
-    @route(channel_channels="mcp,rest", auth_rule="user")
+    @route(channel_channels="mcp,api", auth_rule="user")
     def user_only(self) -> dict[str, str]:
         return {"route": "user_only"}
 
@@ -105,14 +105,14 @@ async def drive(
 async def rpc(server: AsgiServer, method: str, params: dict, token: str | None) -> dict:
     payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
     status, data = await drive(
-        server, "/api/mcp", method="POST", body=json.dumps(payload).encode(), token=token
+        server, "/api/_meta/mcp", method="POST", body=json.dumps(payload).encode(), token=token
     )
     assert status == 200
     return data
 
 
 async def schema_routes(server: AsgiServer, token: str | None) -> set[str]:
-    status, schema = await drive(server, "/api/_meta/schema_json", token=token)
+    status, schema = await drive(server, "/api/_meta/api/schema_json", token=token)
     assert status == 200
     names = {path.rstrip("/").rpartition("/")[2] for path in schema["paths"]}
     return names & ROUTES
@@ -178,7 +178,7 @@ class TestListedEqualsCallable:
 
 class TestInvalidCredential:
     async def test_schema_request_with_an_invalid_bearer_is_401(self) -> None:
-        status, _ = await drive(api_server(), "/api/_meta/schema_json", token="nope")
+        status, _ = await drive(api_server(), "/api/_meta/api/schema_json", token="nope")
         assert status == 401
 
     async def test_execution_with_an_invalid_bearer_is_401(self) -> None:
@@ -204,7 +204,7 @@ class Tools(RoutingClass):
     def user_only(self) -> dict[str, str]:
         return {"route": "user_only"}
 
-    @route(channel_channels="rest")
+    @route(channel_channels="api")
     def rest_only(self) -> dict[str, str]:
         return {"route": "rest_only"}
 

@@ -28,6 +28,7 @@ The server application `_server` extends `OpenApiApplication`, so it has no MCP 
 
 - The OpenAPI face and the MCP face move into `RoutedApplication`. Every application with routes has both, with no switch to turn them off.
 - The channel of a plain HTTP request is named `api`, short for OpenAPI, in place of `rest`: kajenn calls a method by path and describes it with OpenAPI, it is not REST. A route for both faces declares `channel_channels="mcp,api"`. Under `_meta` every branch is named after its channel: `api` and `mcp`.
+- Every `RoutedApplication` plugs the `channel` plugin with default `api`: a route that declares no `channel_channels` answers only on `api`. A route meant for WSX or another channel declares it, for example `channel_channels="api,wsx"`.
 - The `channel` plugin keeps deciding visibility. Turning MCP on everywhere exposes nothing that is not declared for channel `mcp`.
 - `OpenApiApplication`, `McpOpenApiApplication` and `McpApplication` are removed in the release that brings the faces, with no deprecated alias. No new class name is needed.
 - `RoutedApplication` takes no external `RoutingClass`: the parameters `routing_class`, `module` and `api_name` are gone. To expose a `RoutingClass` that already exists, an application class contains it.
@@ -112,6 +113,10 @@ Discovery documents are not under `_meta`: an application declares its well-know
    3. **api, short for openapi**
    4. **http**
    → Choice: **api, short for openapi** (GP, 2026-11-09) — kajenn is not REST: a route is a method called by path and described by OpenAPI. The channel is openapi, and api is its short name.
+- **d-default-channel** `decided` — On which channels does a route answer when it declares no channel\_channels?
+   1. **Only api**
+   2. **Every channel except mcp**
+   → Choice: **Only api** (GP, 2026-11-09) — A route answers where it says it answers; api is the face every routed application has.
 - **d-gui-switch** `decided` — How does a recipe enable the server GUI?
    1. **Optional import of the GUI package**
    2. **app_class on the _server application**
@@ -136,6 +141,7 @@ Discovery documents are not under `_meta`: an application declares its well-know
 - Three URLs change: `/<app>/_meta/schema_json` becomes `/<app>/_meta/api/schema_json`, `/<app>/_meta/docs` becomes `/<app>/_meta/api/docs`, and `/<app>/mcp` becomes `/<app>/_meta/mcp`. The old URLs give the same answer as the new ones, with a `Deprecation` header and a log line, for a period fixed case by case, as for every deprecation. A redirect is not used: an MCP client posting JSON-RPC does not follow it.
 - MCP clients and links to the docs must be updated.
 - Every route declaring the channel `rest` declares `api`.
+- A route of a plain `RoutedApplication` called over WSX, or over the KajennBus with a channel other than `api`, answers 404 until it declares that channel.
 - Every routed application reserves `_meta`. A route named `_meta` must fail at registration.
 - `ServerApplication` gains an MCP face.
 - Every application built on `OpenApiApplication`, `McpOpenApiApplication` or `McpApplication` moves to `RoutedApplication` in the release that removes them. genropy-kajenn uses `OpenApiApplication` through `GenropyProxyOpenApiApplication`.

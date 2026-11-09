@@ -67,7 +67,7 @@ class Billing(RoutedApplication):
         await asyncio.sleep(STARTUP_DELAY)
         self.prepared = True
 
-    @route()
+    @route(channel_channels="api,wsx")
     def total(self, order):
         return {"total": int(order) * 2}
 
@@ -93,7 +93,7 @@ class Billing(RoutedApplication):
     def fail(self):
         raise RuntimeError("billing failed")
 
-    @route()
+    @route(channel_channels="api,telegram")
     def seen_by(self, _request=None):
         avatar = _request.avatar()
         return {
@@ -330,13 +330,13 @@ async def test_a_failing_route_answers_the_same_status_in_both_placements(tmp_pa
 async def test_avatar_and_channel_reach_the_spawned_process(tmp_path):
     # wf:contract: kbus_call with auth=Avatar(...) and channel="telegram" reaches the
     # wf:contract: spawned handler with that identity and that channel; without a channel
-    # wf:contract: the handler sees "rest".
+    # wf:contract: the handler sees "api".
     async with running(write_recipe(tmp_path)) as server:
         seen = await server.kbus_call("/billing/seen_by", {},
                                       auth=Avatar("ann", ["admin"]), channel="telegram")
         plain = await server.kbus_call("/billing/seen_by", {})
     assert (seen["identity"], seen["channel"]) == ("ann", "telegram")
-    assert plain["channel"] == "rest"
+    assert plain["channel"] == "api"
     assert seen["pid"] != os.getpid()
 
 

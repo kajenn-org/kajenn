@@ -52,7 +52,7 @@ class Billing(RoutedApplication):
         items.append(99)
         return {"count": len(items)}
 
-    @route()
+    @route(channel_channels="api,mcp")
     def seen_by(self, _request=None) -> dict[str, Any]:
         avatar = _request.avatar()
         return {

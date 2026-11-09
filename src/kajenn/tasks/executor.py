@@ -85,8 +85,9 @@ class LocalTaskExecutor:
         """Return the callable ``RouterNode`` for a task descriptor.
 
         Looks the app up by its ``mount`` (``""`` is the root app, exactly as in
-        the request demux) and resolves ``node_path`` in that app's router. The
-        node is callable — invoking it runs the handler, no HTTP.
+        the request demux) and resolves ``node_path`` in that app's router on
+        the app's ``http_channel``: a task runs the routes the ``api`` face
+        answers. The node is callable — invoking it runs the handler, no HTTP.
 
         Raises:
             LookupError: if no application answers ``mount``.
@@ -95,7 +96,7 @@ class LocalTaskExecutor:
         app = self.server.application_at(mount)
         if app is None:
             raise LookupError(f"no app mounted at {mount!r}")
-        return app.route.node(descriptor["node_path"])
+        return app.route.node(descriptor["node_path"], channel_channel=app.http_channel)
 
     async def execute(self, task_id: str, worker_id: str) -> str:
         """Run the task active on ``worker_id`` and settle it; return the outcome.
