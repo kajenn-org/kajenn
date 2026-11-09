@@ -73,7 +73,7 @@
 
     <section title="Mandatory applications and capabilities">
       <list>
-        <item>The <c>application</c> node takes the attribute <c>mandatory</c>. When a mandatory application fails, the server logs it and stays up, so that <c>_server</c> keeps answering and the administrator can intervene.</item>
+        <item>The <c>application</c> node takes the attribute <c>mandatory</c>. A mandatory application is one without which the server can do none of its work. When it fails, the server logs it and stays up for <c>_server</c> only: every other application answers 503, and the readiness probe <c>/readyz</c> answers not ready. The administrator intervenes through <c>_server</c>.</item>
         <item>An application declares the capabilities it brings. While it is not enabled, those capabilities are missing.</item>
         <item>A route requiring a missing capability answers 503, as the routing register already records. What to do about it is the logic of each application, case by case. The server takes no action on a missing capability.</item>
       </list>
@@ -134,7 +134,8 @@
       <question>What does the server do when a mandatory application fails?</question>
       <option id="d-mandatory-stop" title="It stops"/>
       <option id="d-mandatory-up" title="It stays up"/>
-      <choice option="d-mandatory-up" by="GP" date="2026-11-08">_server keeps answering, so the administrator can intervene.</choice>
+      <option id="d-mandatory-server-only" title="It stays up for _server only: the public part answers 503 and the server reports not ready"/>
+      <choice option="d-mandatory-server-only" by="GP" date="2026-11-09">Without a mandatory application the server can do none of its work; it stays alive only so that _server can answer. Refines the choice of 2026-11-08, It stays up.</choice>
     </decision>
     <decision id="d-capabilities" status="decided">
       <question>Who acts when a capability is missing?</question>

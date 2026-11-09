@@ -79,7 +79,7 @@ Every route of the section requires the administrator role. The rule is applied 
 
 #### Mandatory applications and capabilities
 
-- The `application` node takes the attribute `mandatory`. When a mandatory application fails, the server logs it and stays up, so that `_server` keeps answering and the administrator can intervene.
+- The `application` node takes the attribute `mandatory`. A mandatory application is one without which the server can do none of its work. When it fails, the server logs it and stays up for `_server` only: every other application answers 503, and the readiness probe `/readyz` answers not ready. The administrator intervenes through `_server`.
 - An application declares the capabilities it brings. While it is not enabled, those capabilities are missing.
 - A route requiring a missing capability answers 503, as the routing register already records. What to do about it is the logic of each application, case by case. The server takes no action on a missing capability.
 
@@ -121,7 +121,8 @@ Every route of the section requires the administrator role. The rule is applied 
 - **d-mandatory-fails** `decided` — What does the server do when a mandatory application fails?
    1. **It stops**
    2. **It stays up**
-   → Choice: **It stays up** (GP, 2026-11-08) — \_server keeps answering, so the administrator can intervene.
+   3. **It stays up for _server only: the public part answers 503 and the server reports not ready**
+   → Choice: **It stays up for _server only: the public part answers 503 and the server reports not ready** (GP, 2026-11-09) — Without a mandatory application the server can do none of its work; it stays alive only so that \_server can answer. Refines the choice of 2026-11-08, It stays up.
 - **d-capabilities** `decided` — Who acts when a capability is missing?
    1. **The server, by not enabling the applications that need it**
    2. **Nobody: the routes requiring it are unavailable, and each application decides**
