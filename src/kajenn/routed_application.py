@@ -76,18 +76,18 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from genro_routes import RoutingClass, is_result_wrapper
+from genro_routes import Router, RoutingClass, is_result_wrapper
 
 from .application import BaseApplication
 from .applications.mcp import McpTransport
 from .applications.openapi import ApplicationMeta
 from .exceptions import ROUTER_ERRORS, HTTPBadRequest, HTTPException
-from .plugins.openapi.plugin import METHOD_NOT_ALLOWED
+from .plugins.openapi.plugin import METHOD_NOT_ALLOWED, OpenAPIPlugin
 from .request import Request
 from .streaming import StreamingResponse
 
 if TYPE_CHECKING:
-    from genro_routes import Router, RouterNode
+    from genro_routes import RouterNode
 
     from .types import Receive, Scope, Send
 
@@ -171,11 +171,19 @@ class RoutedApplication(BaseApplication, RoutingClass):
         allowed_origins = kwargs.pop("allowed_origins", None)
         super().__init__(**kwargs)
         router = self.route
+        # Every plugin the faces read is attached here, before any route is
+        # resolved: genro-routes reads a plugin's per-route options
+        # (``openapi_method``) only for the plugins attached when the routes
+        # are first resolved.
+        if OpenAPIPlugin.plugin_code not in Router.available_plugins():
+            Router.register_plugin(OpenAPIPlugin)
         router.plug("auth")
         router.plug("channel")
         router.channel.configure(channels=cls.http_channel)
-        nodes = router.nodes(lazy=True, forbidden=True)
-        if META_SEGMENT in {*nodes.get("entries", ()), *nodes.get("routers", ())}:
+        router.plug("pydantic")
+        router.plug(OpenAPIPlugin.plugin_code)
+        # A branch of the same name is refused by ``add_branches`` itself.
+        if router.node(META_SEGMENT).error != "not_found":
             raise ValueError(
                 f"{cls.__name__}: {META_SEGMENT!r} is reserved and cannot name a route"
             )
@@ -305,9 +313,7 @@ class RoutedApplication(BaseApplication, RoutingClass):
         moved = MOVED_URLS.get(path)
         if moved is None or path != "mcp":
             return moved
-        nodes = super().route.nodes(lazy=True, forbidden=True)
-        taken = {*nodes.get("entries", ()), *nodes.get("routers", ())}
-        return None if path in taken else moved
+        return moved if super().route.node(path).error == "not_found" else None
 
     def deprecated_send(self, send: Send, successor: str) -> Send:
         """``send`` with ``Deprecation`` and a ``successor-version`` link on the response start."""

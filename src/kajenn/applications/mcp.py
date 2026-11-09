@@ -109,18 +109,14 @@ class McpTransport:
         """The MCP engine driving the tool surface (``None`` until built)."""
         return self._engine
 
-    def build_engine(self, router: Router | None) -> None:
-        """Build the engine over ``router``, ensuring pydantic and auth.
+    def build_engine(self, router: Router) -> None:
+        """Build the engine over ``router``, the application's own.
 
-        The pydantic plugin caches the neutral ``params``/``result`` blocks the
-        engine reads for ``inputSchema``/``outputSchema``; the auth plugin
-        enforces any ``auth_rule`` the router's handlers declare — without it
-        a ruled tool would be listed and callable by anonymous clients. Each
-        is plugged only if absent (plugging is not idempotent).
+        The application attached ``pydantic`` (the neutral ``params``/``result``
+        blocks the engine reads for ``inputSchema``/``outputSchema``) and
+        ``auth`` (a ruled tool is neither listed nor callable for a caller
+        whose tags do not match) before building the transport.
         """
-        if router is not None:
-            self.plug_if_absent(router, "pydantic")
-            self.plug_if_absent(router, "auth")
         self._engine = McpEngine(
             router,
             name=self._name,
@@ -130,11 +126,6 @@ class McpTransport:
             invoke=self._invoke_tool,
             discover=self._discover_tools,
         )
-
-    def plug_if_absent(self, router: Router, name: str, **options: Any) -> None:
-        """Plug ``name`` on ``router`` unless already attached (guards double-plug)."""
-        if name not in {plugin.name for plugin in router.iter_plugins()}:
-            router.plug(name, **options)
 
     async def _discover_tools(self, auth_tags: Any) -> dict:
         """The tool tree of the MCP POST, through the application's ``discover``.
