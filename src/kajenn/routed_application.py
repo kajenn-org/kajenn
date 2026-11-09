@@ -171,10 +171,10 @@ class RoutedApplication(BaseApplication, RoutingClass):
         allowed_origins = kwargs.pop("allowed_origins", None)
         super().__init__(**kwargs)
         router = self.route
-        # Every plugin the faces read is attached here, before any route is
-        # resolved: genro-routes reads a plugin's per-route options
-        # (``openapi_method``) only for the plugins attached when the routes
-        # are first resolved.
+        # Every plugin the faces read is registered and attached here, before
+        # any route is resolved: genro-routes drops the per-route options of a
+        # plugin (``openapi_method``) whose class was not registered yet when
+        # the routes were first resolved (genro-org/genro-routes#74).
         if OpenAPIPlugin.plugin_code not in Router.available_plugins():
             Router.register_plugin(OpenAPIPlugin)
         router.plug("auth")
