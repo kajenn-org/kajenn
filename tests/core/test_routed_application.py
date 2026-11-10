@@ -30,6 +30,7 @@ from genro_routes import RoutingClass, route
 
 from kajenn import AsgiServer, Avatar, BaseMiddleware, RoutedApplication
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 
 class DemoApp(RoutedApplication):
@@ -137,6 +138,7 @@ def json_request() -> Callable[..., object]:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)  # type: ignore[operator]
         return sent
 
@@ -163,6 +165,7 @@ def query_request() -> Callable[..., object]:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)  # type: ignore[operator]
         return sent
 
@@ -204,6 +207,7 @@ class TestDispatch:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)
         assert response_body(sent) == b'{"a":1,"b":"two"}'
 
@@ -240,6 +244,7 @@ class TestDispatch:
             raise AssertionError("nothing must be sent")
 
         with pytest.raises(RuntimeError):
+            await start_server(app)
             await app({"type": "http", "method": "GET", "path": "/hello"}, receive, send)
 
 

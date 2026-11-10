@@ -48,7 +48,7 @@ __all__ = ["PROXY_OPTIONS", "RemoteApplication", "avatar_auth", "avatar_from_aut
 
 #: The kwargs of an application declaration that belong to its proxy mount:
 #: the spawned process builds the real application without them.
-PROXY_OPTIONS = frozenset({"spawner", "request_timeout", "max_calls"})
+PROXY_OPTIONS = frozenset({"spawner", "request_timeout", "max_calls", "mandatory"})
 
 
 def avatar_auth(avatar: Avatar) -> dict[str, Any]:
@@ -146,7 +146,7 @@ class RemoteApplication(BaseApplication):
 
     def __init__(self, *, app_class: type[BaseApplication], spawner: str,
                  request_timeout: float = 30.0, max_calls: int = 16,
-                 **app_kwargs: Any) -> None:
+                 mandatory: bool = False, **app_kwargs: Any) -> None:
         """Build the mount of an external application.
 
         Args:
@@ -154,19 +154,30 @@ class RemoteApplication(BaseApplication):
             spawner: the backend that starts the process (``"subprocess"``).
             request_timeout: seconds one forwarded call may take.
             max_calls: how many calls may be in flight at once.
+            mandatory: whether the server can do none of its work without
+                this application; a policy of the server, kept on the mount.
             app_kwargs: the real application's kwargs; only ``code`` and
                 ``mount`` are read here, resolved against ``app_class`` the way
                 ``BaseApplication`` resolves them.
         """
         super().__init__(
             code=app_kwargs.get("code", app_class.code) or app_class.__name__.lower(),
-            mount=app_kwargs.get("mount", app_class.mount))
+            mount=app_kwargs.get("mount", app_class.mount), mandatory=mandatory)
         self.spawner = spawner
         self.request_timeout = request_timeout
         self.max_calls = max_calls
         self._slots = asyncio.Semaphore(max_calls)
+        self._joined = asyncio.Event()
         if hasattr(app_class, "serve_websocket"):
             self.serve_websocket = self._forward_websocket
+
+    def mark_joined(self) -> None:
+        """Record that the spawned process sent ``joined``."""
+        self._joined.set()
+
+    async def on_startup(self) -> None:
+        """Return once the spawned process has joined: then the server sends ``ready``."""
+        await self._joined.wait()
 
     async def __call__(self, scope, receive, send) -> None:
         """Forward one request to the member and write its answer as it streams.

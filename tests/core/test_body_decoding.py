@@ -36,6 +36,7 @@ from genro_routes import route
 
 from kajenn import AsgiConfigBuilder, AsgiServer, RoutedApplication
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 MSGPACK_BROKEN = b"\xc1\xff\xff"
 
@@ -145,6 +146,7 @@ def body_request() -> Callable[..., object]:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)  # type: ignore[operator]
         return sent
 

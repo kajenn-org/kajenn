@@ -43,7 +43,7 @@ An application is either disabled or enabled. There is no error state. An applic
 1. The `application` node is written into the live configuration.
 2. The server, subscribed to the `applications` branch, builds the application and registers it disabled.
 3. The application reaches its working state, retrying on its own if something it needs is missing, and sends `ready`.
-4. The server enables it. An application that gives up removes itself.
+4. The server enables it. An application that gives up removes itself, with an explicit call. An `on_startup` that raises leaves the application disabled: the error is logged and nothing else happens.
 
 Without an override, the base class sends `ready` as soon as the activation of the application ends. An application that must wait for something overrides it.
 
@@ -95,9 +95,18 @@ Every route of the section requires the administrator role. The rule is applied 
 
 `FatalBootError` is a problem of the server as a whole, for example a database of the server that does not open. An `on_startup` no longer raises it: an application whose failure matters is `mandatory`. The option `abort_on_fatal_boot_error` of the `server` element chooses the effect: `True`, the default, ends the process as today; `False` keeps the server up for `_server` only.
 
-#### Not in this proposal
+#### Persistence
 
-- Persistence. Whoever adds an application will choose whether the change survives a restart. The persistent case needs an extra configuration file holding the updates, and is designed later. Until then a hot change lasts until the restart.
+Persistence is designed here and implemented by kajenn-org/kajenn#118, after #112. Until then a hot change lasts until the restart.
+
+- Whoever calls `add` chooses whether the change survives a restart.
+- A persistent `add` is accepted only when the server is in `develop` and its `shutdown_mode` is `QUITTING`. Otherwise it is refused. Today only the `--reload` launcher sets `QUITTING`.
+- `develop` is read only from the machine defaults layer, `$KAJENN_HOME/config.py`. A site recipe that declares it is refused. Without `develop` the server is in production.
+- A persistent change is recorded as an operation, `add` or `remove`, in a file under `<home>/data/` of the site. The file is not `.py`: the reload supervisor watches only `*.py`.
+- A `QUITTING` shutdown keeps the file and the next boot runs its operations in order after the recipe. A `STOPPING` shutdown discards it.
+- An operation of the file that fails at boot raises `FatalBootError` naming the operation: a class that does not import, a code already taken, a `remove` of an unknown code. The file stays.
+- An application replayed from the file whose `on_startup` raises stays disabled and the error is logged, as any other application.
+- `--debug` and `--reload` stay independent. In production a hot change lasts until the restart, a future soft restart included.
 
 ### Decisions
 
@@ -126,6 +135,10 @@ Every route of the section requires the administrator role. The rule is applied 
    1. **It removes itself**
    2. **It goes into an error state and stays registered**
    → Choice: **It removes itself** (GP, 2026-11-08) — No error state is kept; the reason stays in the log.
+- **d-startup-raise** `decided` — What happens to an application whose on\_startup raises?
+   1. **It removes itself, as an application giving up**
+   2. **It stays disabled; giving up is an explicit call of the application**
+   → Choice: **It stays disabled; giving up is an explicit call of the application** (GP, 2026-11-10) — The exception is logged; an application that stops retrying says so itself.
 - **d-mandatory** `decided` — What marks an application whose failure matters?
    1. **The attribute mandatory on the application node, alongside the capabilities**
    2. **Only the capabilities other applications require**
@@ -180,6 +193,27 @@ Every route of the section requires the administrator role. The rule is applied 
    2. **Never**
    3. **Always**
    → Choice: **Whoever adds the application decides** (GP, 2026-11-08) — The persistent case needs an extra configuration file with the updates; it is designed later.
+- **d-persist-when** `decided` — On which servers may a hot change be persistent?
+   1. **Only in develop and with a soft shutdown (QUITTING)**
+   2. **Only with --debug**
+   3. **On every server**
+   → Choice: **Only in develop and with a soft shutdown (QUITTING)** (GP, 2026-11-10) — The development cycle must not lose a hot change at each reload. In production the configuration is not persistent, for security.
+- **d-persist-develop** `decided` — How does the server know it runs on a developer machine?
+   1. **A develop flag in the machine defaults layer, read only there**
+   2. **A production flag on the production hosts**
+   3. **--debug**
+   4. **The presence of a reverse proxy**
+   → Choice: **A develop flag in the machine defaults layer, read only there** (GP, 2026-11-10) — A missing file then removes persistence instead of opening it. A site recipe cannot change what the machine allows.
+- **d-persist-file** `decided` — What does the extra file hold, and where?
+   1. **The operations made after the start, in the data folder of the site**
+   2. **The final state of the added and removed applications**
+   3. **A file per site in $KAJENN_HOME**
+   → Choice: **The operations made after the start, in the data folder of the site** (GP, 2026-11-10) — Only the changes after the start. The file follows the folder of the site.
+- **d-persist-replay** `decided` — What happens when an operation of the file fails at boot?
+   1. **The boot stops with FatalBootError**
+   2. **The operation is skipped with a warning**
+   3. **The whole file is discarded with a warning**
+   → Choice: **The boot stops with FatalBootError** (GP, 2026-11-10) — Simpler: nothing already run has to be undone.
 - **d-routes** `decided` — Which routes does \_server expose?
    1. **Section applications: add, ready, disable, enable, remove, list**
    → Choice: **Section applications: add, ready, disable, enable, remove, list** (GP, 2026-11-08) — One section for the whole life of an application.

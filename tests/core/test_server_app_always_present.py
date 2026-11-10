@@ -36,6 +36,7 @@ from kajenn.config import AsgiConfigBuilder
 from kajenn.exceptions import HTTPUnauthorized
 from kajenn.server_app import ServerApplication
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
 
@@ -68,6 +69,7 @@ async def drive(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     start = next(m for m in sent if m["type"] == "http.response.start")
     raw = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")

@@ -23,11 +23,14 @@ the login methods), ``UsersSection`` (SUPERADMIN-gated user management at
 ``tasks``), ``MonitorSection`` (the live view of the running server at
 ``monitor``, gated SERVER_ADMIN), ``DatabasesSection`` (the declared
 databases and their migration at ``databases``, gated SERVER_ADMIN) and
-``K8sSection`` (the default health probes at ``k8s``, public).
+``K8sSection`` (the default health probes at ``k8s``, public) and
+``ApplicationsSection`` (``ready`` and the state of every application at
+``applications``, gated SERVER_ADMIN).
 """
 
 from __future__ import annotations
 
+from .applications_section import ApplicationsSection
 from .auth_section import AuthSection
 from .databases_section import DatabasesSection
 from .k8s_section import K8sSection
@@ -37,6 +40,7 @@ from .tokens_section import TokensSection
 from .users_section import UsersSection
 
 __all__ = [
+    "ApplicationsSection",
     "AuthSection",
     "DatabasesSection",
     "K8sSection",

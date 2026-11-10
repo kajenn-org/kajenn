@@ -30,6 +30,7 @@ from genro_routes import RoutingClass, route
 
 from kajenn import AsgiServer, RoutedApplication
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 
 class SubApi(RoutingClass):
@@ -121,6 +122,7 @@ def json_request() -> Callable[..., object]:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)  # type: ignore[operator]
         return sent
 
@@ -166,7 +168,8 @@ class TestDirectMode:
         async def send(message: Message) -> None:
             sent.append(message)
 
-        await direct_server()(scope, receive, send)
+        server = await start_server(direct_server())
+        await server(scope, receive, send)
         assert response_status(sent) == 200
         assert json.loads(response_body(sent)) == {"sum": 3}
 

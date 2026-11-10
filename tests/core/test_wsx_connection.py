@@ -36,6 +36,7 @@ from genro_tytx import to_msgpack, to_tytx
 
 from kajenn.types import Message, Receive, Scope, Send
 from kajenn.wsx import WsxConnection, WsxEnvelope
+from tests.conftest import start_server
 
 PREFIX = "WSX://"
 
@@ -198,6 +199,7 @@ async def drive(
         "query_string": b"",
         "subprotocols": [],
     }
+    await start_server(server)
     await WsxConnection(server, scope, socket.receive, socket.send).serve()
     return socket
 

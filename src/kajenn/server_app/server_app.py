@@ -94,6 +94,7 @@ from kajenn.well_known import as_list
 from .auth_method import AuthMethod, PasswordMethod
 from .oidc_method import OidcMethod
 from .server_sections import (
+    ApplicationsSection,
     AuthSection,
     DatabasesSection,
     K8sSection,
@@ -258,6 +259,7 @@ class ServerApplication(RoutedApplication):
         self.attach_section(MonitorSection(self), name="monitor")
         self.attach_section(DatabasesSection(self), name="databases")
         self.attach_section(K8sSection(self), name="k8s")
+        self.attach_section(ApplicationsSection(self), name="applications")
 
     @BaseApplication.server.setter
     def server(self, value: Any) -> None:

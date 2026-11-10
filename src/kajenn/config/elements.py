@@ -139,6 +139,7 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         max_threads: int | BagResolver = None,
         shutdown_timeout_seconds: float | BagResolver = None,
         debug: bool | str | BagResolver = None,
+        abort_on_fatal_boot_error: bool | BagResolver = None,
     ) -> None:
         """Server runtime options.
 
@@ -159,6 +160,12 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         ``debug`` is the DECLARED usage mode the core never branches on (the CLI
         spells it ``--debug``): ``True``, or a comma-separated string of
         parameters an application reads for itself.
+
+        ``abort_on_fatal_boot_error`` (``True``) chooses what a ``FatalBootError``
+        of the startup does — a step of the server itself, such as a database
+        of the server that does not open: ``True`` ends the process; ``False``
+        keeps it up for ``_server`` only, every other application answering 503
+        and ``/readyz`` not ready.
 
         ``shutdown_timeout_seconds`` (5.0) bounds how long uvicorn waits for open
         connections at shutdown before cancelling them: one endless response —

@@ -39,6 +39,8 @@ from typing import TYPE_CHECKING
 
 from genro_routes import RoutingClass, route
 
+from kajenn.exceptions import HTTPException
+
 if TYPE_CHECKING:
     from ..server_app import ServerApplication
 
@@ -71,5 +73,11 @@ class K8sSection(RoutingClass):
 
     @route(media_type="text/plain")
     def readyz(self) -> str:
-        """The server takes requests. Route: GET /readyz"""
+        """The server takes requests. Route: GET /readyz
+
+        503 while the public part is closed: a fatal boot kept the server up
+        for ``_server`` only.
+        """
+        if self.application.server.public_closed:
+            raise HTTPException(503, "not ready: the public part is closed")
         return PROBE_ANSWER

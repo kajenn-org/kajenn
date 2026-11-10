@@ -34,6 +34,7 @@ from genro_routes import RoutingClass, route
 
 from kajenn import AsgiServer, RoutedApplication
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 
 class Empty(RoutedApplication):
@@ -87,6 +88,7 @@ def drive() -> Callable[..., object]:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)  # type: ignore[operator]
         return sent
 
