@@ -69,6 +69,7 @@ not guaranteed.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Iterable
 
@@ -101,6 +102,15 @@ The ceiling is what keeps a client that floods from sinking the server. The
 """
 
 SHUTDOWN_TIMEOUT_SECONDS = 5.0
+
+#: The states of a registered application, and why a disabled one is.
+ENABLED = "enabled"
+DISABLED = "disabled"
+MOUNTING = "mounting"
+SWITCHED_OFF = "switched_off"
+REMOVING = "removing"
+
+logger = logging.getLogger(__name__)
 """How long uvicorn waits for open connections at shutdown before cancelling them.
 
 The ``shutdown_timeout_seconds`` kwarg overrides it per server.
@@ -160,6 +170,7 @@ class BaseServer:
         default: str | None = kwargs.pop("default", None)
         max_threads: int | None = kwargs.pop("max_threads", None)
         debug: bool | str = kwargs.pop("debug", False)
+        abort_on_fatal: bool = kwargs.pop("abort_on_fatal_boot_error", True)
         websocket: dict[str, Any] = kwargs.pop("websocket", None) or {}
         shutdown_timeout: float = float(
             kwargs.pop("shutdown_timeout_seconds", None) or SHUTDOWN_TIMEOUT_SECONDS
@@ -172,6 +183,17 @@ class BaseServer:
         super().__init__()
         self._applications: dict[str, BaseApplication] = {}
         self._by_mount: dict[str, BaseApplication] = {}
+        self._enabled: set[str] = set()
+        self._disabled: dict[str, str] = {}
+        self._public_closed = False
+        self.abort_on_fatal_boot_error = abort_on_fatal
+        """What a ``FatalBootError`` of the startup does.
+
+        ``True`` (the default) ends the process: the lifespan answers
+        ``lifespan.startup.failed``. ``False`` keeps the server up for its
+        management application only: every other application answers 503 and
+        the server reports itself not ready.
+        """
         self._well_known_routes: dict[str, tuple[BaseApplication, str]] = {}
         self._default_well_known_routes: dict[str, tuple[BaseApplication, str]] = {}
         self._databases: dict[str, DbHandlerBase] = {}
@@ -271,6 +293,141 @@ class BaseServer:
         self.claim_well_known(app, app.active_well_known(), app.active_default_well_known())
         self.applications[app.code] = app
         self._by_mount[mount] = app
+        if self.starts_enabled(app):
+            self._enabled.add(app.code)
+        else:
+            self._disabled[app.code] = MOUNTING
+
+    def starts_enabled(self, app: BaseApplication) -> bool:
+        """Whether ``app`` answers as soon as it is registered.
+
+        On the base server every application does: it has no management
+        application to receive a ``ready``. A composition that has one
+        registers its applications disabled until they send it.
+        """
+        return True
+
+    def is_management(self, app: BaseApplication) -> bool:
+        """Whether ``app`` is the management application: none on the base server."""
+        return False
+
+    def is_enabled(self, code: str) -> bool:
+        """Whether the application ``code`` answers its requests."""
+        return code in self._enabled
+
+    def enable_application(self, code: str) -> None:
+        """Make the application ``code`` answer.
+
+        ``LookupError`` when no application has that code; ``ValueError`` when
+        it is being removed.
+        """
+        if code not in self.applications:
+            raise LookupError(f"no application with code {code!r}")
+        if self._disabled.get(code) == REMOVING:
+            raise ValueError(f"application {code!r} is being removed")
+        self._disabled.pop(code, None)
+        self._enabled.add(code)
+
+    def disable_application(self, code: str, reason: str = SWITCHED_OFF) -> None:
+        """Make the application ``code`` answer 503; its instance stays registered.
+
+        ``reason`` is ``SWITCHED_OFF`` (the default) or ``REMOVING``: both
+        answer 503 without ``Retry-After``. ``LookupError`` when no application
+        has that code; ``ValueError`` for the management application, which is
+        never disabled.
+        """
+        app = self.applications.get(code)
+        if app is None:
+            raise LookupError(f"no application with code {code!r}")
+        if self.is_management(app):
+            raise ValueError(f"application {code!r} is the management application")
+        self._enabled.discard(code)
+        self._disabled[code] = reason
+
+    def application_state(self, code: str) -> tuple[str, str | None]:
+        """``("enabled", None)`` or ``("disabled", reason)`` for the application ``code``."""
+        if code in self._enabled:
+            return ENABLED, None
+        return DISABLED, self._disabled.get(code)
+
+    async def remove_application(self, code: str, *, failed: bool = False) -> None:
+        """Take the application ``code`` away from a running server.
+
+        It is disabled first (503 without ``Retry-After``), then its
+        ``on_remove`` runs and is awaited, then it is unregistered: its mount,
+        its code and its well-known paths are free and the mount answers 404.
+        ``failed`` says the application gave up: when it is ``mandatory`` the
+        server closes its public part. ``LookupError`` and ``ValueError`` as
+        ``disable_application``.
+        """
+        self.disable_application(code, REMOVING)
+        app = self.applications[code]
+        handler = app.on_remove
+        try:
+            if inspect.iscoroutinefunction(handler):
+                await handler()
+            else:
+                handler()
+        except Exception:
+            logger.exception("%s.on_remove raised", type(app).__name__)
+        await self.unregister_application(app)
+        if failed and app.mandatory:
+            logger.error("mandatory application %r failed: only the management "
+                         "application answers", code)
+            self.close_public()
+
+    async def unregister_application(self, app: BaseApplication) -> None:
+        """Drop ``app`` from the code, mount and well-known tables."""
+        mount = app.code if app.mount is None else app.mount
+        self.claim_well_known(app, {}, {})
+        del self.applications[app.code]
+        del self._by_mount[mount]
+        self._enabled.discard(app.code)
+        self._disabled.pop(app.code, None)
+
+    async def application_failed(self, app: BaseApplication) -> None:
+        """``app`` gives up: it is removed as a failed application.
+
+        Called by the application itself, when it stops retrying what it
+        needs. A composition with a management application overrides this to
+        send ``remove`` to it instead.
+        """
+        await self.remove_application(app.code, failed=True)
+
+    async def application_ready(self, app: BaseApplication) -> None:
+        """``app`` finished its activation: enable it.
+
+        A composition with a management application overrides this to send
+        the signal to it instead.
+        """
+        self.enable_application(app.code)
+
+    @property
+    def public_closed(self) -> bool:
+        """Whether only the management application answers (a fatal boot kept the server up)."""
+        return self._public_closed
+
+    def close_public(self) -> None:
+        """Answer 503 for every application except the management one."""
+        self._public_closed = True
+
+    def refusal(self, app: BaseApplication) -> Response | None:
+        """The 503 ``app`` answers instead of serving, or ``None`` when it serves.
+
+        An application being mounted answers 503 with ``Retry-After``; one
+        switched off or being removed answers 503 without it. With the public
+        part closed every application but the management one answers 503
+        without it.
+        """
+        if self._public_closed and not self.is_management(app):
+            return Response(content="Service Unavailable", status_code=503,
+                            media_type="text/plain")
+        if app.code not in self._enabled:
+            headers = ({"retry-after": str(REFUSED_RETRY_AFTER_SECONDS)}
+                       if self._disabled.get(app.code) == MOUNTING else None)
+            return Response(content="Service Unavailable", status_code=503,
+                            media_type="text/plain", headers=headers)
+        return None
 
     def claim_well_known(
         self, app: BaseApplication, routes: dict[str, str], defaults: dict[str, str]
@@ -584,12 +741,15 @@ class BaseServer:
             return Response(content="Not Found", status_code=404, media_type="text/plain"), scope
         app = self.application_at(segment)
         if app is not None:
+            refused = self.refusal(app)
+            if refused is not None:
+                return refused, scope
             sub_scope = dict(scope)
             sub_scope["path"] = "/" + remainder
             return app, sub_scope
         root = self.root_application
         if root is not None:
-            return root, scope
+            return self.refusal(root) or root, scope
         default = self.default_application if not rest else None
         if default is not None:
             return self.redirect_to_default(default, scope), scope
@@ -612,6 +772,9 @@ class BaseServer:
                 content="unimplemented well-known URL", status_code=404, media_type="text/plain"
             ), scope
         app, route = declared
+        refused = self.refusal(app)
+        if refused is not None:
+            return refused, scope
         sub_scope = dict(scope)
         sub_scope["path"] = "/" + route
         return app, sub_scope

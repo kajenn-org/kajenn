@@ -16,9 +16,9 @@
 
 ``engine`` holds :class:`McpEngine` (envelope, resolution) and
 :class:`McpDispatcher` (the tree of methods), ``tools`` the ``tools/*`` family,
-``jsonrpc`` the error codes and :class:`McpError`. The transport shells
-(``McpApplication``, ``McpOpenApiApplication``) live in ``applications`` and
-drive :class:`McpEngine` with their own invoke callback.
+``jsonrpc`` the error codes and :class:`McpError`. The transport
+(``McpTransport``, in ``applications.mcp``) drives :class:`McpEngine` with its
+own invoke callback, for every ``RoutedApplication``.
 """
 
 from __future__ import annotations

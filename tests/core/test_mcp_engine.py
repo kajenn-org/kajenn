@@ -58,7 +58,7 @@ class ToolService(RoutingClass):
         self.route.plug("auth")
         self.route.add_branches({"name": "sub", "instance": SubTools()})
 
-    @route(channel_channels="mcp,rest")
+    @route(channel_channels="mcp,api")
     def add(self, x: int, y: int = 0) -> dict:
         """Add two numbers."""
         return {"sum": x + y}
@@ -68,10 +68,10 @@ class ToolService(RoutingClass):
         """Greet someone."""
         return f"hello {name}"
 
-    @route(channel_channels="rest")
+    @route(channel_channels="api")
     def rest_only(self) -> dict:
         """REST-only endpoint, invisible on the mcp channel."""
-        return {"rest": True}
+        return {"api": True}
 
     @route(channel_channels="mcp", auth_rule="admin")
     def secret(self) -> dict:

@@ -67,7 +67,7 @@ class Billing(RoutedApplication):
         await asyncio.sleep(STARTUP_DELAY)
         self.prepared = True
 
-    @route()
+    @route(channel_channels="api,wsx")
     def total(self, order):
         return {"total": int(order) * 2}
 
@@ -93,7 +93,7 @@ class Billing(RoutedApplication):
     def fail(self):
         raise RuntimeError("billing failed")
 
-    @route()
+    @route(channel_channels="api,telegram")
     def seen_by(self, _request=None):
         avatar = _request.avatar()
         return {
@@ -330,13 +330,13 @@ async def test_a_failing_route_answers_the_same_status_in_both_placements(tmp_pa
 async def test_avatar_and_channel_reach_the_spawned_process(tmp_path):
     # wf:contract: kbus_call with auth=Avatar(...) and channel="telegram" reaches the
     # wf:contract: spawned handler with that identity and that channel; without a channel
-    # wf:contract: the handler sees "rest".
+    # wf:contract: the handler sees "api".
     async with running(write_recipe(tmp_path)) as server:
         seen = await server.kbus_call("/billing/seen_by", {},
                                       auth=Avatar("ann", ["admin"]), channel="telegram")
         plain = await server.kbus_call("/billing/seen_by", {})
     assert (seen["identity"], seen["channel"]) == ("ann", "telegram")
-    assert plain["channel"] == "rest"
+    assert plain["channel"] == "api"
     assert seen["pid"] != os.getpid()
 
 
@@ -455,3 +455,24 @@ async def test_a_wsx_message_reaches_the_spawned_application(tmp_path):
         await socket
     reply = WsxEnvelope(next(m["text"] for m in sent if m["type"] == "websocket.send"))
     assert (reply.id, reply.status, reply.data) == ("m1", 200, {"total": 4})
+
+
+async def test_removing_an_external_application_stops_its_process_for_good(tmp_path):
+    # The mount answers 404 and the process ends; no new process takes its place.
+    async with running(write_recipe(tmp_path)) as server:
+        pid = server.kbus_pids["billing"]
+        removed = await server.kbus_call("/_server/applications/remove", {"code": "billing"},
+                                         auth=Avatar("ops", ["SERVER_ADMIN"]))
+        assert removed == {"code": "billing", "state": "removed"}
+        assert (await request(server, "/billing/total", query=b"order=2"))[0] == 404
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            await asyncio.sleep(0.05)
+        else:
+            pytest.fail(f"process {pid} still alive after the removal")
+        await asyncio.sleep(0.5)
+        assert "billing" not in server.kbus_pids

@@ -14,8 +14,9 @@
 
 """Tests for the MCP push channel (core 1e Phase 6): GET -> SSE over the hub.
 
-Real objects, no mocks: a real ``AsgiServer`` (storage on tmp_path) with an
-``McpApplication`` mounted, driven at the ASGI level. The ``sse_request``
+Real objects, no mocks: a real ``AsgiServer`` (storage on tmp_path) with a
+routed application mounted at ``/mcp``, its MCP face on ``_meta/mcp``, driven
+at the ASGI level. The ``sse_request``
 fixture (conftest) keeps the GET open like a real SSE client; frames are
 awaited, then the connection is cancelled (the client-gone path, exercising
 the hub unsubscribe). The A<->C bridge is tested end-to-end: a spool task
@@ -35,10 +36,11 @@ from genro_routes import route
 
 from tests.storage_support import site_mounts
 
-from kajenn import AsgiServer, McpApplication, RoutedApplication
+from kajenn import AsgiServer, RoutedApplication
 from kajenn.lifespan import STOPPING
 from kajenn.tasks import new_descriptor
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 
 class Primary(RoutedApplication):
@@ -51,9 +53,9 @@ class Primary(RoutedApplication):
 
 @pytest.fixture
 def server(tmp_path: Path) -> AsgiServer:
-    """A real server: Primary + McpApplication at ``/mcp``, storage on tmp_path."""
+    """A real server: Primary + a routed application at ``/mcp``, storage on tmp_path."""
     srv = AsgiServer(
-        applications=[(Primary, {"mount": ""}), (McpApplication, {"code": "mcp"})],
+        applications=[(Primary, {"mount": ""}), (RoutedApplication, {"code": "mcp"})],
         storage=site_mounts(tmp_path),
     )
     return srv
@@ -73,6 +75,7 @@ async def drive(server: Any, path: str, *, method: str = "GET",
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     return sent
 
@@ -100,7 +103,7 @@ class TestSessionId:
     """GET mints or echoes the Mcp-Session-Id and streams text/event-stream."""
 
     async def test_get_mints_session_id(self, server: AsgiServer, sse_request) -> None:
-        conn = await sse_request(server, "/mcp")
+        conn = await sse_request(server, "/mcp/_meta/mcp")
         try:
             headers = start_headers(conn.sent)
             assert headers[b"content-type"].startswith(b"text/event-stream")
@@ -109,7 +112,7 @@ class TestSessionId:
             await conn.close()
 
     async def test_get_echoes_supplied_session_id(self, server: AsgiServer, sse_request) -> None:
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-1")])
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-1")])
         try:
             assert start_headers(conn.sent)[b"mcp-session-id"] == b"sess-1"
         finally:
@@ -117,11 +120,11 @@ class TestSessionId:
 
     async def test_get_without_tasks_is_405(self, tmp_path: Path) -> None:
         srv = AsgiServer(
-            applications=[(Primary, {"mount": ""}), (McpApplication, {"code": "mcp"})],
+            applications=[(Primary, {"mount": ""}), (RoutedApplication, {"code": "mcp"})],
             tasks=False,
             storage=site_mounts(tmp_path),
         )
-        sent = await drive(srv, "/mcp", method="GET")
+        sent = await drive(srv, "/mcp/_meta/mcp", method="GET")
         start = next(m for m in sent if m["type"] == "http.response.start")
         assert start["status"] == 405
 
@@ -130,7 +133,7 @@ class TestLiveFeed:
     """hub.publish surfaces as a ``data:`` frame on the subscribed stream."""
 
     async def test_publish_becomes_frame(self, server: AsgiServer, sse_request) -> None:
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-2")])
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-2")])
         try:
             server.tasks.hub.publish("sess-2", {"type": "progress", "task_id": "t1",
                                                 "data": {"pct": 10}})
@@ -141,7 +144,7 @@ class TestLiveFeed:
             await conn.close()
 
     async def test_other_session_not_delivered(self, server: AsgiServer, sse_request) -> None:
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-3")])
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-3")])
         try:
             server.tasks.hub.publish("other", {"type": "progress", "task_id": "x"})
             server.tasks.hub.publish("sess-3", {"type": "marker"})
@@ -151,7 +154,7 @@ class TestLiveFeed:
             await conn.close()
 
     async def test_close_unsubscribes(self, server: AsgiServer, sse_request) -> None:
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-4")])
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-4")])
         await conn.close()
         assert "sess-4" not in server.tasks.hub._subscribers   # finally ran
 
@@ -160,12 +163,10 @@ class TestExecutorBridge:
     """A task carrying session_id publishes started/settled while it runs."""
 
     async def test_lifecycle_events_stream(self, server: AsgiServer, sse_request) -> None:
-        stage(server, "t-bridge", "sess-5")
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-5")])
+        # The stream starts the server, whose worker runs the staged task.
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-5")])
         try:
-            server.tasks.spool.assign("t-bridge", "local")
-            outcome = await server.tasks.executor.execute("t-bridge", "local")
-            assert outcome == "ok"
+            stage(server, "t-bridge", "sess-5")
             frames = await conn.wait_frames(2)
             events = [payload(f) for f in frames]
             assert events[0] == {"task_id": "t-bridge", "type": "started"}
@@ -187,7 +188,7 @@ class TestPublishProgressSeam:
     async def test_paired_write_and_publish(self, server: AsgiServer, sse_request) -> None:
         stage(server, "t-prog", "sess-6")
         server.tasks.spool.assign("t-prog", "local")
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-6")])
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-6")])
         try:
             server.tasks.publish_progress("t-prog", {"pct": 40})
             assert server.tasks.spool.read_progress("t-prog") == {"pct": 40}   # spool wrote
@@ -212,7 +213,7 @@ class TestBaseline:
         stage(server, "t-base", "sess-8")
         server.tasks.spool.assign("t-base", "local")
         server.tasks.publish_progress("t-base", {"pct": 70})   # no subscriber yet
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-8"),
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-8"),
                                                           (b"last-event-id", b"0")])
         try:
             frames = await conn.wait_frames(1)
@@ -225,7 +226,7 @@ class TestBaseline:
         stage(server, "t-fresh", "sess-9")
         server.tasks.spool.assign("t-fresh", "local")
         server.tasks.publish_progress("t-fresh", {"pct": 70})
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-9")])
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-9")])
         try:
             server.tasks.hub.publish("sess-9", {"type": "marker"})
             frames = await conn.wait_frames(1)
@@ -239,7 +240,7 @@ class TestInitializeAdvertisesPush:
 
     async def test_capability_advertised(self, server: AsgiServer) -> None:
         envelope = {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
-        sent = await drive(server, "/mcp", method="POST",
+        sent = await drive(server, "/mcp/_meta/mcp", method="POST",
                            headers=[(b"content-type", b"application/json")],
                            body=json.dumps(envelope).encode())
         body = b"".join(m.get("body", b"") for m in sent
@@ -250,7 +251,7 @@ class TestInitializeAdvertisesPush:
 
     async def test_notification_still_202(self, server: AsgiServer) -> None:
         envelope = {"jsonrpc": "2.0", "method": "initialize"}
-        sent = await drive(server, "/mcp", method="POST",
+        sent = await drive(server, "/mcp/_meta/mcp", method="POST",
                            headers=[(b"content-type", b"application/json")],
                            body=json.dumps(envelope).encode())
         start = next(m for m in sent if m["type"] == "http.response.start")
@@ -263,7 +264,7 @@ class TestServerLeaving:
     async def test_the_stream_ends_when_the_server_leaves(
         self, server: AsgiServer, sse_request
     ) -> None:
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-leaving")])
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-leaving")])
 
         server.state = STOPPING
 
@@ -272,7 +273,7 @@ class TestServerLeaving:
     async def test_the_stream_that_ends_by_itself_still_unsubscribes(
         self, server: AsgiServer, sse_request
     ) -> None:
-        conn = await sse_request(server, "/mcp", headers=[(b"mcp-session-id", b"sess-leaving-2")])
+        conn = await sse_request(server, "/mcp/_meta/mcp", headers=[(b"mcp-session-id", b"sess-leaving-2")])
 
         server.state = STOPPING
         await asyncio.wait_for(conn.task, timeout=2.0)

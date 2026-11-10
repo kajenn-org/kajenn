@@ -34,6 +34,7 @@ from kajenn import AsgiServer, BaseApplication, BaseServer, KBusMixin, RoutedApp
 from kajenn.exceptions import KBusCallError
 from kajenn.remote_application import RemoteApplication
 from kajenn.session.avatar import Avatar
+from tests.conftest import start_server
 
 
 class Billing(RoutedApplication):
@@ -52,7 +53,7 @@ class Billing(RoutedApplication):
         items.append(99)
         return {"count": len(items)}
 
-    @route()
+    @route(channel_channels="api,mcp")
     def seen_by(self, _request=None) -> dict[str, Any]:
         avatar = _request.avatar()
         return {
@@ -84,8 +85,8 @@ class KBusServer(KBusMixin, BaseServer):
 
 
 @pytest.fixture
-def server() -> AsgiServer:
-    return AsgiServer(applications=[(Billing, {"code": "billing"})])
+async def server() -> AsgiServer:
+    return await start_server(AsgiServer(applications=[(Billing, {"code": "billing"})]))
 
 
 def billing(server: AsgiServer) -> Billing:
@@ -99,16 +100,19 @@ def test_the_mixin_carries_the_kbus_name():
 
 
 async def test_a_call_reaches_the_route(server):
+    await start_server(server)
     assert await server.kbus_call("/billing/total", {"order": 21}) == {"total": 42}
 
 
 async def test_the_handler_cannot_touch_the_callers_data(server):
     items = [1, 2]
+    await start_server(server)
     assert await server.kbus_call("/billing/mutate", {"items": items}) == {"count": 3}
     assert items == [1, 2]
 
 
 async def test_the_handler_sees_the_avatar_and_the_bus(server):
+    await start_server(server)
     seen = await server.kbus_call(
         "/billing/seen_by", {}, auth=Avatar("ann", ["admin"]), channel="mcp"
     )
@@ -117,11 +121,14 @@ async def test_the_handler_sees_the_avatar_and_the_bus(server):
 
 async def test_auth_rules_apply(server):
     with pytest.raises(KBusCallError) as refused:
+        await start_server(server)
         await server.kbus_call("/billing/secret", {})
     assert refused.value.status == 401
     with pytest.raises(KBusCallError) as forbidden:
+        await start_server(server)
         await server.kbus_call("/billing/secret", {}, auth=Avatar("bob", ["user"]))
     assert forbidden.value.status == 403
+    await start_server(server)
     assert await server.kbus_call("/billing/secret", {}, auth=Avatar("ann", ["admin"])) == {
         "secret": "s"
     }
@@ -129,12 +136,14 @@ async def test_auth_rules_apply(server):
 
 async def test_an_unknown_path_is_a_404(server):
     with pytest.raises(KBusCallError) as missing:
+        await start_server(server)
         await server.kbus_call("/billing/nothing", {})
     assert missing.value.status == 404
 
 
 async def test_a_sync_handler_runs_its_cleanup(server):
     before = billing(server).cleanups
+    await start_server(server)
     await server.kbus_call("/billing/total", {"order": 1})
     assert billing(server).cleanups == before + 1
 
@@ -147,6 +156,7 @@ async def test_a_post_runs_the_route_and_returns_nothing(server):
 async def test_a_call_whose_handler_fails_answers_500():
     server = AsgiServer(applications=[(Failing, {"code": "failing"})])
     with pytest.raises(KBusCallError) as failed:
+        await start_server(server)
         await server.kbus_call("/failing/broken")
     assert (failed.value.status, failed.value.error) == (500, "LookupError: gone")
 

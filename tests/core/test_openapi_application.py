@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""OpenApiApplication tests (Macro 4 Phase 6).
+"""RoutedApplication tests (Macro 4 Phase 6).
 
 Requests drive a REAL ``AsgiServer`` composition at the ASGI level (no
-uvicorn). The pydantic + openapi plugins are armed through the server's
-``plugins`` config (direct mode) or plugged on the mounted class by the app
-(mounted mode). The GET-side helpers come from ``tests/conftest.py``;
+uvicorn). The openapi plugin is armed through the server's ``plugins``
+config. The GET-side helpers come from ``tests/conftest.py``;
 ``json_request`` (local) adds a JSON body.
 """
 
@@ -29,14 +28,13 @@ from typing import Any, Callable
 import pytest
 from genro_routes import RoutingClass, route
 
-from kajenn import AsgiServer, OpenApiApplication, RoutedApplication
+from kajenn import AsgiServer, RoutedApplication
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 
 class SubApi(RoutingClass):
-    """External API mounted into an OpenApiApplication under ``api_name``."""
-
-    openapi_info = {"title": "Sub API", "version": "3.0.0", "description": "mounted"}
+    """A routing class that exists on its own; an application attaches it."""
 
     @route()
     def ping(self, name: str = "x") -> dict[str, str]:
@@ -49,7 +47,7 @@ class SubApi(RoutingClass):
         return {"made": payload}
 
 
-class DirectApi(OpenApiApplication):
+class DirectApi(RoutedApplication):
     """Direct mode: typed @route methods on the app itself."""
 
     openapi_info = {"title": "Direct API", "version": "2.0.0", "description": "direct"}
@@ -66,7 +64,25 @@ class DirectApi(OpenApiApplication):
 
 
 class Empty(RoutedApplication):
-    """A do-nothing primary so an OpenApiApplication can mount as a secondary."""
+    """A do-nothing primary so a RoutedApplication can mount as a secondary."""
+
+
+class Holder(RoutedApplication):
+    """Exposes ``SubApi`` by attaching it in its own constructor."""
+
+    openapi_info = {"title": "Holder", "version": "3.0.0", "description": "holds"}
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.route.add_branches({"name": "api", "instance": SubApi()})
+
+
+class WithMcpRoute(RoutedApplication):
+    """An application whose own route is named ``mcp``."""
+
+    @route()
+    def mcp(self) -> dict[str, bool]:
+        return {"own": True}
 
 
 def direct_server() -> AsgiServer:
@@ -106,6 +122,7 @@ def json_request() -> Callable[..., object]:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)  # type: ignore[operator]
         return sent
 
@@ -116,7 +133,7 @@ class TestDirectMode:
     async def test_schema_is_valid_openapi(
         self, http_request, response_status, response_body
     ) -> None:
-        sent = await http_request(direct_server(), "/_meta/schema_json")
+        sent = await http_request(direct_server(), "/_meta/api/schema_json")
         assert response_status(sent) == 200
         doc = json.loads(response_body(sent))
         assert doc["openapi"] == "3.1.0"
@@ -128,7 +145,7 @@ class TestDirectMode:
         assert "/add" in doc["paths"]
 
     async def test_operation_and_input_schema_present(self, http_request, response_body) -> None:
-        sent = await http_request(direct_server(), "/_meta/schema_json")
+        sent = await http_request(direct_server(), "/_meta/api/schema_json")
         doc = json.loads(response_body(sent))
         operation = doc["paths"]["/add"]["get"]
         assert operation["operationId"] == "add"
@@ -151,26 +168,27 @@ class TestDirectMode:
         async def send(message: Message) -> None:
             sent.append(message)
 
-        await direct_server()(scope, receive, send)
+        server = await start_server(direct_server())
+        await server(scope, receive, send)
         assert response_status(sent) == 200
         assert json.loads(response_body(sent)) == {"sum": 3}
 
     async def test_docs_served(
         self, http_request, response_status, response_headers, response_body
     ) -> None:
-        sent = await http_request(direct_server(), "/_meta/docs")
+        sent = await http_request(direct_server(), "/_meta/api/docs")
         assert response_status(sent) == 200
         assert response_headers(sent)[b"content-type"] == b"text/html; charset=utf-8"
         body = response_body(sent).decode()
         assert "swagger-ui" in body
-        assert '"/_meta/schema_json"' in body
+        assert '"/_meta/api/schema_json"' in body
 
     async def test_index_served(self, http_request, response_status, response_body) -> None:
         sent = await http_request(direct_server(), "/_meta/index")
         assert response_status(sent) == 200
         body = response_body(sent).decode()
         assert "Direct API" in body
-        assert 'href="/_meta/docs"' in body
+        assert 'href="/_meta/api/docs"' in body
 
 
 class TestDocsOff:
@@ -178,53 +196,65 @@ class TestDocsOff:
         server = AsgiServer(
             applications=[(DirectApi, {"mount": "", "docs": "off"})], plugins={"openapi": True, "pydantic": True}
         )
-        sent = await http_request(server, "/_meta/docs")
+        sent = await http_request(server, "/_meta/api/docs")
         assert response_status(sent) == 404
 
 
-class TestMountedMode:
-    async def test_endpoint_under_mount_and_api(
+class TestRoutingClassInsideAnApplication:
+    async def test_routing_class_kwarg_is_refused(self) -> None:
+        with pytest.raises(TypeError, match="routing_class"):
+            mounted_server((RoutedApplication, {"code": "mount", "routing_class": SubApi()}))
+
+    async def test_an_application_attaches_its_routing_class(
         self, http_request, response_status, response_body
     ) -> None:
-        app = (OpenApiApplication, {"code": "mount", "routing_class": SubApi()})
-        scope: Scope = {
-            "type": "http",
-            "method": "GET",
-            "path": "/mount/api/ping",
-            "query_string": b"name=z",
-            "headers": [],
-        }
-        sent: list[Message] = []
-
-        async def receive() -> Message:
-            return {"type": "http.request"}
-
-        async def send(message: Message) -> None:
-            sent.append(message)
-
-        await mounted_server(app)(scope, receive, send)
+        server = mounted_server((Holder, {"code": "mount"}))
+        sent = await http_request(server, "/mount/api/ping")
         assert response_status(sent) == 200
-        assert json.loads(response_body(sent)) == {"pong": "z"}
-
-    async def test_schema_covers_mounted_endpoints(
-        self, http_request, response_status, response_body
-    ) -> None:
-        app = (OpenApiApplication, {"code": "mount", "routing_class": SubApi()})
-        sent = await http_request(mounted_server(app), "/mount/_meta/schema_json")
-        assert response_status(sent) == 200
+        assert json.loads(response_body(sent)) == {"pong": "x"}
+        sent = await http_request(server, "/mount/_meta/api/schema_json")
         doc = json.loads(response_body(sent))
-        # The mounted class's own openapi_info wins over the app default.
-        assert doc["info"]["title"] == "Sub API"
-        assert "/api/ping" in doc["paths"]
+        assert doc["info"]["title"] == "Holder"
         assert doc["paths"]["/api/ping"]["get"]["operationId"] == "ping"
 
-    async def test_module_import_mode(self) -> None:
-        app = mounted_server(
-            (OpenApiApplication, {"code": "m", "module": f"{SubApi.__module__}:SubApi"})
-        ).applications["m"]
-        assert app.api_name == "api"
-        node = app.route.node("/api/ping")
-        assert node.error is None, node.error
+
+class TestReservedMeta:
+    def test_a_route_named_meta_is_refused(self) -> None:
+        class Clash(RoutedApplication):
+            @route(name="_meta")
+            def meta(self) -> dict[str, bool]:
+                return {}
+
+        with pytest.raises(ValueError, match="_meta"):
+            Clash(code="clash")
+
+
+class TestMovedUrls:
+    @pytest.mark.parametrize(
+        ("old", "new"),
+        [("/_meta/schema_json", "/_meta/api/schema_json"), ("/_meta/docs", "/_meta/api/docs")],
+    )
+    async def test_an_old_url_answers_as_the_new_one_with_deprecation(
+        self, old, new, http_request, response_status, response_headers, response_body
+    ) -> None:
+        server = direct_server()
+        moved = await http_request(server, old)
+        current = await http_request(server, new)
+        assert response_status(moved) == 200
+        assert response_body(moved) == response_body(current)
+        headers = response_headers(moved)
+        assert headers[b"deprecation"] == b"true"
+        assert headers[b"link"] == f'<{new}>; rel="successor-version"'.encode()
+        assert b"deprecation" not in response_headers(current)
+
+    async def test_an_own_route_named_mcp_is_not_moved(
+        self, http_request, response_status, response_headers, response_body
+    ) -> None:
+        server = mounted_server((WithMcpRoute, {"code": "w"}))
+        sent = await http_request(server, "/w/mcp")
+        assert response_status(sent) == 200
+        assert json.loads(response_body(sent)) == {"own": True}
+        assert b"deprecation" not in response_headers(sent)
 
 
 class TestBodyBinding:

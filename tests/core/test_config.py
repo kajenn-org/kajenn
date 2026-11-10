@@ -46,6 +46,7 @@ from kajenn.exceptions import HTTPUnauthorized
 from kajenn.middleware.base import BaseMiddleware
 from kajenn.storage_mixin import DEFAULT_HOME_MOUNT, DEFAULT_SITE_MOUNT
 from kajenn.types import Message, Receive, Scope, Send
+from tests.conftest import start_server
 
 
 
@@ -120,6 +121,7 @@ async def http_get(server: AsgiServer, path: str) -> bytes:
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     return b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
 
@@ -137,6 +139,7 @@ async def http_status_headers(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     start = next(m for m in sent if m["type"] == "http.response.start")
     return start["status"], start["headers"]
@@ -294,6 +297,7 @@ class TestSession:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)
         assert scope.get("session") is not None
         assert server.session(scope) is scope["session"]
@@ -611,11 +615,11 @@ class TestChannelsSection:
             def main(self, root: Any) -> None:
                 channels = root.configuration().channels()
                 channels.channel(name="mcp", authentication_route="/idp/check")
-                channels.channel(name="rest", authentication_route="/_server/auth/authenticate")
+                channels.channel(name="api", authentication_route="/_server/auth/authenticate")
 
         assert ConfigurationHandler(ChannelsConfig).channels() == {
             "mcp": {"authentication_route": "/idp/check"},
-            "rest": {"authentication_route": "/_server/auth/authenticate"},
+            "api": {"authentication_route": "/_server/auth/authenticate"},
         }
 
     def test_no_section_reads_as_none(self) -> None:

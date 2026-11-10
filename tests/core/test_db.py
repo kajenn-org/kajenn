@@ -44,6 +44,7 @@ from kajenn.request import Request
 from kajenn.request_registry import RegisteredRequest
 from kajenn.tasks import WORKER_ID, LocalTaskExecutor, new_descriptor
 from kajenn.wsx import WsxConnection, WsxEnvelope
+from tests.conftest import start_server
 
 
 def thread_name() -> str:
@@ -123,7 +124,7 @@ class Shop(RoutedApplication):
         self.gate.wait()
         self.server.databases["default"].events.append(("work_end", thread_name()))
 
-    @route()
+    @route(channel_channels="api,wsx")
     def sync_take(self, _request=None) -> dict[str, Any]:
         first = _request.db()
         again = _request.db()
@@ -208,6 +209,7 @@ async def drive_http(server: BaseServer, path: str) -> int:
         sent.append(message)
 
     scope = {"type": "http", "method": "GET", "path": path, "query_string": b"", "headers": []}
+    await start_server(server)
     await server(scope, receive, send)
     return sent[0]["status"]
 
@@ -402,7 +404,8 @@ class TestRelease:
             app.gate.set()
         with pytest.raises(asyncio.CancelledError):
             await call
-        assert [event[0] for event in handler.events] == ["take", "work_end", "release"]
+        call_events = [event[0] for event in handler.events if event[0] not in ("open", "close")]
+        assert call_events == ["take", "work_end", "release"]
         assert server.requests.in_flight == 0
 
     @pytest.mark.parametrize("message_id", ["m1", None])
@@ -429,12 +432,14 @@ class TestRelease:
             "type": "websocket", "path": "/_wsx", "headers": [(b"host", b"example.org")],
             "query_string": b"", "subprotocols": [],
         }
+        await start_server(server)
         await WsxConnection(server, scope, receive, send).serve()
         [release] = server.databases["default"].of("release")
         assert release[1] == ("default",) and on_pool(release)
 
     async def test_a_kbus_call_releases(self) -> None:
         server = configured()
+        await start_server(server)
         assert await server.kbus_call("/sync_take") == {"name": "default"}
         [release] = server.databases["default"].of("release")
         assert on_pool(release)
@@ -501,6 +506,9 @@ class TestLifespan:
         messages = [{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}]
 
         async def receive() -> dict[str, Any]:
+            if len(messages) == 1:  # the startup does not wait for on_startup: the test does
+                while not server.is_enabled("shop"):
+                    await asyncio.sleep(0)
             return messages.pop(0)
 
         async def send(message: dict[str, Any]) -> None:

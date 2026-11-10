@@ -41,6 +41,7 @@ from __future__ import annotations
 from typing import Any
 
 __all__ = [
+    "ChallengedUnauthorized",
     "ExternalFailure",
     "failure_text",
     "HTTPBadRequest",
@@ -52,6 +53,7 @@ __all__ = [
     "HTTPUnsupportedMediaType",
     "KBusCallError",
     "Redirect",
+    "ROUTER_ERRORS",
     "WebSocketDisconnect",
 ]
 
@@ -100,6 +102,13 @@ class HTTPUnauthorized(HTTPException):
         self, detail: str | None = None, headers: list[tuple[bytes, bytes]] | None = None
     ) -> None:
         super().__init__(401, detail, headers)
+
+
+class ChallengedUnauthorized(HTTPUnauthorized):
+    """The ``not_authenticated`` 401: no identity, the ``WWW-Authenticate`` challenge."""
+
+    def __init__(self, detail: str | None = None) -> None:
+        super().__init__(detail, headers=[(b"www-authenticate", b"Bearer")])
 
 
 class HTTPForbidden(HTTPException):
@@ -187,3 +196,20 @@ class WebSocketDisconnect(Exception):
         super().__init__(f"websocket disconnected: {code} {reason}".rstrip())
         self.code = code
         self.reason = reason
+
+
+# genro-routes resolution error codes mapped to core HTTP exceptions (the
+# node.error string-code contract): an unknown or unavailable path answers
+# 404; a ruled entry denied answers on the HTTP distinction the router
+# already draws — 401 "I do not know who you are" when no identity was
+# presented, 403 "I know, and it is not enough" when the presented tags do
+# not match. The 401 is what ``ErrorMiddleware`` negotiates into a login
+# challenge, so a browser reaching a protected route lands on the login
+# page instead of a dead end. Read by the application's ``execute`` and by
+# the MCP engine's ``tools/call``.
+ROUTER_ERRORS: dict[str, type[Exception]] = {
+    "not_found": HTTPNotFound,
+    "not_available": HTTPNotFound,
+    "not_authorized": HTTPForbidden,
+    "not_authenticated": ChallengedUnauthorized,
+}

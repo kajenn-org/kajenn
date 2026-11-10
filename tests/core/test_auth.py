@@ -53,6 +53,7 @@ from kajenn.exceptions import HTTPUnauthorized
 from kajenn.middleware import MiddlewareMixin
 from kajenn.types import Message, Scope
 from kajenn.server_app import ServerApplication
+from tests.conftest import start_server
 
 
 class MemoryUserStore(UserStore):
@@ -220,6 +221,7 @@ async def http_get(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     return scope, sent
 
@@ -290,7 +292,7 @@ def scope_with(session: Session | None, authorization: str | None) -> Scope:
     """A REST scope carrying an attached session and/or an Authorization header."""
     headers = [(b"authorization", authorization.encode())] if authorization is not None else []
     scope: Scope = {
-        "type": "http", "method": "GET", "path": "/", "headers": headers, "kajenn.channel": "rest",
+        "type": "http", "method": "GET", "path": "/", "headers": headers, "kajenn.channel": "api",
     }
     if session is not None:
         scope["session"] = session

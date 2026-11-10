@@ -34,8 +34,9 @@ from typing import Any, Callable
 import pytest
 from genro_routes import route
 
-from kajenn import AsgiConfigBuilder, AsgiServer, OpenApiApplication, RoutedApplication
+from kajenn import AsgiConfigBuilder, AsgiServer, RoutedApplication
 from kajenn.types import Message, Scope
+from tests.conftest import start_server
 
 MSGPACK_BROKEN = b"\xc1\xff\xff"
 
@@ -44,10 +45,6 @@ class BodyApp(RoutedApplication):
     """The application under test: typed fields, a whole body, a raw body."""
 
     code = "body"
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self.route.plug("pydantic")
 
     @route()
     def add(self, x: int = 0, y: int = 0) -> dict[str, int]:
@@ -70,7 +67,7 @@ class BodyApp(RoutedApplication):
         return {"title": title}
 
 
-class ApiApp(OpenApiApplication):
+class ApiApp(RoutedApplication):
     """An OpenAPI application whose schema declares the code it answers."""
 
     code = "api"
@@ -149,6 +146,7 @@ def body_request() -> Callable[..., object]:
         async def send(message: Message) -> None:
             sent.append(message)
 
+        await start_server(server)
         await server(scope, receive, send)  # type: ignore[operator]
         return sent
 
@@ -315,13 +313,13 @@ class TestSchemaDeclaresTheCode:
     """The generated OpenAPI document declares the code the application chose."""
 
     async def test_strict_schema_declares_400(self, http_request, response_body) -> None:
-        sent = await http_request(api_server(), "/_meta/schema_json")
+        sent = await http_request(api_server(), "/_meta/api/schema_json")
         document = json.loads(response_body(sent))
         assert "400" in document["paths"]["/add"]["get"]["responses"]
         assert "422" not in document["paths"]["/add"]["get"]["responses"]
 
     async def test_fastapi_schema_declares_422(self, http_request, response_body) -> None:
-        sent = await http_request(api_server(error_codes="fastapi"), "/_meta/schema_json")
+        sent = await http_request(api_server(error_codes="fastapi"), "/_meta/api/schema_json")
         document = json.loads(response_body(sent))
         assert "422" in document["paths"]["/add"]["get"]["responses"]
         assert "400" not in document["paths"]["/add"]["get"]["responses"]

@@ -32,22 +32,23 @@ import pytest
 from genro_routes import route
 
 import kajenn
-from kajenn import AsgiServer, Avatar, BaseApplication, BaseServer, McpOpenApiApplication
+from kajenn import AsgiServer, Avatar, BaseApplication, BaseServer, RoutedApplication
 from kajenn.middleware import default_registry
 from kajenn.types import Message, Scope
 from kajenn.wsx import WsxConnection, WsxEnvelope
 from kajenn.server_app import ServerApplication
+from tests.conftest import start_server
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
 
 
-class Api(McpOpenApiApplication):
-    @route(channel_channels="mcp,rest")
+class Api(RoutedApplication):
+    @route(channel_channels="mcp,api")
     def open(self, _request=None) -> dict[str, Any]:
         avatar = _request.avatar()
         return {"identity": avatar.identity if avatar is not None else None}
 
-    @route(channel_channels="mcp,rest", auth_rule="admin")
+    @route(channel_channels="mcp,api", auth_rule="admin")
     def secret(self, _request=None) -> dict[str, Any]:
         return {"identity": _request.avatar().identity}
 
@@ -91,6 +92,7 @@ async def drive(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     start = next(m for m in sent if m["type"] == "http.response.start")
     raw = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
@@ -158,7 +160,7 @@ class TestRest:
     async def test_the_cache_serves_the_second_request(self) -> None:
         # wf:contract: two requests with the same Bearer reach the authentication route
         # wf:contract: once; forget_credential makes the third reach it again.
-        class Idp(McpOpenApiApplication):
+        class Idp(RoutedApplication):
             def __init__(self, **kwargs: Any) -> None:
                 super().__init__(**kwargs)
                 self.calls = 0
@@ -170,7 +172,7 @@ class TestRest:
 
         server = AsgiServer(
             applications=[(BaseApplication, {"mount": ""}), (Idp, {"code": "idp"}), (Api, {"code": "api"})],
-            channels={"rest": {"authentication_route": "/idp/check"}},
+            channels={"api": {"authentication_route": "/idp/check"}},
         )
         idp = server.applications["idp"]
         for _ in range(2):
@@ -194,7 +196,7 @@ class TestMcp:
         }
         status, _, data = await drive(
             api_server(),
-            "/api/mcp",
+            "/api/_meta/mcp",
             method="POST",
             body=json.dumps(envelope).encode(),
             headers=bearer("sk_live_xyz"),
@@ -206,7 +208,7 @@ class TestMcp:
         # wf:contract: channels={"mcp": {"authentication_route": "/idp/check"}} makes a
         # wf:contract: tools/call verify its Bearer through /idp/check, and the avatar's
         # wf:contract: data is readable by the tool through _request.avatar().data.
-        class Idp(McpOpenApiApplication):
+        class Idp(RoutedApplication):
             def __init__(self, **kwargs: Any) -> None:
                 super().__init__(**kwargs)
                 self.calls = 0
@@ -216,7 +218,7 @@ class TestMcp:
                 self.calls += 1
                 return {"identity": "idp-user", "tags": ["admin"], "data": {"tenant": "t1"}}
 
-        class Tools(McpOpenApiApplication):
+        class Tools(RoutedApplication):
             @route(channel_channels="mcp")
             def whoami(self, _request=None) -> dict[str, Any]:
                 avatar = _request.avatar()
@@ -234,7 +236,7 @@ class TestMcp:
             "params": {"name": "whoami", "arguments": {}},
         }
         status, _, data = await drive(
-            server, "/api/mcp", method="POST", body=json.dumps(envelope).encode(),
+            server, "/api/_meta/mcp", method="POST", body=json.dumps(envelope).encode(),
             headers=bearer("tok"),
         )
         assert status == 200
@@ -249,6 +251,7 @@ class TestTheBus:
         # wf:contract: a scope already carrying an avatar (info.auth on the bus) is not
         # wf:contract: authenticated again: the ruled route answers with that identity.
         server = api_server()
+        await start_server(server)
         answer = await server.kbus_call("/api/secret", {}, auth=Avatar("bus", ["admin"]))
         assert answer == {"identity": "bus"}
 
@@ -291,6 +294,7 @@ class TestWsx:
                 "query_string": b"",
                 "subprotocols": [],
             }
+            await start_server(server)
             connection = WsxConnection(server, scope, receive, send)
             await connection.serve()
             return connection, sent

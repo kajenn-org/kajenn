@@ -139,6 +139,7 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         max_threads: int | BagResolver = None,
         shutdown_timeout_seconds: float | BagResolver = None,
         debug: bool | str | BagResolver = None,
+        abort_on_fatal_boot_error: bool | BagResolver = None,
     ) -> None:
         """Server runtime options.
 
@@ -159,6 +160,12 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         ``debug`` is the DECLARED usage mode the core never branches on (the CLI
         spells it ``--debug``): ``True``, or a comma-separated string of
         parameters an application reads for itself.
+
+        ``abort_on_fatal_boot_error`` (``True``) chooses what a ``FatalBootError``
+        of the startup does — a step of the server itself, such as a database
+        of the server that does not open: ``True`` ends the process; ``False``
+        keeps it up for ``_server`` only, every other application answering 503
+        and ``/readyz`` not ready.
 
         ``shutdown_timeout_seconds`` (5.0) bounds how long uvicorn waits for open
         connections at shutdown before cancelling them: one endless response —
@@ -391,7 +398,7 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
 
     @element(parent_tags="configuration", sub_tags="channel", collection_key="name")
     def channels(self) -> None:
-        """Collection of channels, each labelled by its ``name`` (``rest``,
+        """Collection of channels, each labelled by its ``name`` (``api``,
         ``mcp``, ``wsx``, ...): per channel, the route that authenticates a
         credential presented on it."""
 
@@ -457,6 +464,5 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         """OpenAPI metadata: ``title``, ``version``, ``description``.
 
         Grammar only: no core consumer reads this section.
-        ``OpenApiApplication`` takes its document metadata from the
-        ``openapi_info`` attribute of the application or of the mounted routing
-        class, not from here."""
+        A routed application takes its document metadata from its own
+        ``openapi_info`` attribute, not from here."""

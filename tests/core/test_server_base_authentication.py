@@ -35,6 +35,7 @@ from kajenn.config import AsgiConfigBuilder
 from kajenn.exceptions import HTTPUnauthorized
 from kajenn.exceptions import KBusCallError
 from kajenn.server_app import ServerApplication
+from tests.conftest import start_server
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "api"}}}
 
@@ -98,8 +99,9 @@ class TestTheServerRoutes:
         # wf:contract: /_server/auth/authenticate exists on every server declaring _server
         # wf:contract: and answers {identity, tags, data, valid_until} for a credential AuthCore knows.
         server = server_with_idp()
+        await start_server(server)
         answer = await server.kbus_call(
-            "/_server/auth/authenticate", {"credential": "Bearer sk_live_xyz", "channel": "rest"}
+            "/_server/auth/authenticate", {"credential": "Bearer sk_live_xyz", "channel": "api"}
         )
         assert answer == {"identity": "svc", "tags": ["api"], "data": {}, "valid_until": None}
 
@@ -108,8 +110,9 @@ class TestTheServerRoutes:
         # wf:contract: the bus caller.
         server = server_with_idp()
         with pytest.raises(KBusCallError) as refused:
+            await start_server(server)
             await server.kbus_call(
-                "/_server/auth/authenticate", {"credential": "Bearer nope", "channel": "rest"}
+                "/_server/auth/authenticate", {"credential": "Bearer nope", "channel": "api"}
             )
         assert refused.value.status == 401
 
@@ -117,7 +120,9 @@ class TestTheServerRoutes:
         # wf:contract: /_server/auth/forget_credential drops the cached avatar of the
         # wf:contract: credential and answers {"status": "ok"}.
         server = server_with_idp()
-        await server.authenticate_credential("Bearer sk_live_xyz", "rest")
+        await start_server(server)
+        await server.authenticate_credential("Bearer sk_live_xyz", "api")
+        await start_server(server)
         answer = await server.kbus_call(
             "/_server/auth/forget_credential", {"credential": "Bearer sk_live_xyz"}
         )
@@ -130,13 +135,14 @@ class TestAuthenticateCredential:
         # wf:contract: the channel, or DEFAULT_AUTHENTICATION_ROUTE.
         server = server_with_idp()
         assert server.authentication_route("mcp") == "/idp/check"
-        assert server.authentication_route("rest") == "/_server/auth/authenticate"
+        assert server.authentication_route("api") == "/_server/auth/authenticate"
         assert server.DEFAULT_AUTHENTICATION_ROUTE == "/_server/auth/authenticate"
 
     async def test_a_channel_route_answers_an_avatar_with_data(self) -> None:
         # wf:contract: authenticate_credential(credential, channel) calls the channel's
         # wf:contract: route with {credential, channel} and builds the Avatar, data included.
         server = server_with_idp()
+        await start_server(server)
         avatar = await server.authenticate_credential("Bearer good", "mcp")
         assert isinstance(avatar, Avatar)
         assert (avatar.identity, avatar.tags) == ("ann", ["dev"])
@@ -149,6 +155,7 @@ class TestAuthenticateCredential:
         server = server_with_idp()
         for _ in range(2):
             with pytest.raises(HTTPUnauthorized):
+                await start_server(server)
                 await server.authenticate_credential("Bearer bad", "mcp")
         assert len(idp(server).calls) == 2
 
@@ -156,7 +163,9 @@ class TestAuthenticateCredential:
         # wf:contract: a verified credential is cached by (sha256(credential), channel):
         # wf:contract: two calls reach the route once.
         server = server_with_idp()
+        await start_server(server)
         first = await server.authenticate_credential("Bearer good", "mcp")
+        await start_server(server)
         second = await server.authenticate_credential("Bearer good", "mcp")
         assert first is second
         assert len(idp(server).calls) == 1
@@ -165,8 +174,10 @@ class TestAuthenticateCredential:
         # wf:contract: the same credential on another channel is verified by that
         # wf:contract: channel's route: the cache key carries the channel.
         server = server_with_idp()
-        await server.authenticate_credential("Bearer sk_live_xyz", "rest")
+        await start_server(server)
+        await server.authenticate_credential("Bearer sk_live_xyz", "api")
         with pytest.raises(HTTPUnauthorized):
+            await start_server(server)
             await server.authenticate_credential("Bearer sk_live_xyz", "mcp")
         assert len(idp(server).calls) == 1
 
@@ -174,8 +185,10 @@ class TestAuthenticateCredential:
         # wf:contract: forget_credential(credential) drops the entries of that credential
         # wf:contract: for every channel; the next call reaches the route again.
         server = server_with_idp()
+        await start_server(server)
         await server.authenticate_credential("Bearer good", "mcp")
         server.forget_credential("Bearer good")
+        await start_server(server)
         await server.authenticate_credential("Bearer good", "mcp")
         assert len(idp(server).calls) == 2
 
@@ -183,7 +196,9 @@ class TestAuthenticateCredential:
         # wf:contract: credential_cache_ttl=0 (grammar: authentication(cache_ttl=0))
         # wf:contract: makes every call reach the route.
         server = server_with_idp(ttl=0)
+        await start_server(server)
         await server.authenticate_credential("Bearer good", "mcp")
+        await start_server(server)
         await server.authenticate_credential("Bearer good", "mcp")
         assert len(idp(server).calls) == 2
 

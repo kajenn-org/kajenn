@@ -1,6 +1,6 @@
 # Configuration — tech notes
 
-**Version**: 0.2 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.2 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
 
 
 ## Renewal evidence — 2026-09-08
@@ -77,6 +77,10 @@ materializes its role's projection. Half superseded: the `Projection` object was
 removed, and the CLI ratification (SPECIFICATION.md:817) records the
 consequence — `--role`/`--app` lost their meaning with it. So D15's *principle*
 stands and its *mechanism* is gone; do not go looking for `Projection`.
+`--role` exists again with another meaning: `kajenn serve <source> --role
+application:<code>` runs the dedicated process of one application declared with
+`spawner` (`__main__.py:776`, started by `SubprocessSpawner` at `spawner.py:117`).
+`--app` does not exist.
 
 **D23** (SPECIFICATION.md:418-419) — the live-config architecture parked as a
 future macro. This is what §6 of the design builds on, and the reason §6 is
@@ -102,14 +106,14 @@ pool as a top-level section; the owner corrected it. `test_config.py:885` is the
   see the closing section of [status.md](status.md) for what *does* exist
   underneath (`SourceBag`, `Bag.subscribe`).
 - **`openapi` is declared and read by nobody.** The grammar validates it
-  (elements.py:362); the only other mention is the handler docstring saying it
-  is skipped (handler.py:49). Do not assume a consumer exists somewhere.
+  (elements.py:451); the only other mention is the handler docstring saying it
+  is skipped (handler.py:48). Do not assume a consumer exists somewhere.
 - **Two reading rules, and the grammar picks.** A node with a CLOSED signature
   is read attribute by attribute *through the handler*, so signature defaults
   and resolvers are honoured; a node with open `**kwargs` is read in bulk
   through `builder.runtime_values` (handler.py:25-31). Adding an attribute to
   the wrong kind of node changes how it is read, not just where it lives.
-- **`storage_mounts` anchors to the cwd at recipe time** (builder.py:133), and
+- **`storage_mounts` anchors to the cwd at recipe time** (builder.py:134), and
   writes it absolute because the local backend rejects a relative string. A
   test that changes directory between building and reading will not see what it
   expects.

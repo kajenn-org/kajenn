@@ -189,10 +189,10 @@ def test_authentication_statuses(recipes, serve_recipe):
 
 def test_openapi_and_argument_errors(recipes, serve_recipe):
     with serve_recipe(recipes.get_code("guides/openapi.md", "class Shop")) as server:
-        status, body = server.get_response("/_meta/schema_json")
+        status, body = server.get_response("/_meta/api/schema_json")
         assert status == 200
         assert json.loads(body)["openapi"] == "3.1.0"
-        assert server.get_response("/_meta/docs")[0] == 200
+        assert server.get_response("/_meta/api/docs")[0] == 200
         assert server.get_response("/search?max_price=invalid")[0] == 400
         assert server.get_response("/search?extra=1")[0] == 400
         assert "400" in json.loads(body)["paths"]["/search"]["get"]["responses"]
@@ -213,14 +213,14 @@ def test_wsx_client_roundtrip(recipes, serve_recipe, tmp_path):
 def test_mcp_tools(recipes, serve_recipe):
     with serve_recipe(recipes.get_code("guides/mcp.md", "class Calc")) as server:
         payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode()
-        status, body = server.get_response("/mcp", payload, {"Content-Type": "application/json"})
+        status, body = server.get_response("/_meta/mcp", payload, {"Content-Type": "application/json"})
         assert status == 200
         assert {"add", "mul"} <= {item["name"] for item in json.loads(body)["result"]["tools"]}
         payload = json.dumps({
             "jsonrpc": "2.0", "id": 2, "method": "tools/call",
             "params": {"name": "add", "arguments": {"a": 2, "b": 3}},
         }).encode()
-        status, body = server.get_response("/mcp", payload, {"Content-Type": "application/json"})
+        status, body = server.get_response("/_meta/mcp", payload, {"Content-Type": "application/json"})
         assert status == 200
         reply = json.loads(body)
         assert "error" not in reply
@@ -421,15 +421,25 @@ def test_interval_task_recipe(recipes, serve_recipe, tmp_path):
         assert json.loads(log.read_text().splitlines()[0])["outcome"] == "ok"
 
 
-def test_mounted_openapi_recipe(recipes, serve_recipe):
-    code = recipes.get_code("guides/openapi.md", "class Shop").split("server = AsgiServer")[0]
-    code += "\nSubApi = Shop\n" + recipes.get_code("guides/openapi.md", '"routing_class": SubApi()')
+def test_routing_class_inside_an_application_recipe(recipes, serve_recipe):
+    code = recipes.get_code("guides/openapi.md", "class Shop").split("class Shop")[0]
+    code += """
+from genro_routes import RoutingClass
+
+
+class SubApi(RoutingClass):
+    @route()
+    def search(self, q: str = "") -> dict:
+        return {"query": q}
+
+"""
+    code += recipes.get_code("guides/openapi.md", "class Holder")
     code += '\nserver.serve(host="127.0.0.1", port=8000)'
     with serve_recipe(code) as server:
         status, body = server.get_response("/mount/api/search?q=coffee")
         assert status == 200 and json.loads(body)["query"] == "coffee"
-        assert server.get_response("/mount/_meta/schema_json")[0] == 200
-        assert server.get_response("/mount/_meta/docs")[0] == 200
+        assert server.get_response("/mount/_meta/api/schema_json")[0] == 200
+        assert server.get_response("/mount/_meta/api/docs")[0] == 200
 
 
 def test_hosted_application_recipe(recipes, serve_recipe):

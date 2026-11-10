@@ -68,7 +68,7 @@ class Hello(RoutedApplication):
     def index(self) -> dict[str, str]:
         return {"hello": "world"}
 
-    @route()
+    @route(channel_channels="api,wsx")
     def greet(self, name: str = "world") -> dict[str, str]:
         return {"hello": name}
 
@@ -138,10 +138,15 @@ Marking a method with `@route()` publishes it as an endpoint. The method name
 becomes the URL segment: `index` answers `GET /index`, `greet` answers
 `GET /greet`. Returning a `dict` produces a JSON response automatically.
 
+A route answers on the channels it declares. Without `channel_channels` it
+answers plain HTTP requests only, the channel `api`. `greet` also declares
+`wsx`, so the [websockets guide](guides/websockets.md) can call it over a
+websocket.
+
 ### Query parameters bind to the signature
 
 ```python
-@route()
+@route(channel_channels="api,wsx")
 def greet(self, name: str = "world") -> dict[str, str]:
     return {"hello": name}
 ```

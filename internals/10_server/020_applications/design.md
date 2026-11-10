@@ -1,6 +1,9 @@
 # Applications
 
-**Version**: 0.3 · **Last Updated**: 2026-09-08 · **Status**: 🔴 DA REVISIONARE
+**Version**: 0.4 · **Last Updated**: 2026-11-03 · **Status**: 🔴 DA REVISIONARE
+
+*Owner, 2026-11-03, translated from Italian, verbatim:* routes depend on auth tags and capabilities and are always computed dynamically. Plugins can be configured dynamically, and applications can even be mounted and unmounted.
+The lines of this page it contradicts are in [decisions.md](decisions.md), Still open.
 
 What an application is, what it owes the server that hosts it, and everything
 that happens between a request arriving at the application and an answer going

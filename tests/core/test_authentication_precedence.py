@@ -34,27 +34,28 @@ import pytest
 
 from genro_routes import RoutingClass, route
 
-from kajenn import AsgiServer, Avatar, BaseApplication, McpOpenApiApplication, RoutedApplication
+from kajenn import AsgiServer, Avatar, BaseApplication, RoutedApplication
 from kajenn.exceptions import HTTPException, HTTPForbidden, HTTPNotFound
 from kajenn.mcp.engine import McpEngine
 from kajenn.mcp.jsonrpc import McpError
 from kajenn.types import Message, Scope
 from kajenn.server_app import ServerApplication
+from tests.conftest import start_server
 
 BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
 
 
-class Api(McpOpenApiApplication):
-    @route(channel_channels="mcp,rest")
+class Api(RoutedApplication):
+    @route(channel_channels="mcp,api")
     def open(self, _request=None) -> dict[str, Any]:
         avatar = _request.avatar()
         return {"identity": avatar.identity if avatar is not None else None}
 
-    @route(channel_channels="mcp,rest", auth_rule="admin")
+    @route(channel_channels="mcp,api", auth_rule="admin")
     def secret(self, _request=None) -> dict[str, Any]:
         return {"identity": _request.avatar().identity}
 
-    @route(channel_channels="mcp,rest")
+    @route(channel_channels="mcp,api")
     def missing(self) -> dict[str, Any]:
         raise HTTPNotFound("record 42 not found")
 
@@ -108,6 +109,7 @@ async def drive(
     async def send(message: Message) -> None:
         sent.append(message)
 
+    await start_server(server)
     await server(scope, receive, send)
     start = next(m for m in sent if m["type"] == "http.response.start")
     raw = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
@@ -128,7 +130,7 @@ async def tools_call(
     server: AsgiServer, name: str, headers: list[tuple[bytes, bytes]] | None = None
 ) -> tuple[int, dict[bytes, bytes], Any]:
     envelope = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": {}}}
-    return await drive(server, "/api/mcp", method="POST", body=json.dumps(envelope).encode(), headers=headers)
+    return await drive(server, "/api/_meta/mcp", method="POST", body=json.dumps(envelope).encode(), headers=headers)
 
 
 class TestTheHeaderComesFirst:
@@ -148,6 +150,7 @@ class TestTheHeaderComesFirst:
     async def test_a_scope_without_channel_is_read_as_rest(self) -> None:
         server = api_server()
         scope: Scope = {"type": "http", "headers": bearer("sk_live_xyz")}
+        await start_server(server)
         avatar = await server.authenticate(scope)
         assert avatar.identity == "svc"
 
@@ -159,6 +162,7 @@ class TestTheCacheAndTheRoute:
             channels={"mcp": {"authentication_route": "/idp/check"}},
         )
         idp = server.applications["idp"]
+        await start_server(server)
         first = asyncio.create_task(server.authenticate_credential("Bearer good", "mcp"))
         await asyncio.sleep(0)
         server.forget_all_credentials()
@@ -170,7 +174,8 @@ class TestTheCacheAndTheRoute:
     async def test_forget_credential_tolerates_a_concurrent_write(self) -> None:
         """Insert one unrelated entry while revocation is removing a cached credential."""
         server = api_server()
-        await server.authenticate_credential("Bearer sk_live_xyz", "rest")
+        await start_server(server)
+        await server.authenticate_credential("Bearer sk_live_xyz", "api")
         revoking = threading.Event()
         written = threading.Event()
 
@@ -185,7 +190,7 @@ class TestTheCacheAndTheRoute:
         assert len(cache) == 1
         revoked_key = next(iter(cache))
         server._credential_cache = cache
-        other_key = ("other", "rest")
+        other_key = ("other", "api")
         other_entry = (float("inf"), Avatar("x"))
 
         def writer() -> None:
@@ -216,20 +221,22 @@ class TestTheCacheAndTheRoute:
             channels={"mcp": {"authentication_route": "/idp/check"}},
         )
         with pytest.raises(HTTPException) as failed:
+            await start_server(server)
             await server.authenticate_credential("Bearer x", "mcp")
         assert failed.value.status == 503
 
     async def test_the_server_auth_routes_serve_the_bus_only(self) -> None:
         server = api_server()
-        body = json.dumps({"credential": "Bearer sk_live_xyz", "channel": "rest"}).encode()
+        body = json.dumps({"credential": "Bearer sk_live_xyz", "channel": "api"}).encode()
         status, _, _ = await drive(server, "/_server/auth/authenticate", method="POST", body=body)
         assert status == 403
         status, _, _ = await drive(
             server, "/_server/auth/forget_credential", method="POST", body=json.dumps({"credential": "x"}).encode()
         )
         assert status == 403
+        await start_server(server)
         answer = await server.kbus_call(
-            "/_server/auth/authenticate", {"credential": "Bearer sk_live_xyz", "channel": "rest"}
+            "/_server/auth/authenticate", {"credential": "Bearer sk_live_xyz", "channel": "api"}
         )
         assert answer["identity"] == "svc"
 
@@ -258,10 +265,10 @@ class TestMcp:
         assert data["error"]["code"] == -32601
 
     async def test_the_binding_rule_follows_mcp_channel(self) -> None:
-        class Tools(McpOpenApiApplication):
+        class Tools(RoutedApplication):
             mcp_channel = "tools"
 
-            @route(channel_channels="tools,rest", openapi_method="post")
+            @route(channel_channels="tools,api", openapi_method="post")
             def save(self, name: str = "", body_data: dict | None = None) -> dict[str, Any]:
                 return {"name": name, "body_data": body_data}
 
@@ -274,7 +281,7 @@ class TestMcp:
             "method": "tools/call",
             "params": {"name": "save", "arguments": {"name": "cpu50", "body_data": {"cpu": 50}}},
         }
-        _, _, data = await drive(server, "/t/mcp", method="POST", body=json.dumps(envelope).encode())
+        _, _, data = await drive(server, "/t/_meta/mcp", method="POST", body=json.dumps(envelope).encode())
         assert data["result"]["structuredContent"] == {"name": "cpu50", "body_data": {"cpu": 50}}
 
 
@@ -333,14 +340,14 @@ class TestCoverageOfTheCorrections:
         assert (await call("ghost")).code == -32601
 
     async def test_an_unreachable_route_is_503(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        server = api_server()
+        server = await start_server(api_server())
 
         async def lost(*args: Any, **kwargs: Any) -> Any:
             raise TimeoutError("no reply")
 
         monkeypatch.setattr(server, "kbus_call", lost)
         with pytest.raises(HTTPException) as failed:
-            await server.authenticate_credential("Bearer x", "rest")
+            await server.authenticate_credential("Bearer x", "api")
         assert failed.value.status == 503
 
     async def test_another_refusal_status_of_the_route_propagates(self) -> None:
@@ -354,5 +361,6 @@ class TestCoverageOfTheCorrections:
             channels={"mcp": {"authentication_route": "/idp/check"}},
         )
         with pytest.raises(HTTPException) as refused:
+            await start_server(server)
             await server.authenticate_credential("Bearer x", "mcp")
         assert refused.value.status == 403
