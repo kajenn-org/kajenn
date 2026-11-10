@@ -5,7 +5,7 @@ All notable changes to kajenn are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). Releases before 0.9.0 are listed
 on [GitHub Releases](https://github.com/kajenn-org/kajenn/releases).
 
-## [Unreleased]
+## [0.9.1] - 2026-11-10
 
 ### Fixed
 
