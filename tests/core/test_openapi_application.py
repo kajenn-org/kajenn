@@ -228,6 +228,24 @@ class TestReservedMeta:
         with pytest.raises(ValueError, match="_meta"):
             Clash(code="clash")
 
+    async def test_a_catch_all_route_starts_and_leaves_meta_to_the_meta_branch(
+        self, http_request, response_status, response_body
+    ) -> None:
+        # kajenn-org/kajenn#123: a catch-all resolves every segment, _meta
+        # included, but does not name it.
+        class CatchAll(RoutedApplication):
+            @route()
+            async def index(self, *segments, **query):
+                return {"segments": list(segments)}
+
+        server = mounted_server((CatchAll, {"code": "site"}))
+        sent = await http_request(server, "/site/some/page")
+        assert response_status(sent) == 200
+        assert json.loads(response_body(sent)) == {"segments": ["some", "page"]}
+        sent = await http_request(server, "/site/_meta/api/schema_json")
+        assert response_status(sent) == 200
+        assert json.loads(response_body(sent))["info"]["title"] == "CatchAll"
+
 
 class TestMovedUrls:
     @pytest.mark.parametrize(

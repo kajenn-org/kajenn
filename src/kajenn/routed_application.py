@@ -182,8 +182,10 @@ class RoutedApplication(BaseApplication, RoutingClass):
         router.channel.configure(channels=cls.http_channel)
         router.plug("pydantic")
         router.plug(OpenAPIPlugin.plugin_code)
-        # A branch of the same name is refused by ``add_branches`` itself.
-        if router.node(META_SEGMENT).error != "not_found":
+        # A branch of the same name is refused by ``add_branches`` itself. Only a
+        # route declared under that name clashes: a catch-all route resolves
+        # every segment without naming it (kajenn-org/kajenn#123).
+        if router.node(META_SEGMENT).path == META_SEGMENT:
             raise ValueError(
                 f"{cls.__name__}: {META_SEGMENT!r} is reserved and cannot name a route"
             )
