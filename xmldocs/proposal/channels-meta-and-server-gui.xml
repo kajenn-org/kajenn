@@ -23,6 +23,7 @@
       <list>
         <item>The OpenAPI face and the MCP face move into <c>RoutedApplication</c>. Every application with routes has both, with no switch to turn them off.</item>
         <item>The channel of a plain HTTP request is named <c>api</c>, short for OpenAPI, in place of <c>rest</c>: kajenn calls a method by path and describes it with OpenAPI, it is not REST. A route for both faces declares <c>channel_channels="mcp,api"</c>. Under <c>_meta</c> every branch is named after its channel: <c>api</c> and <c>mcp</c>.</item>
+        <item>Every <c>RoutedApplication</c> plugs the <c>channel</c> plugin with default <c>api</c>: a route that declares no <c>channel_channels</c> answers only on <c>api</c>. A route meant for WSX or another channel declares it, for example <c>channel_channels="api,wsx"</c>.</item>
         <item>The <c>channel</c> plugin keeps deciding visibility. Turning MCP on everywhere exposes nothing that is not declared for channel <c>mcp</c>.</item>
         <item><c>OpenApiApplication</c>, <c>McpOpenApiApplication</c> and <c>McpApplication</c> are removed in the release that brings the faces, with no deprecated alias. No new class name is needed.</item>
         <item><c>RoutedApplication</c> takes no external <c>RoutingClass</c>: the parameters <c>routing_class</c>, <c>module</c> and <c>api_name</c> are gone. To expose a <c>RoutingClass</c> that already exists, an application class contains it.</item>
@@ -127,6 +128,12 @@
       <option id="d-channel-http" title="http"/>
       <choice option="d-channel-api" by="GP" date="2026-11-09">kajenn is not REST: a route is a method called by path and described by OpenAPI. The channel is openapi, and api is its short name.</choice>
     </decision>
+    <decision id="d-default-channel" status="decided">
+      <question>On which channels does a route answer when it declares no channel_channels?</question>
+      <option id="d-default-api" title="Only api"/>
+      <option id="d-default-not-mcp" title="Every channel except mcp"/>
+      <choice option="d-default-api" by="GP" date="2026-11-09">A route answers where it says it answers; api is the face every routed application has.</choice>
+    </decision>
     <decision id="d-gui-switch" status="decided">
       <question>How does a recipe enable the server GUI?</question>
       <option id="d-gui-import" title="Optional import of the GUI package"/>
@@ -160,6 +167,7 @@
       <item>Three URLs change: <c>/&lt;app&gt;/_meta/schema_json</c> becomes <c>/&lt;app&gt;/_meta/api/schema_json</c>, <c>/&lt;app&gt;/_meta/docs</c> becomes <c>/&lt;app&gt;/_meta/api/docs</c>, and <c>/&lt;app&gt;/mcp</c> becomes <c>/&lt;app&gt;/_meta/mcp</c>. The old URLs give the same answer as the new ones, with a <c>Deprecation</c> header and a log line, for a period fixed case by case, as for every deprecation. A redirect is not used: an MCP client posting JSON-RPC does not follow it.</item>
       <item>MCP clients and links to the docs must be updated.</item>
       <item>Every route declaring the channel <c>rest</c> declares <c>api</c>.</item>
+      <item>A route of a plain <c>RoutedApplication</c> called over WSX, or over the KajennBus with a channel other than <c>api</c>, answers 404 until it declares that channel.</item>
       <item>Every routed application reserves <c>_meta</c>. A route named <c>_meta</c> must fail at registration.</item>
       <item><c>ServerApplication</c> gains an MCP face.</item>
       <item>Every application built on <c>OpenApiApplication</c>, <c>McpOpenApiApplication</c> or <c>McpApplication</c> moves to <c>RoutedApplication</c> in the release that removes them. genropy-kajenn uses <c>OpenApiApplication</c> through <c>GenropyProxyOpenApiApplication</c>.</item>

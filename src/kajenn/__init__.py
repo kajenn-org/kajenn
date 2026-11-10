@@ -27,11 +27,6 @@ and MCP surfaces, the tasks grammar and the ASGI type aliases.
 from importlib.metadata import version as _distribution_version
 
 from .application import ApplicationGrammar, BaseApplication
-from .applications import (
-    McpApplication,
-    McpOpenApiApplication,
-    OpenApiApplication,
-)
 from .asgi_server import AsgiServer
 from .auth import (
     ApiKeyStore,
@@ -112,16 +107,13 @@ __all__ = [
     "HTTPUnauthorized",
     "HTTPUnprocessableContent",
     "HTTPUnsupportedMediaType",
-    "McpApplication",
     "McpEngine",
     "McpError",
-    "McpOpenApiApplication",
     "Message",
     "MemorySessionStore",
     "MiddlewareMixin",
     "OpenAPIPlugin",
     "OpenAPITranslator",
-    "OpenApiApplication",
     "PluginMixin",
     "Receive",
     "Redirect",

@@ -133,8 +133,11 @@ class PluginMixin:
         A plugin carrying a class in the registry is registered with
         genro-routes first (guarded — never re-registered); the not-yet-attached
         plugins are then armed with a single batch ``router.plug([...])`` call, so
-        arming twice is safe (already-attached plugins are skipped). Unknown
-        plugin names surface as ``router.plug`` errors, not silent no-ops.
+        arming twice is safe. An already-attached plugin is not plugged again:
+        its configured options, when there are any, are applied with
+        ``configure`` — a ``RoutedApplication`` attaches ``openapi`` and
+        ``pydantic`` itself. Unknown plugin names surface as ``router.plug``
+        errors, not silent no-ops.
         """
         plugged = {plugin.name for plugin in router.iter_plugins()}
         specs: list[dict[str, Any]] = []
@@ -144,5 +147,7 @@ class PluginMixin:
                 Router.register_plugin(cls)
             if name not in plugged:
                 specs.append({"name": name, **options})
+            elif options:
+                getattr(router, name).configure(**options)
         if specs:
             router.plug(specs)

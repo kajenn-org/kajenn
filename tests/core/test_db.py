@@ -123,7 +123,7 @@ class Shop(RoutedApplication):
         self.gate.wait()
         self.server.databases["default"].events.append(("work_end", thread_name()))
 
-    @route()
+    @route(channel_channels="api,wsx")
     def sync_take(self, _request=None) -> dict[str, Any]:
         first = _request.db()
         again = _request.db()

@@ -8,21 +8,21 @@ routes *are* the spec.
 
 ## When to use it
 
-When you want a documented, browsable REST API. Subclass `OpenApiApplication`
-instead of `RoutedApplication` and declare `openapi_info`.
+Always available: every `RoutedApplication` has the `api` face, described by
+OpenAPI under `_meta/api`. Declare `openapi_info` to give the document a title
+and a version.
 
 ## Setup
 
-`OpenApiApplication` supplies the schema and documentation endpoints.
 `AsgiServer` automatically arms the `openapi` and `pydantic` plugins on its
 routed applications; no explicit enable switches are needed.
 
 ```python
-from kajenn import AsgiServer, OpenApiApplication
+from kajenn import AsgiServer, RoutedApplication
 from genro_routes import route
 
 
-class Shop(OpenApiApplication):
+class Shop(RoutedApplication):
     mount = ""
     openapi_info = {"title": "Shop API", "version": "1.0.0"}
 
@@ -39,40 +39,39 @@ server.serve(host="127.0.0.1", port=8000)
 - The fixed `openapi` and `pydantic` plugins cannot be disabled. Explicit
   `plugins` entries configure their options. A composition without
   `PluginMixin` does not supply this pair.
-
-`OpenApiApplication` also accepts these keyword arguments:
-
-- `docs="swagger" | "off"` — whether to serve the Swagger UI.
-- `api_name="api"` — the name of the API sub-tree.
-- `routing_class=<instance>` — supply the routed application to expose.
-- `module="pkg.mod:Cls"` — load the routed application from a module path.
+- `docs="off"` among the application's keyword arguments turns off the Swagger
+  UI page only; the schema and the routes stay.
 
 ## The `_meta` URLs
 
-The generated documentation lives under the **`_meta`** prefix (direct mode, when
-the OpenAPI app is on the site root):
+`_meta` is the one segment a routed application reserves for itself: a route
+of yours cannot be named `_meta`. Under it there is one branch per channel:
 
-- `GET /_meta/schema_json` — the OpenAPI 3.1 document.
-- `GET /_meta/docs` — the Swagger UI (returns `404` if `docs="off"`).
-- `GET /_meta/index` — a splash HTML page.
+- `GET /_meta/index` — the application page, with a link to the docs.
+- `GET /_meta/api/schema_json` — the OpenAPI 3.1 document.
+- `GET /_meta/api/docs` — the Swagger UI (returns `404` if `docs="off"`).
+- `GET /_meta/mcp/tools` — the MCP tools; see the [MCP guide](mcp.md).
 
-Your endpoints themselves are served directly, e.g. `GET /search?q=moka`.
+Your endpoints themselves are served directly, e.g. `GET /search?q=moka`. An
+application mounted on a prefix serves the same URLs under it:
+`/shop/search`, `/shop/_meta/api/schema_json`.
 
-## Direct vs mounted mode
+## Exposing a routing class you already have
 
-**Direct mode** — the `OpenApiApplication` declares `mount = ""`; endpoints are
-at the root and meta is at `/_meta/...` (as above).
-
-**Mounted mode** — the app is placed on a URL prefix. This composition fragment
-assumes `SubApi` is your routed application class:
+A `RoutingClass` written on its own is exposed by an application that attaches
+it in its constructor. This fragment assumes `SubApi` is your routing class:
 
 ```python
-server = AsgiServer(applications=[
-    (OpenApiApplication, {"code": "mount", "routing_class": SubApi()}),
-])
+class Holder(RoutedApplication):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.route.add_branches({"name": "api", "instance": SubApi()})
+
+
+server = AsgiServer(applications=[(Holder, {"code": "mount"})])
 ```
 
-- the endpoints are served under `/mount/api/...`
+- the routes of `SubApi` are served under `/mount/api/...`
 - the meta is served under `/mount/_meta/...`
 
 ## How to verify it
@@ -81,28 +80,31 @@ server = AsgiServer(applications=[
 $ curl "http://127.0.0.1:8000/search?q=moka&max_price=30"
 {"query": "moka", "hits": []}
 
-$ curl http://127.0.0.1:8000/_meta/schema_json
+$ curl http://127.0.0.1:8000/_meta/api/schema_json
 {"openapi": "3.1.0", ...}
 ```
 
-Open `http://127.0.0.1:8000/_meta/docs` in a browser for the interactive Swagger
-UI.
+Open `http://127.0.0.1:8000/_meta/api/docs` in a browser for the interactive
+Swagger UI.
 
 ## Gotchas
 
-- The documentation prefix is **`_meta`**, not `openapi`. Every meta URL is
-  `/_meta/...`.
+- The documentation lives under **`_meta/api`**. The URLs of 0.8.0,
+  `/_meta/schema_json` and `/_meta/docs`, still give the same answer with a
+  `Deprecation` header and a log line, until their removal is announced.
+- A route that declares no `channel_channels` answers on the `api` channel
+  only. A route you also call over WSX declares it:
+  `@route(channel_channels="api,wsx")`.
 - `AsgiServer` supplies the schema plugins automatically. The root `openapi`
   configuration section is accepted by the grammar but has no core consumer;
-  set title, version and description in the application’s `openapi_info` class
+  set title, version and description in the application's `openapi_info` class
   attribute.
-- `GET /_meta/docs` returns `404` when the app was created with `docs="off"`.
-- `GET /_meta/schema_json` describes the routes the caller can execute: the
+- `GET /_meta/api/schema_json` describes the routes the caller can execute: the
   request's channel and the caller's identity filter the schema as they filter
   execution. A route with an `auth_rule` appears only to a caller whose tags
   match it; an invalid credential answers `401`.
 - The `_server` app has its own OpenAPI view of the system endpoints at
-  `/_server/_meta/schema_json` and `/_server/_meta/docs` — separate from your
-  app's.
+  `/_server/_meta/api/schema_json` and `/_server/_meta/api/docs` — separate
+  from your app's.
 - Because routing is protocol-neutral, the very same `@route` methods can also be
   exposed as MCP tools; see the [MCP guide](mcp.md).

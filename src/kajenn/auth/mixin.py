@@ -230,12 +230,12 @@ class AuthMixin:
         ``HTTPUnauthorized`` on any route, a session or not. Without a header
         the session's root avatar answers when ``scope["session"]`` carries
         one; otherwise ``None``. A scope without ``kajenn.channel`` is read as
-        the REST face.
+        the ``api`` face.
         """
         credential = headers_dict(scope).get("authorization")
         if credential:
             return await self.authenticate_credential(
-                credential, scope.get("kajenn.channel", "rest")
+                credential, scope.get("kajenn.channel", "api")
             )
         session = self.session(scope)
         return session.avatar() if session is not None else None

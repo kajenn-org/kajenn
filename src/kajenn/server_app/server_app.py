@@ -20,8 +20,9 @@ process of an external application excepted); the configuration customises it
 with ``application(code="_server", ...)`` and never declares it. The demux finds it through the ordinary mount table — there is no
 dedicated demux logic.
 
-It extends ``OpenApiApplication`` (REST + OpenAPI), so ``/_server/_meta/``
-carries the usual schema/docs/index endpoints, and adds:
+It extends ``RoutedApplication``, so ``/_server/_meta/`` carries the usual
+``api`` and ``mcp`` descriptions and ``/_server/_meta/mcp`` the MCP face, and
+adds:
 
 - ``index`` — the ``/_server/`` descriptor: title and the attached section
   names (JSON — no HTML in code);
@@ -85,8 +86,8 @@ from genro_builders.builder import element
 from genro_routes import RoutingClass, route
 
 from kajenn.application import ApplicationGrammar, BaseApplication
-from kajenn.applications.openapi import OpenApiApplication
 from kajenn.exceptions import HTTPNotFound
+from kajenn.routed_application import RoutedApplication
 from kajenn.session import Avatar
 from kajenn.well_known import as_list
 
@@ -205,7 +206,7 @@ class ServerApplicationGrammar(ApplicationGrammar):
         rules, each starting with ``/`` or ``*``."""
 
 
-class ServerApplication(OpenApiApplication):
+class ServerApplication(RoutedApplication):
     """System endpoints of a server, mounted under ``/_server``.
 
     Carries the public server's system surface: the password login surface and

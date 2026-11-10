@@ -7,10 +7,10 @@ from typing import Any
 
 from genro_routes import route
 
-from kajenn import HTTPBadRequest, OpenApiApplication
+from kajenn import HTTPBadRequest, RoutedApplication
 
 
-class RemoteDemoApplication(OpenApiApplication):
+class RemoteDemoApplication(RoutedApplication):
     """Small diagnostic API proving what survives a remote HTTP boundary."""
 
     code = "demo"
@@ -18,7 +18,7 @@ class RemoteDemoApplication(OpenApiApplication):
     openapi_info = {
         "title": "Remote OpenAPI demo",
         "version": "1.0.0",
-        "description": "An OpenApiApplication running in a separate process.",
+        "description": "A routed application running in a separate process.",
     }
 
     def __init__(self, **kwargs: Any) -> None:

@@ -45,7 +45,7 @@ from typing import Any
 
 from genro_routes import route
 
-from kajenn import McpOpenApiApplication, RoutedApplication
+from kajenn import RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
 from kajenn.streaming import StreamingResponse
 
@@ -67,16 +67,16 @@ def seen_by(request):
     }
 
 
-class Billing(McpOpenApiApplication):
+class Billing(RoutedApplication):
     @route()
     def prepared_state(self):
         return {"pid": os.getpid()}
 
-    @route(channel_channels="mcp,rest,wsx,telegram")
+    @route(channel_channels="mcp,api,wsx,telegram")
     def seen(self, _request=None, **kwargs: Any):
         return seen_by(_request)
 
-    @route(channel_channels="mcp,rest,wsx", auth_rule="admin")
+    @route(channel_channels="mcp,api,wsx", auth_rule="admin")
     def secret(self, _request=None):
         return seen_by(_request)
 
@@ -102,7 +102,7 @@ class Billing(McpOpenApiApplication):
     def fail(self):
         raise RuntimeError("billing failed")
 
-    @route(channel_channels="rest,wsx")
+    @route(channel_channels="api,wsx")
     def lost(self):
         raise LookupError("billing lost")
 
@@ -361,7 +361,7 @@ class TestTheIdentityIsTheSame:
 
         async def scenario(server: AsgiServer) -> tuple[int, Any, list[str]]:
             status, _, body = await call(
-                server, "/billing/mcp", method="POST", body=json.dumps(envelope).encode(),
+                server, "/billing/_meta/mcp", method="POST", body=json.dumps(envelope).encode(),
                 headers=[*bearer("tok"), (b"content-type", b"application/json")])
             seen = json.loads(body)["result"]["structuredContent"]
             return status, (seen["identity"], seen["channel"]), server.applications["idp"].channels_seen

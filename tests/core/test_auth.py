@@ -290,7 +290,7 @@ def scope_with(session: Session | None, authorization: str | None) -> Scope:
     """A REST scope carrying an attached session and/or an Authorization header."""
     headers = [(b"authorization", authorization.encode())] if authorization is not None else []
     scope: Scope = {
-        "type": "http", "method": "GET", "path": "/", "headers": headers, "kajenn.channel": "rest",
+        "type": "http", "method": "GET", "path": "/", "headers": headers, "kajenn.channel": "api",
     }
     if session is not None:
         scope["session"] = session

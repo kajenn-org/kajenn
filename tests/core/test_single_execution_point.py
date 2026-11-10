@@ -31,13 +31,13 @@ from typing import Any
 
 from genro_routes import RoutingClass, route
 
-from kajenn import AsgiServer, BaseApplication, McpOpenApiApplication, RoutedApplication
+from kajenn import AsgiServer, BaseApplication, RoutedApplication
 from kajenn.request import Request
 from kajenn.mcp.engine import McpEngine
 from kajenn.types import Message, Scope
 
 
-class Tools(McpOpenApiApplication):
+class Tools(RoutedApplication):
     """A dual-face application whose handlers record what they see."""
 
     def __init__(self, **kwargs: Any) -> None:
@@ -45,7 +45,7 @@ class Tools(McpOpenApiApplication):
         self.cleanups = 0
         self.seen: list[dict[str, Any]] = []
 
-    @route(channel_channels="mcp,rest")
+    @route(channel_channels="mcp,api")
     def whoami(self, _request=None) -> dict[str, Any]:
         avatar = _request.avatar()
         seen = {
@@ -56,19 +56,19 @@ class Tools(McpOpenApiApplication):
         self.seen.append(seen)
         return seen
 
-    @route(channel_channels="mcp,rest")
+    @route(channel_channels="mcp,api")
     def add(self, x: int = 0, y: int = 0) -> dict[str, int]:
         return {"sum": x + y}
 
-    @route(channel_channels="mcp,rest", auth_rule="admin")
+    @route(channel_channels="mcp,api", auth_rule="admin")
     def secret(self) -> dict[str, str]:
         return {"secret": "s"}
 
-    @route(channel_channels="mcp,rest")
+    @route(channel_channels="mcp,api")
     async def agreet(self, name: str = "") -> dict[str, str]:
         return {"hello": name}
 
-    @route(channel_channels="mcp,rest", openapi_method="post")
+    @route(channel_channels="mcp,api", openapi_method="post")
     def save(self, name: str = "", body_data: dict | None = None) -> dict[str, Any]:
         return {"name": name, "body_data": body_data}
 
@@ -125,7 +125,7 @@ async def tools_call(server: AsgiServer, name: str, arguments: dict | None = Non
         "method": "tools/call",
         "params": {"name": name, "arguments": arguments or {}},
     }
-    sent = await drive(server, "/tools/mcp", method="POST", body=json.dumps(envelope).encode())
+    sent = await drive(server, "/tools/_meta/mcp", method="POST", body=json.dumps(envelope).encode())
     return body_of(sent)
 
 

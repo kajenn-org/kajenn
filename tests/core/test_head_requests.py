@@ -23,7 +23,6 @@ Every request drives a REAL ``AsgiServer`` composition at the ASGI level.
 
 from __future__ import annotations
 
-from typing import Any
 
 from genro_routes import route
 
@@ -37,10 +36,6 @@ class AssetApp(RoutedApplication):
     """The application under test: a non-empty resource and an empty one."""
 
     code = "assets"
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self.route.plug("pydantic")
 
     @route()
     def asset(self, _request=None) -> bytes:

@@ -12,22 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Concrete applications built on ``RoutedApplication``.
+"""The faces every ``RoutedApplication`` carries.
 
-Each application in this package is a ready-to-mount ASGI app for one
-transport dialect. ``OpenApiApplication`` wraps an API surface as REST +
-OpenAPI 3.1 with a Swagger docs page; ``McpApplication`` and
-``McpOpenApiApplication`` expose a router as MCP tools over stateless
-Streamable HTTP.
+``openapi`` holds the ``_meta`` branch and its ``api`` branch (the OpenAPI
+document and the Swagger page); ``mcp`` holds the MCP transport and the
+``_meta/mcp`` branch. ``RoutedApplication`` builds both: there is no
+application class to choose per face.
 """
-
-from __future__ import annotations
-
-from .mcp import McpApplication, McpOpenApiApplication
-from .openapi import OpenApiApplication
-
-__all__ = [
-    "McpApplication",
-    "McpOpenApiApplication",
-    "OpenApiApplication",
-]
