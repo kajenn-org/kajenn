@@ -5,6 +5,14 @@ All notable changes to kajenn are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). Releases before 0.9.0 are listed
 on [GitHub Releases](https://github.com/kajenn-org/kajenn/releases).
 
+## [0.9.1] - 2026-11-10
+
+### Fixed
+
+- An application with a catch-all route (`index(self, *segments, **query)`)
+  starts again: only a route declared under the name `_meta` is refused, and
+  `_meta/...` reaches the meta branch (#123).
+
 ## [0.9.0] - 2026-11-10
 
 ### Breaking
