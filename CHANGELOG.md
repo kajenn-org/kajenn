@@ -2,10 +2,10 @@
 
 All notable changes to kajenn are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
-[Semantic Versioning](https://semver.org/). Releases before 0.5.0 are listed
+[Semantic Versioning](https://semver.org/). Releases before 0.9.0 are listed
 on [GitHub Releases](https://github.com/kajenn-org/kajenn/releases).
 
-## [Unreleased]
+## [0.9.0] - 2026-11-10
 
 ### Breaking
 
