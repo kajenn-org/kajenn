@@ -88,9 +88,17 @@
       <p><c>FatalBootError</c> is a problem of the server as a whole, for example a database of the server that does not open. An <c>on_startup</c> no longer raises it: an application whose failure matters is <c>mandatory</c>. The option <c>abort_on_fatal_boot_error</c> of the <c>server</c> element chooses the effect: <c>True</c>, the default, ends the process as today; <c>False</c> keeps the server up for <c>_server</c> only.</p>
     </section>
 
-    <section title="Not in this proposal">
+    <section title="Persistence">
+      <p>Persistence is designed here and implemented by kajenn-org/kajenn#118, after #112. Until then a hot change lasts until the restart.</p>
       <list>
-        <item>Persistence. Whoever adds an application will choose whether the change survives a restart. The persistent case needs an extra configuration file holding the updates, and is designed later. Until then a hot change lasts until the restart.</item>
+        <item>Whoever calls <c>add</c> chooses whether the change survives a restart.</item>
+        <item>A persistent <c>add</c> is accepted only when the server is in <c>develop</c> and its <c>shutdown_mode</c> is <c>QUITTING</c>. Otherwise it is refused. Today only the <c>--reload</c> launcher sets <c>QUITTING</c>.</item>
+        <item><c>develop</c> is read only from the machine defaults layer, <c>$KAJENN_HOME/config.py</c>. A site recipe that declares it is refused. Without <c>develop</c> the server is in production.</item>
+        <item>A persistent change is recorded as an operation, <c>add</c> or <c>remove</c>, in a file under <c>&lt;home&gt;/data/</c> of the site. The file is not <c>.py</c>: the reload supervisor watches only <c>*.py</c>.</item>
+        <item>A <c>QUITTING</c> shutdown keeps the file and the next boot runs its operations in order after the recipe. A <c>STOPPING</c> shutdown discards it.</item>
+        <item>An operation of the file that fails at boot raises <c>FatalBootError</c> naming the operation: a class that does not import, a code already taken, a <c>remove</c> of an unknown code. The file stays.</item>
+        <item>An application replayed from the file whose <c>on_startup</c> raises stays disabled and the error is logged, as any other application.</item>
+        <item><c>--debug</c> and <c>--reload</c> stay independent. In production a hot change lasts until the restart, a future soft restart included.</item>
       </list>
     </section>
   </solution>
@@ -218,6 +226,35 @@
       <option id="d-persist-never" title="Never"/>
       <option id="d-persist-always" title="Always"/>
       <choice option="d-persist-caller" by="GP" date="2026-11-08">The persistent case needs an extra configuration file with the updates; it is designed later.</choice>
+    </decision>
+    <decision id="d-persist-when" status="decided">
+      <question>On which servers may a hot change be persistent?</question>
+      <option id="d-persist-when-develop-soft" title="Only in develop and with a soft shutdown (QUITTING)"/>
+      <option id="d-persist-when-debug" title="Only with --debug"/>
+      <option id="d-persist-when-any" title="On every server"/>
+      <choice option="d-persist-when-develop-soft" by="GP" date="2026-11-10">The development cycle must not lose a hot change at each reload. In production the configuration is not persistent, for security.</choice>
+    </decision>
+    <decision id="d-persist-develop" status="decided">
+      <question>How does the server know it runs on a developer machine?</question>
+      <option id="d-persist-develop-default" title="A develop flag in the machine defaults layer, read only there"/>
+      <option id="d-persist-develop-production" title="A production flag on the production hosts"/>
+      <option id="d-persist-develop-debug" title="--debug"/>
+      <option id="d-persist-develop-proxy" title="The presence of a reverse proxy"/>
+      <choice option="d-persist-develop-default" by="GP" date="2026-11-10">A missing file then removes persistence instead of opening it. A site recipe cannot change what the machine allows.</choice>
+    </decision>
+    <decision id="d-persist-file" status="decided">
+      <question>What does the extra file hold, and where?</question>
+      <option id="d-persist-file-operations" title="The operations made after the start, in the data folder of the site"/>
+      <option id="d-persist-file-state" title="The final state of the added and removed applications"/>
+      <option id="d-persist-file-home" title="A file per site in $KAJENN_HOME"/>
+      <choice option="d-persist-file-operations" by="GP" date="2026-11-10">Only the changes after the start. The file follows the folder of the site.</choice>
+    </decision>
+    <decision id="d-persist-replay" status="decided">
+      <question>What happens when an operation of the file fails at boot?</question>
+      <option id="d-persist-replay-fatal" title="The boot stops with FatalBootError"/>
+      <option id="d-persist-replay-skip" title="The operation is skipped with a warning"/>
+      <option id="d-persist-replay-discard" title="The whole file is discarded with a warning"/>
+      <choice option="d-persist-replay-fatal" by="GP" date="2026-11-10">Simpler: nothing already run has to be undone.</choice>
     </decision>
     <decision id="d-routes" status="decided">
       <question>Which routes does _server expose?</question>
