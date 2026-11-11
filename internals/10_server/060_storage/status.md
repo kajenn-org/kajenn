@@ -91,11 +91,11 @@ Claim anchors: [`_require_storage`](../../../src/kajenn/auth/mixin.py#L212), [`F
 
 The storage-node rule is a design policy, not a literal description of every
 filesystem call in the repository. `MemorySessionStore.save_snapshot` and
-`load_snapshot` use `Path` and `pickle` directly (session/store.py:152-174), and
+`load_snapshot` use `Path` and `pickle` directly (session/store.py:172-197), and
 CLI/reload support reads local files. Those exceptions remain visible; this
 documentation task does not migrate them or silently approve new ones.
 
-Claim anchors: [`SessionStore`](../../../src/kajenn/session/store.py#L53), [`save_snapshot`](../../../src/kajenn/session/store.py#L152), [`StorageMixin`](../../../src/kajenn/storage_mixin.py#L79).
+Claim anchors: [`SessionStore`](../../../src/kajenn/session/store.py#L57), [`save_snapshot`](../../../src/kajenn/session/store.py#L172), [`StorageMixin`](../../../src/kajenn/storage_mixin.py#L79).
 
 ## Source and test evidence
 
