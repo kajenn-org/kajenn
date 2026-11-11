@@ -1,0 +1,3 @@
+# The image is built from the kajenn wheel only.
+*
+!dist/*.whl

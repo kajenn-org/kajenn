@@ -10,10 +10,11 @@
 #
 # Test selection: the pushed range comes from stdin, one line per ref as
 #   <local ref> <local sha> <remote ref> <remote sha>
+# A new branch is diffed against its merge base with origin/develop.
 # A range whose changes contain no .py file runs no test at all - unless it
 # touches pyproject.toml or hooks/, which run the whole suite regardless. A
-# range with no usable base - a new branch, a remote commit this clone does not
-# have - runs the whole suite, never nothing.
+# range with no usable base - no origin/develop, a remote commit this clone
+# does not have - runs the whole suite, never nothing.
 #
 # Which suite, per changed path, the union over the range deciding:
 #   src/kajenn/server_app/, tests/server_app/     -> tests/server_app
@@ -42,13 +43,18 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         continue                        # ref deletion: nothing to test
     fi
     pushed_something=1
-    if [ "$remote_sha" = "$ZERO_SHA" ] \
-       || ! git rev-parse --verify --quiet "${remote_sha}^{commit}" >/dev/null; then
+    base_sha="$remote_sha"
+    if [ "$remote_sha" = "$ZERO_SHA" ]; then
+        # new branch: diff against where it forked from develop
+        base_sha=$(git merge-base "$local_sha" origin/develop 2>/dev/null || true)
+    fi
+    if [ -z "$base_sha" ] \
+       || ! git rev-parse --verify --quiet "${base_sha}^{commit}" >/dev/null; then
         base_unknown=1                  # no base to diff against
         continue
     fi
     changed_files="${changed_files}
-$(git diff --name-only "$remote_sha" "$local_sha")"
+$(git diff --name-only "$base_sha" "$local_sha")"
 done
 
 if [ "$pushed_something" = "0" ]; then
@@ -59,7 +65,7 @@ fi
 test_target="tests/"
 
 if [ "$base_unknown" = "1" ]; then
-    echo "Pushed range has no usable base (new branch or unknown remote commit)"
+    echo "Pushed range has no usable base (no origin/develop or unknown remote commit)"
     echo "  → running the whole suite"
 else
     want_core=0
@@ -117,13 +123,13 @@ if [ "$RUN_ACT" = "1" ]; then
     if [ "$ARCH" = "arm64" ]; then
         # ARM Mac: run only ubuntu-latest
         echo "  [ACT] ARM architecture detected, running ubuntu-latest only..."
-        if ! act push -j test --matrix os:ubuntu-latest --container-architecture linux/amd64; then
+        if ! act pull_request -j test --matrix os:ubuntu-latest --container-architecture linux/amd64; then
             echo "  ❌ FAILED: ACT validation failed"
             exit 1
         fi
     else
         # x86_64: run all
-        if ! act push; then
+        if ! act pull_request; then
             echo "  ❌ FAILED: ACT validation failed"
             exit 1
         fi

@@ -79,8 +79,8 @@ class TasksSection(RoutingClass):
 
     # -- schedules (the recurring scheduler's store) --
 
-    @route(auth_rule="SUPERADMIN")
-    def list(self) -> dict[str, Any]:
+    @route(name="list", auth_rule="SUPERADMIN")
+    def schedule_list(self) -> dict[str, Any]:
         """Every schedule record."""
         manager = self.manager
         if manager is None:

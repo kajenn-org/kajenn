@@ -43,11 +43,11 @@ raise and clears the takes.
 by default an `AsyncDbView`, whose `terminals` run with `server.run_sync`.
 
 `Request.db(name)` and `Request.async_db(name)` delegate to the owning
-application through `bound_application()` (request.py:432-442). A `Request`
-bound to no application raises `RuntimeError` there (request.py:444-449). Test:
-`test_a_request_bound_to_no_application_has_no_databases`.
+application: `self.application.db(name)` and `self.application.async_db(name)`
+(request.py:431-441). A `Request` always has an application: `application` is a
+required keyword of `Request.__init__` (request.py:147).
 
-Claim anchors: [`database_name`](../../../src/kajenn/application.py#BaseApplication.database_name), [`db_name`](../../../src/kajenn/application.py#BaseApplication.db_name), [`db`](../../../src/kajenn/application.py#BaseApplication.db), [`async_db`](../../../src/kajenn/application.py#BaseApplication.async_db), [`Request.db`](../../../src/kajenn/request.py#Request.db), [`Request.async_db`](../../../src/kajenn/request.py#Request.async_db), [`bound_application`](../../../src/kajenn/request.py#Request.bound_application), [`take_database`](../../../src/kajenn/server.py#BaseServer.take_database), [`release_databases`](../../../src/kajenn/server.py#BaseServer.release_databases), [`route_cleanup`](../../../src/kajenn/routed_application.py#RoutedApplication.route_cleanup), [`async_view`](../../../src/kajenn/db.py#DbHandlerBase.async_view), [`AsyncDbView`](../../../src/kajenn/db.py#AsyncDbView).
+Claim anchors: [`database_name`](../../../src/kajenn/application.py#BaseApplication.database_name), [`db_name`](../../../src/kajenn/application.py#BaseApplication.db_name), [`db`](../../../src/kajenn/application.py#BaseApplication.db), [`async_db`](../../../src/kajenn/application.py#BaseApplication.async_db), [`Request.db`](../../../src/kajenn/request.py#Request.db), [`Request.async_db`](../../../src/kajenn/request.py#Request.async_db), [`take_database`](../../../src/kajenn/server.py#BaseServer.take_database), [`release_databases`](../../../src/kajenn/server.py#BaseServer.release_databases), [`route_cleanup`](../../../src/kajenn/routed_application.py#RoutedApplication.route_cleanup), [`async_view`](../../../src/kajenn/db.py#DbHandlerBase.async_view), [`AsyncDbView`](../../../src/kajenn/db.py#AsyncDbView).
 
 ## Threads of take and release
 

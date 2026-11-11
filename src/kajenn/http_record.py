@@ -22,6 +22,12 @@ reads. ``encode_request``/``decode_request`` carry an ASGI http scope reduced
 to its transportable fields; ``encode_response``/``decode_response`` carry a
 status, text headers and a body; ``encode_websocket``/``decode_websocket``
 carry an ASGI websocket scope and no body.
+
+The module is a boundary: ``decode_*`` reads bytes another process wrote, and
+``encode_*`` is public, called by whatever carries HTTP over its own link. So
+every method checks the type and the range of what it is given and raises
+``TypeError`` or ``ValueError`` with the reason, instead of letting a malformed
+value fail later on the other side of the link.
 """
 
 import json

@@ -115,15 +115,15 @@ class RegisteredRequest:
             self._cleanups = []
         self._cleanups.append(callback)
 
-    async def run_cleanups(self, error: BaseException | None = None) -> None:
+    async def run_cleanups(self) -> None:
         """Run queued cleanups LIFO, isolating and logging each one's exception.
 
         Awaited by the core in the ``finally`` around the call, so the cleanups
         run whether the call succeeded, failed or was cancelled. Every callback
         runs, and one that raises is logged and does not stop the next. A
         coroutine function is awaited on the loop; a sync callback is called on
-        the loop, as before. ``error`` is accepted and not read: the drain does
-        not depend on how the call ended.
+        the loop, as before. The drain does not depend on how the call ended, so
+        it takes no argument.
         """
         if self._cleanups is None:
             return
