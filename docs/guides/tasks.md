@@ -169,7 +169,7 @@ Without the credential those paths answer 401.
   inactive manager.
 - Interval vs cron is `task_every=...` **or** `task_cron=...` on `@route`, not
   both.
-- The MCP push stream (`GET /mcp`) depends on the task backbone — it is `405`
+- The MCP push stream (`GET /_meta/mcp`) depends on the task backbone — it is `405`
   without it. See the [MCP guide](mcp.md).
 - Known limit (accepted 2026-10-14, task management is not complete yet):
   `server.tasks.publish_progress(task_id, data)` is synchronous. Called from an

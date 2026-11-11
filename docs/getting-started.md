@@ -216,7 +216,7 @@ it. An application declared with the code `_server` (a subclass, or the same
 class with options) takes its place.
 
 Its endpoints live under `/_server/…` and never leak into your own app's
-route tree. Its routes answer JSON; `/_server/_meta/docs` is a Swagger HTML
+route tree. Its routes answer JSON; `/_server/_meta/api/docs` is a Swagger HTML
 page over them. See the
 [authentication](guides/authentication.md) and [tasks](guides/tasks.md) guides
 for what lives under it.

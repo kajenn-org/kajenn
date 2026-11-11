@@ -126,7 +126,7 @@ route that needs a cache, a queue, a converter, disappears where that thing is
 absent instead of failing when called. They **accumulate down the tree**, so a
 branch inherits what its parents declared and adds its own.
 
-**Channel** is where the request came from — `rest`, `mcp`, `web`, a bot — and
+**Channel** is where the request came from — `api`, `mcp`, `web`, a bot — and
 it is the mechanism by which one tree presents different surfaces to different
 consumers when those consumers supply a channel. The MCP face supplies its
 channel when walking the tree; HTTP dispatch supplies none. As recorded in

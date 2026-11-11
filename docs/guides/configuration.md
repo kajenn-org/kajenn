@@ -312,7 +312,7 @@ One line each; the deep dives live in their own guides.
   The core never imports a driver (see [Databases](databases.md)).
 - **`plugins`** — the router plugins armed on every routed app.
 - **`openapi`** — accepted by the grammar but not consumed by the core. Set
-  schema title, version and description with the `OpenApiApplication`
+  schema title, version and description with the `RoutedApplication`
   `openapi_info` class attribute instead (see [OpenAPI & Swagger](openapi.md)).
 
 ## The storage section

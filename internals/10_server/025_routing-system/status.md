@@ -23,9 +23,9 @@ first through `authenticate_scope`. Both resolve with `auth_filters`.
 `auth_tags` is the comma-separated tags of the avatar on `scope["auth"]`, and is
 absent when there is no identity. Every face supplies a channel:
 
-- `RoutedApplication.http_channel` is `"rest"`; `__call__` sets it on a scope that carries none.
-- WSX sets `"wsx"` on the connection scope and on every synthetic message scope (`wsx.py:269`, `wsx.py:428`).
-- The MCP transport sets `"mcp"` on the MCP POST and on each tool-call scope (`applications/mcp.py:184`, `:204`).
+- `RoutedApplication.http_channel` is `"api"`; `__call__` sets it on a scope that carries none. A route that declares no channel answers on `api` only.
+- WSX sets `"wsx"` on the connection scope and on every synthetic message scope ([`_open_gate`](../../../src/kajenn/wsx.py#WsxConnection._open_gate), [`_request_scope`](../../../src/kajenn/wsx.py#WsxConnection._request_scope)).
+- The MCP transport sets `RoutedApplication.mcp_channel`, `"mcp"`, on the MCP POST and on each tool-call scope ([`McpTransport.handle`](../../../src/kajenn/applications/mcp.py#McpTransport.handle), [`McpTransport._invoke_tool`](../../../src/kajenn/applications/mcp.py#McpTransport._invoke_tool)).
 - A kbus frame carries the channel in `meta["channel"]`, and the receiver puts it on `kajenn.channel` (`kbus_mixin.py:489-490`, `:525`).
 
 No code passes a capabilities filter. Nothing in `src/` passes
@@ -57,8 +57,9 @@ Claim anchors: [`PluginMixin`](../../../src/kajenn/plugin_mixin.py#PluginMixin),
 ## Plugin arming and extension
 
 `PluginMixin` always enables `pydantic` and `openapi`; attempting to disable
-either raises `ValueError`. Applications plug `auth` themselves in
-`RoutedApplication.__init__`. `arm_router` arms every entry of the resolved
+either raises `ValueError`. Applications plug `auth`, `channel`, `pydantic`
+and `openapi` themselves in `RoutedApplication.__init__`, and configure
+`channel` with `channels=http_channel`. `arm_router` arms every entry of the resolved
 plugin configuration — the fixed pair and every extra the `plugins` section
 enables — and skips a code already attached to the router.
 
@@ -71,10 +72,11 @@ The plugin configuration is read at construction: `AsgiServer` passes
 `_plugins_config` once (`plugin_mixin.py:94`). No code changes the plugins of an
 armed router: nothing in `src/` calls `set_plugin_enabled`, nothing re-reads the
 `plugins` section, and every `plug` and `configure` call runs in a constructor
-or in `arm_router` — `McpOpenApiApplication.__init__` plugs `channel` and
-configures it with `channels="rest"` (`applications/mcp.py:429-430`),
-`McpTransport.build_engine` plugs `pydantic` and `auth` when absent
-(`applications/mcp.py:131-133`).
+or in `arm_router` — [`RoutedApplication.__init__`](../../../src/kajenn/routed_application.py#RoutedApplication.__init__)
+plugs `channel` and configures it with `channels=http_channel`, `"api"`;
+[`McpTransport.build_engine`](../../../src/kajenn/applications/mcp.py#McpTransport.build_engine)
+plugs nothing and builds the engine over the router the application already
+plugged.
 
 No code changes the plugins of an armed tree. The owner statement of 2026-11-03
 (design.md, header) says plugins can be configured dynamically. The code arms

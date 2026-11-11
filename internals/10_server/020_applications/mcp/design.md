@@ -4,7 +4,7 @@
 
 **The need.** An AI client must reach the same surface as tools, without a parallel implementation.
 
-`McpApplication` / `McpOpenApiApplication`: the router exposed as MCP
-tools over stateless Streamable HTTP (`mcp/engine.py`).
+`RoutedApplication`: the router exposed as MCP tools over stateless
+Streamable HTTP on `_meta/mcp`, through `McpTransport` and `McpEngine`.
 
 Interactions: applications (the tree it exposes) · console (rides this face).

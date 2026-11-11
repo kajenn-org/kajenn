@@ -15,10 +15,14 @@ its dedicated process, and that process mounts no `_server`: the append runs
 only when `role` is `None`. The ratification is "D-SA-10 superseded" of
 2026-10-10 (SPECIFICATION.md).
 
-`ServerApplication` extends `OpenApiApplication`. Its constructor attaches the
-auth, users, tokens, tasks, monitor and databases sections
-(`src/kajenn/server_app/server_app.py:242-250`): six sections. The auth section
-arrives through `register_auth_method`, the other five through `attach_section`.
+`ServerApplication` extends `RoutedApplication`, so it carries the `_meta`
+branch and the MCP face: `/_server/_meta/api/schema_json`,
+`/_server/_meta/api/docs` and MCP JSON-RPC on `/_server/_meta/mcp`. Its
+constructor attaches the auth, users, tokens, tasks, monitor, databases, k8s
+and applications sections
+([`ServerApplication.__init__`](../../../src/kajenn/server_app/server_app.py#ServerApplication.__init__)):
+eight sections. The auth section arrives through `register_auth_method`, the
+other seven through `attach_section`.
 Its public descriptor `index` lists the attached names. The password method and
 the OIDC providers are registered under the auth section.
 
@@ -26,7 +30,9 @@ Tests: `tests/core/test_server_app_always_present.py::TestTheKwargsRoad::test_a_
 `::TestTheKwargsRoad::test_a_declared_one_is_kept_as_declared`,
 `::TestTheConfigurationRoad::test_a_recipe_naming_nothing_has_it`,
 `::TestTheRoleProcess::test_an_application_in_its_dedicated_process_mounts_no_server_application`,
-`tests/server_app/test_server_application.py::TestDeclaredMount::test_a_server_declaring_none_has_the_default_one`.
+`tests/server_app/test_server_application.py::TestDeclaredMount::test_a_server_declaring_none_has_the_default_one`,
+`tests/server_app/test_server_application.py::TestServerEndpoints::test_meta_schema_json_is_exposed`,
+`tests/core/test_mcp_application.py::TestRoutedApplication::test_the_server_application_has_an_mcp_face`.
 
 Claim anchors: [`AsgiServer`](../../../src/kajenn/asgi_server.py#AsgiServer), [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#ServerApplication), [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication), [`bind_kwargs`](../../../src/kajenn/routed_application.py#RoutedApplication.bind_kwargs).
 

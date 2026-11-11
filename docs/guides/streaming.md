@@ -82,7 +82,7 @@ object itself.
   available as `from kajenn import ...`.
 - `SseStream` produces a `StreamingResponse` via `.response()` — that is what you
   return; do not return the `SseStream` itself.
-- The MCP push stream (`GET /mcp`) is built on this same SSE machinery; it depends
+- The MCP push stream (`GET /_meta/mcp`) is built on this same SSE machinery; it depends
   on the task backbone being armed (see [tasks](tasks.md) and [MCP](mcp.md)).
 
 ## Where buffering still applies

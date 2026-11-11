@@ -11,7 +11,7 @@ below identify the executable contracts; they are not a new coverage percentage.
 `authenticate_credential`. Without a header, the session's root avatar answers.
 Without a session avatar, the answer is `None`. A present invalid header raises
 `HTTPUnauthorized` on any route; it does not fall back to a logged-in session.
-A scope without `kajenn.channel` is read as the `rest` channel.
+A scope without `kajenn.channel` is read as the `api` channel.
 
 `RoutedApplication.authenticate_scope` calls `server.authenticate(scope)` when
 `scope["auth"]` is missing or `None`. `execute` and `discover` call it before
