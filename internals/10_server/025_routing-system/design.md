@@ -128,11 +128,10 @@ branch inherits what its parents declared and adds its own.
 
 **Channel** is where the request came from — `api`, `mcp`, `web`, a bot — and
 it is the mechanism by which one tree presents different surfaces to different
-consumers when those consumers supply a channel. The MCP face supplies its
-channel when walking the tree; HTTP dispatch supplies none. As recorded in
-[the decisions](decisions.md), channel metadata can narrow the tool face but
-does not prevent a browser from calling an HTTP route. HTTP access restrictions
-belong to the route's authorization rules.
+consumers. Every face supplies its channel: HTTP dispatch sets `api` on a scope
+that carries none, WSX sets `wsx`, the MCP face sets `mcp`. A route declared
+for some channels is not resolved on the others: a route declared for `mcp`
+only answers 404 to an HTTP request.
 
 The failure a filter produces is not the failure of a missing path, and the
 distinction survives all the way to the caller: a route withheld for lack of an
