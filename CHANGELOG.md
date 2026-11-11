@@ -5,6 +5,39 @@ All notable changes to kajenn are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). Releases before 0.9.0 are listed
 on [GitHub Releases](https://github.com/kajenn-org/kajenn/releases).
 
+## [0.9.2] - 2026-11-11
+
+### Breaking
+
+- `Request` requires the `application` keyword, and `bound_application()`
+  is removed: a request always has an application. Code that builds a
+  `Request` passes the application it belongs to (#11).
+- `server.requests.run_cleanups()` takes no argument. A caller that passed
+  the error drops it (#12).
+
+### Changed
+
+- The parameter of `server.session(...)` is named `scope`, not `request`:
+  it reads a scope. A call by keyword uses `session(scope=...)` (#7).
+- The listing method of the `_server` sections is `<noun>_list`
+  (`application_list`, `database_list`, `schedule_list`, `token_list`,
+  `user_list`). The URLs `/_server/<section>/list` do not change (#8).
+
+### Added
+
+- `kajenn.WebSocketDisconnect` is exported from the package, and
+  `kajenn.server` exports `SHUTDOWN_TIMEOUT_SECONDS` (#10).
+- The container image `ghcr.io/kajenn-org/kajenn`: kajenn and kajenn-db on
+  `python:3.13-slim`, started with `kajenn serve` on port 8080. Each release
+  is tagged with its version and `latest`; a nightly `develop-YYYYMMDD`
+  image is published when the nightly run of `develop` passes.
+
+### Fixed
+
+- A custom session store that subclasses `SessionStore` no longer fails at
+  shutdown under `kajenn serve --name`: `SessionStore` declares
+  `save_snapshot` and `load_snapshot` with default bodies (#9).
+
 ## [0.9.1] - 2026-11-10
 
 ### Fixed
