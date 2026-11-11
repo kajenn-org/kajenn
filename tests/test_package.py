@@ -17,6 +17,7 @@
 from importlib.metadata import version
 
 import kajenn
+import kajenn.server
 
 
 def test_version():
@@ -80,6 +81,7 @@ def test_root_exports_public_api():
         "TaskGrammar",
         "UploadedFile",
         "UserStore",
+        "WebSocketDisconnect",
         "__version__",
         "router_openapi",
     ]
@@ -87,3 +89,10 @@ def test_root_exports_public_api():
     for name in expected:
         assert hasattr(kajenn, name)
 
+
+def test_server_exports_its_constants():
+    # The three tunables of the server module are public: each is the default
+    # of a constructor kwarg or a published limit.
+    for name in ("REFUSED_RETRY_AFTER_SECONDS", "SHUTDOWN_TIMEOUT_SECONDS", "WEBSOCKET_MAX_CONCURRENT"):
+        assert name in kajenn.server.__all__
+        assert hasattr(kajenn.server, name)

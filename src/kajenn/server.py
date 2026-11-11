@@ -120,6 +120,7 @@ __all__ = [
     "QUITTING",
     "REFUSED_RETRY_AFTER_SECONDS",
     "RUNNING",
+    "SHUTDOWN_TIMEOUT_SECONDS",
     "STOPPING",
     "WEBSOCKET_MAX_CONCURRENT",
     "BaseServer",
