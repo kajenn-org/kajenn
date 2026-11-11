@@ -34,7 +34,7 @@ loop. Protocol/session bookkeeping and optional SSE push do not create a second
 application state store. The task integration publishes lifecycle and progress
 to the launching MCP session; the spool remains the durable snapshot source.
 
-Claim anchors: [`RoutedApplication`](../../../../src/kajenn/routed_application.py#L132), [`McpTransport`](../../../../src/kajenn/applications/mcp.py#L76), [`McpMeta`](../../../../src/kajenn/applications/mcp.py#L336), [`McpEngine`](../../../../src/kajenn/mcp/engine.py#L106).
+Claim anchors: [`RoutedApplication`](../../../../src/kajenn/routed_application.py#RoutedApplication), [`McpTransport`](../../../../src/kajenn/applications/mcp.py#McpTransport), [`McpMeta`](../../../../src/kajenn/applications/mcp.py#McpMeta), [`McpEngine`](../../../../src/kajenn/mcp/engine.py#McpEngine).
 
 ## Source and test evidence
 

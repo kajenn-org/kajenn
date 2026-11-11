@@ -17,7 +17,7 @@ A scope without `kajenn.channel` is read as the `rest` channel.
 `scope["auth"]` is missing or `None`. `execute` and `discover` call it before
 resolution. No middleware layer authenticates.
 
-Claim anchors: [`AuthMixin`](../../../src/kajenn/auth/mixin.py#L64), [`authenticate`](../../../src/kajenn/auth/mixin.py#L225), [`authenticate_scope`](../../../src/kajenn/routed_application.py#L284).
+Claim anchors: [`AuthMixin`](../../../src/kajenn/auth/mixin.py#AuthMixin), [`authenticate`](../../../src/kajenn/auth/mixin.py#AuthMixin.authenticate), [`authenticate_scope`](../../../src/kajenn/routed_application.py#RoutedApplication.authenticate_scope).
 
 Behavior evidence: tests `test_an_invalid_bearer_is_401_even_on_a_public_route`, `test_the_session_avatar_wins_without_header`, `test_no_auth_middleware_anywhere` (tests/core/test_authentication_on_demand.py).
 
@@ -38,7 +38,7 @@ valid_until}`. It serves the bus only: an HTTP caller gets 403
 `AuthCore` verifies configured Basic, static Bearer and JWT credentials.
 `gak_` API keys use the API-key store and never fall through to JWT on a miss.
 
-Claim anchors: [`authenticate_credential`](../../../src/kajenn/auth/mixin.py#L112), [`AuthCore`](../../../src/kajenn/auth/core.py#L79), [`verify_with_validity`](../../../src/kajenn/auth/core.py#L181), [`AuthSection.authenticate`](../../../src/kajenn/server_app/server_sections/auth_section.py#L119).
+Claim anchors: [`authenticate_credential`](../../../src/kajenn/auth/mixin.py#AuthMixin.authenticate_credential), [`AuthCore`](../../../src/kajenn/auth/core.py#AuthCore), [`verify_with_validity`](../../../src/kajenn/auth/core.py#AuthCore.verify_with_validity), [`AuthSection.authenticate`](../../../src/kajenn/server_app/server_sections/auth_section.py#AuthSection.authenticate).
 
 ## Verified-credential cache
 
@@ -96,7 +96,7 @@ construction (`discovery`, oidc_method.py:114-130). The application element
 `GET /_server/login_methods` answers the descriptors of the registered methods.
 It declares no `auth_rule` (server_app.py:554-570).
 
-Claim anchors: [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#L207), [`login_methods`](../../../src/kajenn/server_app/server_app.py#L554), [`OidcMethod.discovery`](../../../src/kajenn/server_app/oidc_method.py#L114).
+Claim anchors: [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#ServerApplication), [`login_methods`](../../../src/kajenn/server_app/server_app.py#ServerApplication.login_methods), [`OidcMethod.discovery`](../../../src/kajenn/server_app/oidc_method.py#OidcMethod.discovery).
 
 ## Identity carried by a bus message
 
@@ -121,9 +121,9 @@ The separately recorded return-path conversion — a hosted site's own identity
 becoming a core session avatar with server-configured tags — is not
 implemented. It remains a distinct target.
 
-Claim anchors: [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127).
+Claim anchors: [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication).
 
-Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#L58), [`UsersSection`](../../../src/kajenn/server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../src/kajenn/server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#L59).
+Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection), [`UsersSection`](../../../src/kajenn/server_app/server_sections/users_section.py#UsersSection), [`TokensSection`](../../../src/kajenn/server_app/server_sections/tokens_section.py#TokensSection), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection).
 
 ## Source and test evidence
 

@@ -34,9 +34,9 @@ command to run.
 "not registered" (test `test_remove_refuses_a_running_app`,
 `test_remove_an_unregistered_name_is_an_error`).
 
-Claim anchors: [`Cli.parser`](../../../src/kajenn/__main__.py#L750), [`sites`](../../../src/kajenn/__main__.py#L834), [`remove`](../../../src/kajenn/__main__.py#L865), [`SitesRegistry.remove`](../../../src/kajenn/__main__.py#L166), [`SitesRegistry.read_pid`](../../../src/kajenn/__main__.py#L182).
+Claim anchors: [`Cli.parser`](../../../src/kajenn/__main__.py#Cli.parser), [`sites`](../../../src/kajenn/__main__.py#Cli.sites), [`remove`](../../../src/kajenn/__main__.py#Cli.remove), [`SitesRegistry.remove`](../../../src/kajenn/__main__.py#SitesRegistry.remove), [`SitesRegistry.read_pid`](../../../src/kajenn/__main__.py#SitesRegistry.read_pid).
 
-Behavior evidence: [`SitesRegistry`](../../../src/kajenn/__main__.py#L121), [`ServerLauncher`](../../../src/kajenn/__main__.py#L251), [`TargetResolver`](../../../src/kajenn/__main__.py#L202).
+Behavior evidence: [`SitesRegistry`](../../../src/kajenn/__main__.py#SitesRegistry), [`ServerLauncher`](../../../src/kajenn/__main__.py#ServerLauncher), [`TargetResolver`](../../../src/kajenn/__main__.py#TargetResolver).
 
 ## `configure` and the site card
 
@@ -56,7 +56,7 @@ a home equal to the kajenn home (`base_dir`).
 
 Tests: `TestConfigureWritesTheCardAndTheHome` in `tests/core/test_site_home.py`.
 
-Claim anchors: [`SiteConfigurator`](../../../src/kajenn/__main__.py#L625), [`SiteConfigurator.run`](../../../src/kajenn/__main__.py#L724).
+Claim anchors: [`SiteConfigurator`](../../../src/kajenn/__main__.py#SiteConfigurator), [`SiteConfigurator.run`](../../../src/kajenn/__main__.py#SiteConfigurator.run).
 
 ## `serve`: sources, refusals and identity
 
@@ -97,7 +97,7 @@ A named `serve` writes the card, then the pid file, before uvicorn starts. With
 `--reload` the recorded pid is the supervisor's. The `finally` of
 `ServerLauncher.run` removes the pid file.
 
-Claim anchors: [`adopt_registered`](../../../src/kajenn/__main__.py#L399), [`ensure_importable`](../../../src/kajenn/__main__.py#L421), [`build_server`](../../../src/kajenn/__main__.py#L432), [`check_home`](../../../src/kajenn/__main__.py#L457), [`adopt_site_identity`](../../../src/kajenn/__main__.py#L467), [`ServerLauncher.run`](../../../src/kajenn/__main__.py#L510).
+Claim anchors: [`adopt_registered`](../../../src/kajenn/__main__.py#ServerLauncher.adopt_registered), [`ensure_importable`](../../../src/kajenn/__main__.py#ServerLauncher.ensure_importable), [`build_server`](../../../src/kajenn/__main__.py#ServerLauncher.build_server), [`check_home`](../../../src/kajenn/__main__.py#ServerLauncher.check_home), [`adopt_site_identity`](../../../src/kajenn/__main__.py#ServerLauncher.adopt_site_identity), [`ServerLauncher.run`](../../../src/kajenn/__main__.py#ServerLauncher.run).
 
 ## `serve --role`
 
@@ -112,7 +112,7 @@ from `KAJENN_KBUS_PARENT` and joins the server's kbus.
 (`test_the_token_is_not_on_the_command_line` in
 `tests/core/test_external_application.py`).
 
-Claim anchors: [`build_server` role branch](../../../src/kajenn/__main__.py#L449), [`run_role`](../../../src/kajenn/kbus_mixin.py#L345).
+Claim anchors: [`build_server` role branch](../../../src/kajenn/__main__.py#ServerLauncher.build_server), [`run_role`](../../../src/kajenn/kbus_mixin.py#KBusMixin.run_role).
 
 ## `serve --reload`
 
@@ -136,7 +136,7 @@ path does not reach `BaseServer.serve`.
 
 `--debug` declares a usage mode and is not the reload mechanism.
 
-Claim anchors: [`run_reloading`](../../../src/kajenn/__main__.py#L489), [`factory`](../../../src/kajenn/__main__.py#L874), [`serve_reloading`](../../../src/kajenn/reloading.py#L52), [`uvicorn.run` call](../../../src/kajenn/reloading.py#L102), [`LAUNCHER_ENV`](../../../src/kajenn/reloading.py#L43).
+Claim anchors: [`run_reloading`](../../../src/kajenn/__main__.py#ServerLauncher.run_reloading), [`factory`](../../../src/kajenn/__main__.py#factory), [`serve_reloading`](../../../src/kajenn/reloading.py#serve_reloading), [`uvicorn.run` call](../../../src/kajenn/reloading.py#serve_reloading), [`LAUNCHER_ENV`](../../../src/kajenn/reloading.py#LAUNCHER_ENV).
 
 ## Bind address
 
@@ -146,7 +146,7 @@ value, else `127.0.0.1` and port `0`. `AsgiServer.serve` applies the same rule
 in its own code. `ServerLauncher.address` exists because the reload supervisor
 binds by itself and never calls `serve`.
 
-Claim anchors: [`ServerLauncher.address`](../../../src/kajenn/__main__.py#L479), [`AsgiServer.serve`](../../../src/kajenn/asgi_server.py#L324), [`AsgiServer`](../../../src/kajenn/asgi_server.py#L109).
+Claim anchors: [`ServerLauncher.address`](../../../src/kajenn/__main__.py#ServerLauncher.address), [`AsgiServer.serve`](../../../src/kajenn/asgi_server.py#AsgiServer.serve), [`AsgiServer`](../../../src/kajenn/asgi_server.py#AsgiServer).
 
 ## `stop` and exit codes
 
@@ -161,7 +161,7 @@ Exit codes: 0 on success, 2 on usage errors raised by argparse, 1 on a
 `CliError`, reported as one line on stderr (`Cli.run`;
 `test_a_missing_subcommand_is_a_usage_error`).
 
-Claim anchors: [`stop`](../../../src/kajenn/__main__.py#L848), [`Cli.run`](../../../src/kajenn/__main__.py#L817).
+Claim anchors: [`stop`](../../../src/kajenn/__main__.py#Cli.stop), [`Cli.run`](../../../src/kajenn/__main__.py#Cli.run).
 
 ## Distance from design.md
 

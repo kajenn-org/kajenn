@@ -26,7 +26,7 @@ still say such a manager is adopted.
 A composition without `StorageMixin` has no storage attribute
 (`test_base_server_has_no_storage_attribute`).
 
-Claim anchors: [`StorageMixin`](../../../src/kajenn/storage_mixin.py#L79), [`_build_storage`](../../../src/kajenn/storage_mixin.py#L95), [`_default_mounts`](../../../src/kajenn/storage_mixin.py#L111), [`DEFAULT_SITE_MOUNT`](../../../src/kajenn/storage_mixin.py#L65), [`DEFAULT_HOME_MOUNT`](../../../src/kajenn/storage_mixin.py#L68).
+Claim anchors: [`StorageMixin`](../../../src/kajenn/storage_mixin.py#StorageMixin), [`_build_storage`](../../../src/kajenn/storage_mixin.py#StorageMixin._build_storage), [`_default_mounts`](../../../src/kajenn/storage_mixin.py#StorageMixin._default_mounts), [`DEFAULT_SITE_MOUNT`](../../../src/kajenn/storage_mixin.py#DEFAULT_SITE_MOUNT), [`DEFAULT_HOME_MOUNT`](../../../src/kajenn/storage_mixin.py#DEFAULT_HOME_MOUNT).
 
 ## The default layout in a recipe
 
@@ -46,7 +46,7 @@ element. A site overrides `storage_mounts` to declare another layout.
 Tests: `test_recipe_storage_section_serves_declared_mounts`,
 `test_a_key_only_recipe_section_still_serves_the_default_layout`.
 
-Claim anchors: [`site_section`](../../../src/kajenn/config/builder.py#L106), [`storage_mounts`](../../../src/kajenn/config/builder.py#L117), [`storage_key`](../../../src/kajenn/config/builder.py#L163), [`site`](../../../src/kajenn/config/elements.py#L109).
+Claim anchors: [`site_section`](../../../src/kajenn/config/builder.py#AsgiConfigBuilder.site_section), [`storage_mounts`](../../../src/kajenn/config/builder.py#AsgiConfigBuilder.storage_mounts), [`storage_key`](../../../src/kajenn/config/builder.py#BaseConfiguration.storage_key), [`site`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.site).
 
 ## Encryption per write
 
@@ -66,7 +66,7 @@ is the hook a site sets to a resolver (config/builder.py:163).
 - Encrypted and plain writes share one directory tree
   (`test_encrypted_and_plain_writes_share_one_tree`).
 
-Claim anchors: [`StorageMixin`](../../../src/kajenn/storage_mixin.py#L79), [`storage_key`](../../../src/kajenn/config/builder.py#L163).
+Claim anchors: [`StorageMixin`](../../../src/kajenn/storage_mixin.py#StorageMixin), [`storage_key`](../../../src/kajenn/config/builder.py#BaseConfiguration.storage_key).
 
 ## Storage consumers
 
@@ -85,7 +85,7 @@ Claim anchors: [`StorageMixin`](../../../src/kajenn/storage_mixin.py#L79), [`sto
   mount of `tasks(mount=...)` (tasks/store.py:127, 157-165;
   tasks/manager.py:92).
 
-Claim anchors: [`_require_storage`](../../../src/kajenn/auth/mixin.py#L212), [`FileTaskStore`](../../../src/kajenn/tasks/store.py#L127).
+Claim anchors: [`_require_storage`](../../../src/kajenn/auth/mixin.py#AuthMixin._require_storage), [`FileTaskStore`](../../../src/kajenn/tasks/store.py#FileTaskStore).
 
 ## Existing direct filesystem consumers
 
@@ -95,7 +95,7 @@ filesystem call in the repository. `MemorySessionStore.save_snapshot` and
 CLI/reload support reads local files. Those exceptions remain visible; this
 documentation task does not migrate them or silently approve new ones.
 
-Claim anchors: [`SessionStore`](../../../src/kajenn/session/store.py#L53), [`save_snapshot`](../../../src/kajenn/session/store.py#L152), [`StorageMixin`](../../../src/kajenn/storage_mixin.py#L79).
+Claim anchors: [`SessionStore`](../../../src/kajenn/session/store.py#SessionStore), [`save_snapshot`](../../../src/kajenn/session/store.py#MemorySessionStore.save_snapshot), [`StorageMixin`](../../../src/kajenn/storage_mixin.py#StorageMixin).
 
 ## Source and test evidence
 

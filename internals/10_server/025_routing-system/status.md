@@ -52,7 +52,7 @@ header) says routes depend on auth tags and capabilities. The code passes tags
 and channel only (`routed_application.py:326-330`), and
 nothing produces a capabilities value per request.
 
-Claim anchors: [`PluginMixin`](../../../src/kajenn/plugin_mixin.py#L74), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127), [`execute`](../../../src/kajenn/routed_application.py#L233), [`authenticate_scope`](../../../src/kajenn/routed_application.py#L284), [`discover`](../../../src/kajenn/routed_application.py#L300), [`auth_filters`](../../../src/kajenn/routed_application.py#L315), [`method_filters`](../../../src/kajenn/routed_application.py#L332), [`deny_reason`](../../../src/kajenn/plugins/openapi/plugin.py#L99).
+Claim anchors: [`PluginMixin`](../../../src/kajenn/plugin_mixin.py#PluginMixin), [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication), [`execute`](../../../src/kajenn/routed_application.py#RoutedApplication.execute), [`authenticate_scope`](../../../src/kajenn/routed_application.py#RoutedApplication.authenticate_scope), [`discover`](../../../src/kajenn/routed_application.py#RoutedApplication.discover), [`auth_filters`](../../../src/kajenn/routed_application.py#RoutedApplication.auth_filters), [`method_filters`](../../../src/kajenn/routed_application.py#RoutedApplication.method_filters), [`deny_reason`](../../../src/kajenn/plugins/openapi/plugin.py#OpenAPIPlugin.deny_reason).
 
 ## Plugin arming and extension
 
@@ -89,7 +89,7 @@ The routing library's class registry is process-wide: the first registered
 class for a code is retained, even when another server supplies a different
 class under that same code. This is a remaining configuration collision risk.
 
-Claim anchors: [`PluginMixin`](../../../src/kajenn/plugin_mixin.py#L74), [`arm_router`](../../../src/kajenn/plugin_mixin.py#L130), [`default_plugin_registry`](../../../src/kajenn/plugin_mixin.py#L64), [`plugin_registry`](../../../src/kajenn/plugin_mixin.py#L126), [`route`](../../../src/kajenn/routed_application.py#L171).
+Claim anchors: [`PluginMixin`](../../../src/kajenn/plugin_mixin.py#PluginMixin), [`arm_router`](../../../src/kajenn/plugin_mixin.py#PluginMixin.arm_router), [`default_plugin_registry`](../../../src/kajenn/plugin_mixin.py#default_plugin_registry), [`plugin_registry`](../../../src/kajenn/plugin_mixin.py#PluginMixin.plugin_registry), [`route`](../../../src/kajenn/routed_application.py#RoutedApplication.route).
 
 ## OpenAPI metadata and branch forms
 
@@ -111,7 +111,7 @@ header) says applications can even be mounted and unmounted.
 See [OpenAPI status](../020_applications/openapi/status.md) for the schema and
 [MCP status](../020_applications/mcp/status.md) for protocol behavior.
 
-Claim anchors: [`OpenAPIPlugin`](../../../src/kajenn/plugins/openapi/plugin.py#L53), [`entry_metadata`](../../../src/kajenn/plugins/openapi/plugin.py#L77).
+Claim anchors: [`OpenAPIPlugin`](../../../src/kajenn/plugins/openapi/plugin.py#OpenAPIPlugin), [`entry_metadata`](../../../src/kajenn/plugins/openapi/plugin.py#OpenAPIPlugin.entry_metadata).
 
 ## Source and test evidence
 

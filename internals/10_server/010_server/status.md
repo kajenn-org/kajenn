@@ -28,7 +28,7 @@ Explicit constructor kwargs override configured values per kwarg.
 `AsgiServer` peels `site_name` and `site_home`; `site_home` becomes a
 `SiteHome`, read as `server.site_home`.
 
-Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#L141), [`WorkPool`](../../../src/kajenn/pool.py#L42), [`Lifespan`](../../../src/kajenn/lifespan.py#L95), [`RequestRegistry`](../../../src/kajenn/request_registry.py#L146), [`register_application`](../../../src/kajenn/server.py#L244), [`claim_well_known`](../../../src/kajenn/server.py#L265), [`AsgiServer`](../../../src/kajenn/asgi_server.py#L109), [`_server` appended](../../../src/kajenn/asgi_server.py#L138), [`SiteHome`](../../../src/kajenn/site_home.py#L58).
+Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#BaseServer), [`WorkPool`](../../../src/kajenn/pool.py#WorkPool), [`Lifespan`](../../../src/kajenn/lifespan.py#Lifespan), [`RequestRegistry`](../../../src/kajenn/request_registry.py#RequestRegistry), [`register_application`](../../../src/kajenn/server.py#BaseServer.register_application), [`claim_well_known`](../../../src/kajenn/server.py#BaseServer.claim_well_known), [`AsgiServer`](../../../src/kajenn/asgi_server.py#AsgiServer), [`_server` appended](../../../src/kajenn/asgi_server.py#AsgiServer.__init__), [`SiteHome`](../../../src/kajenn/site_home.py#SiteHome).
 
 Behavior evidence: `tests/core/test_server_app_always_present.py::TestTheKwargsRoad::test_a_bare_server_has_the_management_application`, `test_an_application_in_its_dedicated_process_mounts_no_server_application`.
 
@@ -57,9 +57,9 @@ The `RequestRegistry` docstring names the server as the single writer. Four
 call sites outside `BaseServer.__call__` also register items: the WSX message
 loop, `serve_kbus_message`, `_serve_http_stream` and the task executor.
 
-Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#L141), [`demux`](../../../src/kajenn/server.py#L535), [`demux_well_known`](../../../src/kajenn/server.py#L575), [`WELL_KNOWN_PATTERN`](../../../src/kajenn/well_known.py#L40), [`HIDDEN_SEGMENT_PREFIX`](../../../src/kajenn/well_known.py#L37), [`RequestRegistry`](../../../src/kajenn/request_registry.py#L146), [`current`](../../../src/kajenn/request_registry.py#L166), [`WorkPool`](../../../src/kajenn/pool.py#L42).
+Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#BaseServer), [`demux`](../../../src/kajenn/server.py#BaseServer.demux), [`demux_well_known`](../../../src/kajenn/server.py#BaseServer.demux_well_known), [`WELL_KNOWN_PATTERN`](../../../src/kajenn/well_known.py#WELL_KNOWN_PATTERN), [`HIDDEN_SEGMENT_PREFIX`](../../../src/kajenn/well_known.py#HIDDEN_SEGMENT_PREFIX), [`RequestRegistry`](../../../src/kajenn/request_registry.py#RequestRegistry), [`current`](../../../src/kajenn/request_registry.py#RequestRegistry.current), [`WorkPool`](../../../src/kajenn/pool.py#WorkPool).
 
-Registry writers: [`wsx.py`](../../../src/kajenn/wsx.py#L358), [`serve_kbus_message`](../../../src/kajenn/kbus_mixin.py#L491), [`_serve_http_stream`](../../../src/kajenn/kbus_mixin.py#L529), [`tasks/executor.py`](../../../src/kajenn/tasks/executor.py#L119).
+Registry writers: [`wsx.py`](../../../src/kajenn/wsx.py#WsxConnection._serve_message), [`serve_kbus_message`](../../../src/kajenn/kbus_mixin.py#KBusMixin.serve_kbus_message), [`_serve_http_stream`](../../../src/kajenn/kbus_mixin.py#KBusMixin._serve_http_stream), [`tasks/executor.py`](../../../src/kajenn/tasks/executor.py#LocalTaskExecutor.execute).
 
 Behavior evidence: `tests/core/test_well_known.py`, `tests/core/test_hidden_paths.py`, `tests/core/test_well_known_external.py`.
 
@@ -76,7 +76,7 @@ pool thread. A take outside a registered call raises `RuntimeError`.
 `AsgiServer` registers the configured databases after the cooperative chain.
 A database owned by an application this process does not serve is skipped.
 
-Claim anchors: [`add_database`](../../../src/kajenn/server.py#L301), [`database_handler`](../../../src/kajenn/server.py#L323), [`take_database`](../../../src/kajenn/server.py#L340), [`release_databases`](../../../src/kajenn/server.py#L368), [`_register_configured_databases`](../../../src/kajenn/asgi_server.py#L231).
+Claim anchors: [`add_database`](../../../src/kajenn/server.py#BaseServer.add_database), [`database_handler`](../../../src/kajenn/server.py#BaseServer.database_handler), [`take_database`](../../../src/kajenn/server.py#BaseServer.take_database), [`release_databases`](../../../src/kajenn/server.py#BaseServer.release_databases), [`_register_configured_databases`](../../../src/kajenn/asgi_server.py#AsgiServer._register_configured_databases).
 
 Behavior evidence: `tests/core/test_db.py::test_add_database_reuses_the_handler_and_refuses_a_claimed_name`, `test_a_take_outside_a_registered_call_is_an_error`, `test_an_application_in_its_dedicated_process_mounts_the_server_databases_and_its_own`.
 
@@ -88,7 +88,7 @@ thread and returns its result. Called on the loop thread, it closes the
 coroutine and raises `RuntimeError`. Called before any `run_sync`, it raises
 `RuntimeError` too.
 
-Claim anchors: [`run_sync`](../../../src/kajenn/server.py#L398), [`run_on_loop`](../../../src/kajenn/server.py#L409).
+Claim anchors: [`run_sync`](../../../src/kajenn/server.py#BaseServer.run_sync), [`run_on_loop`](../../../src/kajenn/server.py#BaseServer.run_on_loop).
 
 Behavior evidence: `tests/core/test_authentication_on_demand.py::test_a_pool_thread_runs_a_coroutine_on_the_loop`, `test_run_on_loop_refuses_the_loop_thread`.
 
@@ -104,7 +104,7 @@ to the socket, not execution by the client.
 See [WebSocket status](../055_websocket/status.md) for Origin, identity,
 registration and concurrency rules.
 
-Claim anchors: [`on_websocket`](../../../src/kajenn/server.py#L607), [`send_message`](../../../src/kajenn/server.py#L445).
+Claim anchors: [`on_websocket`](../../../src/kajenn/server.py#BaseServer.on_websocket), [`send_message`](../../../src/kajenn/server.py#BaseServer.send_message).
 
 ## Startup and bounded shutdown
 
@@ -127,9 +127,9 @@ process-exit deadline. The pool shutdown still waits for executor work.
 `AsgiServer.serve` resolves explicit host/port, configured values, then
 `127.0.0.1` and port 0. `debug` records a usage mode; the core does not branch on it.
 
-Claim anchors: [`Lifespan`](../../../src/kajenn/lifespan.py#L95), [`FatalBootError`](../../../src/kajenn/lifespan.py#L84), [`lifespan`](../../../src/kajenn/server.py#L384), [`BaseServer`](../../../src/kajenn/server.py#L141), [`shutdown_timeout_seconds`](../../../src/kajenn/server.py#L687), [`AsgiServer`](../../../src/kajenn/asgi_server.py#L109).
+Claim anchors: [`Lifespan`](../../../src/kajenn/lifespan.py#Lifespan), [`FatalBootError`](../../../src/kajenn/lifespan.py#FatalBootError), [`lifespan`](../../../src/kajenn/server.py#BaseServer.lifespan), [`BaseServer`](../../../src/kajenn/server.py#BaseServer), [`shutdown_timeout_seconds`](../../../src/kajenn/server.py#BaseServer.shutdown_timeout_seconds), [`AsgiServer`](../../../src/kajenn/asgi_server.py#AsgiServer).
 
-Behavior evidence: [`startup`](../../../src/kajenn/lifespan.py#L122), [`shutdown`](../../../src/kajenn/lifespan.py#L145), [`_run_hook`](../../../src/kajenn/lifespan.py#L181), `tests/core/test_db.py::test_a_failed_open_stops_the_startup_and_closes_what_was_opened`, `tests/core/test_lifespan.py::test_a_fatal_startup_failure_stops_the_server`.
+Behavior evidence: [`startup`](../../../src/kajenn/lifespan.py#Lifespan.startup), [`shutdown`](../../../src/kajenn/lifespan.py#Lifespan.shutdown), [`_run_hook`](../../../src/kajenn/lifespan.py#Lifespan._run_hook), `tests/core/test_db.py::test_a_failed_open_stops_the_startup_and_closes_what_was_opened`, `tests/core/test_lifespan.py::test_a_fatal_startup_failure_stops_the_server`.
 
 ## External applications over kbus
 
@@ -178,7 +178,7 @@ Modules: `kbus_mixin.py`, `spawner.py`, `remote_application.py`,
   (default the frame ceiling). `DEFAULT_WARN_FRAME_SIZE` (1 MiB) has no
   consumer in `src/`.
 
-Claim anchors: [`KBusMixin`](../../../src/kajenn/kbus_mixin.py#L78), [`external_applications`](../../../src/kajenn/kbus_mixin.py#L146), [`_serve_with_children`](../../../src/kajenn/kbus_mixin.py#L186), [`_external_joined`](../../../src/kajenn/kbus_mixin.py#L294), [`run_role`](../../../src/kajenn/kbus_mixin.py#L345), [`RemoteApplication`](../../../src/kajenn/remote_application.py#L139), [`SubprocessSpawner`](../../../src/kajenn/spawner.py#L84), [`stop`](../../../src/kajenn/spawner.py#L177), [`HttpRecord`](../../../src/kajenn/http_record.py#L36), [`frame_max_size`](../../../src/kajenn/transport_limits.py#L35), [`DEFAULT_WARN_FRAME_SIZE`](../../../src/kajenn/transport_limits.py#L15), [`RemoteApplication` built](../../../src/kajenn/asgi_server.py#L222).
+Claim anchors: [`KBusMixin`](../../../src/kajenn/kbus_mixin.py#KBusMixin), [`external_applications`](../../../src/kajenn/kbus_mixin.py#KBusMixin.external_applications), [`_serve_with_children`](../../../src/kajenn/kbus_mixin.py#KBusMixin._serve_with_children), [`_external_joined`](../../../src/kajenn/kbus_mixin.py#KBusMixin._external_joined), [`run_role`](../../../src/kajenn/kbus_mixin.py#KBusMixin.run_role), [`RemoteApplication`](../../../src/kajenn/remote_application.py#RemoteApplication), [`SubprocessSpawner`](../../../src/kajenn/spawner.py#SubprocessSpawner), [`stop`](../../../src/kajenn/spawner.py#SubprocessSpawner.stop), [`HttpRecord`](../../../src/kajenn/http_record.py#HttpRecord), [`frame_max_size`](../../../src/kajenn/transport_limits.py#frame_max_size), [`DEFAULT_WARN_FRAME_SIZE`](../../../src/kajenn/transport_limits.py#DEFAULT_WARN_FRAME_SIZE), [`RemoteApplication` built](../../../src/kajenn/asgi_server.py#AsgiServer._configured_kwargs).
 
 Behavior evidence: `tests/core/test_external_application.py::test_a_mount_whose_process_has_not_joined_answers_503`, `test_a_killed_process_is_relaunched`, `tests/core/test_well_known_external.py::test_a_join_presenting_a_held_path_is_refused`, `tests/core/test_http_record.py`.
 
@@ -193,20 +193,20 @@ socket and August coverage figures describe earlier revisions, not this one.
 - **Installed set changed while running.** design.md describes an installed
   set that is not sealed. The code has no method that removes an application.
   The `register_application` docstring states that the set is fixed at
-  construction ([server.py](../../../src/kajenn/server.py#L244)).
+  construction ([server.py](../../../src/kajenn/server.py#BaseServer.register_application)).
 - **Internal server.** design.md describes an internal server composed without
   the authentication layer. No such class exists: `AsgiServer` is the only
   shipped composition, and it includes `AuthMixin`
-  ([asgi_server.py](../../../src/kajenn/asgi_server.py#L109)).
+  ([asgi_server.py](../../../src/kajenn/asgi_server.py#AsgiServer)).
 - **Server with a parent link.** design.md describes the public server with a
   parent link armed. No constructor takes `parent=`. The code has `role=` and
   `KBusMixin`, which link an application's dedicated process to its server
-  ([kbus_mixin.py](../../../src/kajenn/kbus_mixin.py#L88)).
+  ([kbus_mixin.py](../../../src/kajenn/kbus_mixin.py#KBusMixin.__init__)).
 - **Removable while running.** design.md describes an application that declares
   whether it can be removed while running. `BaseApplication` has no attribute
-  for it ([application.py](../../../src/kajenn/application.py#L163)).
+  for it ([application.py](../../../src/kajenn/application.py#BaseApplication)).
 - **Site index.** design.md describes a site index answering `/`. `demux`
-  answers 404 there ([server.py](../../../src/kajenn/server.py#L573)).
+  answers 404 there ([server.py](../../../src/kajenn/server.py#BaseServer.demux)).
 
 Target evidence: [recorded target](decisions.md); this section records unresolved
 design distance, not an executable contract.

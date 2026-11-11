@@ -18,7 +18,7 @@ must poll and honor that signal itself; the progress API does not interrupt it.
 The folder's terminal position records the outcome. SSE push tests cover the
 snapshot/live boundary; there is no durable per-event replay log in the hub.
 
-Claim anchors: [`TaskManager`](../../../src/kajenn/tasks/manager.py#L67), [`publish_progress`](../../../src/kajenn/tasks/manager.py#L160), [`EventHub`](../../../src/kajenn/tasks/hub.py#L47), [`TaskSpool`](../../../src/kajenn/tasks/spool.py#L115), [`request_cancel`](../../../src/kajenn/tasks/spool.py#L265), [`is_cancelled`](../../../src/kajenn/tasks/spool.py#L272).
+Claim anchors: [`TaskManager`](../../../src/kajenn/tasks/manager.py#TaskManager), [`publish_progress`](../../../src/kajenn/tasks/manager.py#TaskManager.publish_progress), [`EventHub`](../../../src/kajenn/tasks/hub.py#EventHub), [`TaskSpool`](../../../src/kajenn/tasks/spool.py#TaskSpool), [`request_cancel`](../../../src/kajenn/tasks/spool.py#TaskSpool.request_cancel), [`is_cancelled`](../../../src/kajenn/tasks/spool.py#TaskSpool.is_cancelled).
 
 ## Hub queue bound
 

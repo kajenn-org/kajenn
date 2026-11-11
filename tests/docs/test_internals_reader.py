@@ -110,20 +110,104 @@ def test_real_dossier_source_links_build_to_local_pages(tmp_path):
         assert path.read_bytes() == content
 
 
-def test_fragment_translation_and_rejection(checkout):
+SYMBOLS = """\
+\"\"\"Module docstring.\"\"\"
+
+LIMIT = 3
+TIMEOUT: float = 1.5
+
+
+def helper():
+    return LIMIT
+
+
+class Core:
+    \"\"\"A class.\"\"\"
+
+    size = 2
+
+    @property
+    def name(self):
+        return "core"
+
+    async def run(self):
+        def inner():
+            return 1
+        return inner()
+
+
+if LIMIT:
+    def twice():
+        return 1
+else:
+    def twice():
+        return 2
+"""
+
+
+@pytest.fixture
+def render(checkout):
+    """Rewrite one page's Markdown as the hook does, with two linked targets."""
+    (checkout / "src/symbols.py").write_text(SYMBOLS)
     reader = MODULE.SourceViews()
-    reader.targets[Path("src/example.py")] = "_source/src/example.py.md"
+    reader.targets[Path("src/symbols.py")] = "_source/src/symbols.py.md"
+    reader.targets[Path("pyproject.toml")] = "_source/pyproject.toml.md"
     page = SimpleNamespace(
         file=SimpleNamespace(
             src_uri="topic/status.md", abs_src_path=str(checkout / "internals/topic/status.md")
         )
     )
     config = SimpleNamespace(config_file_path=str(checkout / "mkdocs.yml"))
-    transformed = reader.on_page_markdown("[line](../../src/example.py#L1-L3)", page, config, None)
-    assert transformed == "[line](../_source/src/example.py.md#L1)"
-    for anchor in ["L9", "L1-L99", "L3-L1", "method", "L0"]:
-        with pytest.raises(PluginError):
-            reader.on_page_markdown(f"[line](../../src/example.py#{anchor})", page, config, None)
+    return lambda markdown: reader.on_page_markdown(markdown, page, config, None)
+
+
+@pytest.mark.parametrize(
+    ("anchor", "line"),
+    [
+        ("helper", 7),
+        ("Core", 11),
+        ("Core.run", 20),
+        ("Core.run.inner", 21),
+        ("LIMIT", 3),
+        ("TIMEOUT", 4),
+        ("Core.size", 14),
+    ],
+)
+def test_symbol_anchor_links_its_definition_line(render, anchor, line):
+    result = render(f"[link](../../src/symbols.py#{anchor})")
+    assert result == f"[link](../_source/src/symbols.py.md#L{line})"
+
+
+def test_decorated_symbol_links_its_def_line(render):
+    result = render("[link](../../src/symbols.py#Core.name)")
+    assert result == "[link](../_source/src/symbols.py.md#L17)"
+
+
+def test_link_without_anchor_opens_the_view(render):
+    assert render("[file](../../src/symbols.py)") == "[file](../_source/src/symbols.py.md)"
+
+
+@pytest.mark.parametrize(
+    ("anchor", "message"),
+    [
+        ("missing", "Unknown source symbol missing in symbols.py"),
+        ("Core.missing", "Unknown source symbol Core.missing in symbols.py"),
+        ("LIMIT.real", "Unknown source symbol LIMIT.real in symbols.py"),
+        ("helper.LIMIT", "Unknown source symbol helper.LIMIT in symbols.py"),
+        ("twice", "Ambiguous source symbol twice in symbols.py"),
+        ("L5", "Unsupported source anchor"),
+        ("L1-L3", "Unsupported source anchor"),
+        ("Core.", "Unsupported source anchor"),
+    ],
+)
+def test_unresolvable_anchor_fails_the_build(render, anchor, message):
+    with pytest.raises(PluginError, match=message):
+        render(f"[link](../../src/symbols.py#{anchor})")
+
+
+def test_anchor_on_pyproject_fails_the_build(render):
+    with pytest.raises(PluginError, match="Unsupported source anchor"):
+        render("[cfg](../../pyproject.toml#project)")
 
 
 class Hrefs(HTMLParser):

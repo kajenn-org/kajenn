@@ -34,7 +34,7 @@ method guessed from its signature. The root configuration grammar's
 `openapi` section is not consumed to configure this application; use the
 application's actual constructor/class metadata.
 
-Claim anchors: [`ApplicationMeta`](../../../../src/kajenn/applications/openapi.py#L54), [`ApiMeta`](../../../../src/kajenn/applications/openapi.py#L83), [`schema_json`](../../../../src/kajenn/applications/openapi.py#L90), [`router_openapi`](../../../../src/kajenn/plugins/openapi/__init__.py#L39).
+Claim anchors: [`ApplicationMeta`](../../../../src/kajenn/applications/openapi.py#ApplicationMeta), [`ApiMeta`](../../../../src/kajenn/applications/openapi.py#ApiMeta), [`schema_json`](../../../../src/kajenn/applications/openapi.py#ApiMeta.schema_json), [`router_openapi`](../../../../src/kajenn/plugins/openapi/__init__.py#router_openapi).
 
 ## Source and test evidence
 

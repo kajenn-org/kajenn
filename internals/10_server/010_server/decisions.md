@@ -27,8 +27,8 @@ The ids continue after S12, the highest id the August audit trail in
 
 **S13 [installed-set] — `register_application` declares the installed set fixed at construction.**
 The `register_application` docstring states "the set of applications is fixed
-at construction" ([server.py](../../../src/kajenn/server.py#L244)). The module
-docstring repeats it ([server.py](../../../src/kajenn/server.py#L20)).
+at construction" ([server.py](../../../src/kajenn/server.py#BaseServer.register_application)). The module
+docstring repeats it ([server.py](../../../src/kajenn/server.py)).
 [design.md](design.md) §2 and §8 describe an installed set that is not sealed
 and changes while the server runs. The owner statement of 2026-11-03 (translated, verbatim) says
 applications can even be mounted and unmounted. D32 (SPECIFICATION.md:954)
@@ -45,7 +45,7 @@ while the server runs, and never moved. The code still has the limit.
 [design.md](design.md) §5 states that a hook that fails is recorded and the
 sequence continues. `Lifespan.startup` stops at a `FatalBootError` raised by an
 `on_startup` hook, and answers `lifespan.startup.failed`
-([lifespan.py](../../../src/kajenn/lifespan.py#L122)). A database handler whose
+([lifespan.py](../../../src/kajenn/lifespan.py#Lifespan.startup)). A database handler whose
 `open` raises becomes a `FatalBootError` too, before any hook runs.
 
 **S15 [demux] — well-known and hidden paths are decided before the mounts.**
@@ -53,6 +53,6 @@ sequence continues. `Lifespan.startup` stops at a `FatalBootError` raised by an
 segment, in five branches. `demux` first sends a path matching
 `WELL_KNOWN_PATTERN` to the application that declared it, or answers 404
 "unimplemented well-known URL". It then answers 404 to any other first segment
-starting with `.` ([server.py](../../../src/kajenn/server.py#L535)). Both
+starting with `.` ([server.py](../../../src/kajenn/server.py#BaseServer.demux)). Both
 branches come before the mount branch. They arrived with commit `3986e8c`
 (2026-11-02). design.md does not describe them.

@@ -43,7 +43,7 @@ No code passes a capabilities filter. The resolution filters on tags and
 channel only. The routing-system status
 carries the evidence: [025 status](../025_routing-system/status.md).
 
-Claim anchors: [`BaseApplication`](../../../src/kajenn/application.py#L163), [`app_snapshot`](../../../src/kajenn/application.py#L353), [`app_panel`](../../../src/kajenn/application.py#L363), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127), [`execute`](../../../src/kajenn/routed_application.py#L233), [`authenticate_scope`](../../../src/kajenn/routed_application.py#L284), [`discover`](../../../src/kajenn/routed_application.py#L300), [`auth_filters`](../../../src/kajenn/routed_application.py#L315).
+Claim anchors: [`BaseApplication`](../../../src/kajenn/application.py#BaseApplication), [`app_snapshot`](../../../src/kajenn/application.py#BaseApplication.app_snapshot), [`app_panel`](../../../src/kajenn/application.py#BaseApplication.app_panel), [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication), [`execute`](../../../src/kajenn/routed_application.py#RoutedApplication.execute), [`authenticate_scope`](../../../src/kajenn/routed_application.py#RoutedApplication.authenticate_scope), [`discover`](../../../src/kajenn/routed_application.py#RoutedApplication.discover), [`auth_filters`](../../../src/kajenn/routed_application.py#RoutedApplication.auth_filters).
 
 ## Well-known URLs and mixin grammars
 
@@ -70,7 +70,7 @@ answers them from `MobileSection`, attached under `mobile`. A missing required
 word stops the boot. Tests: `tests/core/test_mobile.py`,
 `tests/core/test_mobile_required_words.py`.
 
-Claim anchors: [`well_known`](../../../src/kajenn/application.py#L182), [`__init_subclass__`](../../../src/kajenn/application.py#L184), [`active_well_known`](../../../src/kajenn/application.py#L343), [`RoutedApplication.active_well_known`](../../../src/kajenn/routed_application.py#L185), [`MobileMixin`](../../../src/kajenn/mobile.py#L192), [`MobileSection`](../../../src/kajenn/mobile.py#L107).
+Claim anchors: [`well_known`](../../../src/kajenn/application.py#BaseApplication.well_known), [`__init_subclass__`](../../../src/kajenn/application.py#BaseApplication.__init_subclass__), [`active_well_known`](../../../src/kajenn/application.py#BaseApplication.active_well_known), [`RoutedApplication.active_well_known`](../../../src/kajenn/routed_application.py#RoutedApplication.active_well_known), [`MobileMixin`](../../../src/kajenn/mobile.py#MobileMixin), [`MobileSection`](../../../src/kajenn/mobile.py#MobileSection).
 
 ## Request parsing and handler arguments
 
@@ -95,7 +95,7 @@ This common opt-in seam was explicitly approved in N37 on 2026-09-06; its
 relationship to the older D31 effects target remains recorded in the
 [decision follow-up](decisions.md).
 
-Claim anchors: [`Request`](../../../src/kajenn/request.py#L120), [`init`](../../../src/kajenn/request.py#L166), [`UploadedFile`](../../../src/kajenn/request.py#L102), [`content_type`](../../../src/kajenn/request.py#L362), [`handler_kwargs`](../../../src/kajenn/request.py#L451), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L389), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127).
+Claim anchors: [`Request`](../../../src/kajenn/request.py#Request), [`init`](../../../src/kajenn/request.py#Request.init), [`UploadedFile`](../../../src/kajenn/request.py#UploadedFile), [`content_type`](../../../src/kajenn/request.py#Request.content_type), [`handler_kwargs`](../../../src/kajenn/request.py#Request.handler_kwargs), [`bind_kwargs`](../../../src/kajenn/routed_application.py#RoutedApplication.bind_kwargs), [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication).
 
 ## Dispatch, authorization and failures
 
@@ -118,9 +118,9 @@ default strict reading, 422 for an application declaring
 propagates to the error middleware as 500. The `Response.set_error` helper's
 standalone exception table must not be substituted for that dispatch contract.
 
-Claim anchors: [`run_sync`](../../../src/kajenn/server.py#L398), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374), [`Response`](../../../src/kajenn/response.py#L60), [`set_error`](../../../src/kajenn/response.py#L250), [`method_filters`](../../../src/kajenn/routed_application.py#L332).
+Claim anchors: [`run_sync`](../../../src/kajenn/server.py#BaseServer.run_sync), [`route_cleanup`](../../../src/kajenn/routed_application.py#RoutedApplication.route_cleanup), [`Response`](../../../src/kajenn/response.py#Response), [`set_error`](../../../src/kajenn/response.py#Response.set_error), [`method_filters`](../../../src/kajenn/routed_application.py#RoutedApplication.method_filters).
 
-Behavior evidence: [`__call__`](../../../src/kajenn/routed_application.py#L210), [`make_callable`](../../../src/kajenn/routed_application.py#L346).
+Behavior evidence: [`__call__`](../../../src/kajenn/routed_application.py#RoutedApplication.__call__), [`make_callable`](../../../src/kajenn/routed_application.py#RoutedApplication.make_callable).
 
 ## Buffered responses, streams and database cleanup
 
@@ -137,7 +137,7 @@ database is taken from its handler once per name per call, and the handler's
 route, from `route_cleanup` on the route's own thread. The database contract
 is in [065_db](../065_db/status.md).
 
-Claim anchors: [`Response`](../../../src/kajenn/response.py#L60), [`set_result`](../../../src/kajenn/response.py#L200), [`StreamingResponse`](../../../src/kajenn/streaming.py#L41), [`SseStream`](../../../src/kajenn/sse.py#L53), [`Request`](../../../src/kajenn/request.py#L120), [`db`](../../../src/kajenn/request.py#L432), [`async_db`](../../../src/kajenn/request.py#L440), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374).
+Claim anchors: [`Response`](../../../src/kajenn/response.py#Response), [`set_result`](../../../src/kajenn/response.py#Response.set_result), [`StreamingResponse`](../../../src/kajenn/streaming.py#StreamingResponse), [`SseStream`](../../../src/kajenn/sse.py#SseStream), [`Request`](../../../src/kajenn/request.py#Request), [`db`](../../../src/kajenn/request.py#Request.db), [`async_db`](../../../src/kajenn/request.py#Request.async_db), [`route_cleanup`](../../../src/kajenn/routed_application.py#RoutedApplication.route_cleanup).
 
 ## WebSocket and package boundaries
 
@@ -164,7 +164,7 @@ applications is fixed at construction" (`server.py:244-251`), no method removes
 an application, and `BaseApplication` carries no movability or survivability
 attribute.
 
-Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#L607), [`_call_application`](../../../src/kajenn/wsx.py#L370), [`OpenApiApplication`](../../../src/kajenn/applications/openapi.py#L67), [`McpApplication`](../../../src/kajenn/applications/mcp.py#L323), [`RemoteApplication`](../../../src/kajenn/remote_application.py#L139), [`register_application`](../../../src/kajenn/server.py#L244).
+Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#BaseServer.on_websocket), [`_call_application`](../../../src/kajenn/wsx.py#WsxConnection._call_application), [`OpenApiApplication`](../../../src/kajenn/applications/openapi.py), [`McpApplication`](../../../src/kajenn/applications/mcp.py), [`RemoteApplication`](../../../src/kajenn/remote_application.py#RemoteApplication), [`register_application`](../../../src/kajenn/server.py#BaseServer.register_application).
 
 ## Source and test evidence
 
