@@ -1,10 +1,10 @@
 name: Tests
 
+# The whole suite runs on the release pull request to main, which requires
+# this check. Pull requests to develop run lint.yml only.
 "on":
-  push:
-    branches: ['main', 'develop']
   pull_request:
-    branches: ['main', 'develop']
+    branches: ['main']
   workflow_dispatch:
   # Daily run against the latest released genro-* dependencies: a change
   # published in another genro repository surfaces here without a push.
