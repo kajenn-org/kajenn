@@ -25,10 +25,12 @@ composition at the ASGI level (no uvicorn), the same driving style as
 from __future__ import annotations
 
 import time
+from typing import Any
 
 import pytest
 
 from kajenn import (
+    AsgiServer,
     Avatar,
     BaseApplication,
     BaseServer,
@@ -241,6 +243,47 @@ class TestSnapshotLifespan:
         assert server.save_session is None
         await lifespan_cycle(server)
         assert list(tmp_path.rglob("*.pickle")) == []
+
+
+
+class SelfPersistingStore(SessionStore):
+    """A custom store implementing only the seven methods besides the snapshot pair."""
+
+    def __init__(self) -> None:
+        self.sessions: dict[str, Session] = {}
+
+    def get(self, session_id: str) -> Session | None:
+        return self.sessions.get(session_id)
+
+    def create(self, avatar: Avatar | None = None) -> Session:
+        session = Session(session_id=f"s{len(self.sessions)}", avatar=avatar, ttl=3600)
+        self.sessions[session.id] = session
+        return session
+
+    def save(self, session: Session) -> None:
+        self.sessions[session.id] = session
+
+    def delete(self, session_id: str) -> None:
+        self.sessions.pop(session_id, None)
+
+    def purge_expired(self) -> int:
+        return 0
+
+    def dump(self) -> dict[str, Any]:
+        return {}
+
+    def restore(self, data: dict[str, Any]) -> None:
+        return None
+
+
+class TestCustomStoreSnapshot:
+    async def test_subclass_without_snapshot_runs_a_named_lifespan(self, tmp_path) -> None:
+        path = tmp_path / "custom.pickle"
+        server = AsgiServer(session_store=SelfPersistingStore, save_session=str(path))
+        server.session_store.create(avatar=Avatar("alice", ["admin"]))
+        acks = await lifespan_cycle(server)
+        assert {m["type"] for m in acks} == {"lifespan.startup.complete", "lifespan.shutdown.complete"}
+        assert not path.exists()
 
 
 # --- MemorySessionStore.restore drops an expired dumped session (Macro 2 item 8) ---

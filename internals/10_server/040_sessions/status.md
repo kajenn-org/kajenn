@@ -38,7 +38,9 @@ Claim anchors: [`MemorySessionStore`](../../../src/kajenn/session/store.py#Memor
 the session data Bag. `save_snapshot`/`load_snapshot` instead pickle complete
 live sessions, including the Bag. `SessionMixin(save_session=...)` loads before
 lifespan and saves on exit; named CLI instances wire that snapshot path.
-A custom `SessionStore` used with snapshots must supply the snapshot methods too.
+`SessionStore` declares both snapshot methods with default bodies that do nothing
+and return `0`. A custom store that subclasses `SessionStore` inherits them; one
+that does not must implement them.
 
 The recipe element `session(ttl, store_class, save_path, **params)` lives under
 `server` (config/elements.py:228-252). `ttl` becomes `session_ttl`.

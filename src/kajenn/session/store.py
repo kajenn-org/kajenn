@@ -15,7 +15,11 @@
 """Session store — the storage Protocol and the in-memory default.
 
 ``SessionStore`` is a runtime-checkable ``Protocol`` (get/create/save/delete/
-purge_expired/dump/restore). Its test suite is a shared CONTRACT suite driven
+purge_expired/dump/restore/save_snapshot/load_snapshot). A custom backend
+either subclasses ``SessionStore`` or implements every method it declares.
+``save_snapshot``/``load_snapshot`` carry default bodies that do nothing and
+return ``0``: a subclass that persists on its own (a database, Redis) needs no
+snapshot and inherits them. Its test suite is a shared CONTRACT suite driven
 by a store factory (§5.9), so a custom backend plugs into the SAME tests.
 ``MemorySessionStore`` is the dict-backed only shipped store: ``secrets``
 tokens, a ``default_ttl`` for new sessions, lazy expiry on ``get``, and a
@@ -84,8 +88,24 @@ class SessionStore(Protocol):
         """Restore sessions from serialized data."""
         ...
 
+    def save_snapshot(self, path: str | Path) -> int:
+        """Write every live session to *path* at shutdown; return how many were saved.
 
-class MemorySessionStore:
+        The default does nothing, writes no file and returns ``0``: a store
+        that persists on its own needs no snapshot.
+        """
+        return 0
+
+    def load_snapshot(self, path: str | Path) -> int:
+        """Load the sessions of a ``save_snapshot`` file at startup; return how many.
+
+        The default does nothing and returns ``0``: a store that persists on
+        its own needs no snapshot.
+        """
+        return 0
+
+
+class MemorySessionStore(SessionStore):
     """In-memory session store — the default implementation."""
 
     __slots__ = ("_sessions", "_default_ttl", "_last_purge")

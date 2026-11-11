@@ -22,7 +22,7 @@ by injecting ``{"session": True}`` into the ``middleware`` config it forwards
 to ``MiddlewareMixin`` along the cooperative chain — composing the two mixins
 arms sessions with no user action, while an explicit
 ``middleware={"session": False}`` still wins (``setdefault`` never overrides an
-explicit switch). It overrides the §4 contract method ``session(request)`` to
+explicit switch). It overrides the §4 contract method ``session(scope)`` to
 return the session attached to the request scope; a composition WITHOUT the
 mixin keeps the base answer (``None``). The login seam is not a server method:
 a handler attaches the identity through the request facade
@@ -105,6 +105,6 @@ class SessionMixin:
             saved = self.session_store.save_snapshot(self.save_session)
             logger.info("saved %d session(s) to %s", saved, self.save_session)
 
-    def session(self, request: Any) -> Any:
+    def session(self, scope: Any) -> Any:
         """The session attached to the request scope, or ``None`` if none."""
-        return request.get("session") if request is not None else None
+        return scope.get("session") if scope is not None else None

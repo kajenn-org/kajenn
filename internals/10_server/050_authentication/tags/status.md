@@ -13,7 +13,7 @@ the rule and the application maps anonymous denial to 401 and known-user denial
 to 403. No universal hardcoded list of user roles is created by the core.
 
 `Request.auth_tags` returns the tags of the root avatar as a list, empty when
-anonymous (request.py:421-425).
+anonymous (request.py:420-424).
 
 The monitor and the databases section use `SERVER_ADMIN`; users, tokens and
 task administration use `SUPERADMIN`.

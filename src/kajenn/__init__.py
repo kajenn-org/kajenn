@@ -56,6 +56,7 @@ from .exceptions import (
     HTTPUnsupportedMediaType,
     KBusCallError,
     Redirect,
+    WebSocketDisconnect,
 )
 from .mcp import McpEngine, McpError
 from .middleware import BaseMiddleware, MiddlewareMixin
@@ -132,6 +133,7 @@ __all__ = [
     "TaskGrammar",
     "UploadedFile",
     "UserStore",
+    "WebSocketDisconnect",
     "__version__",
     "router_openapi",
 ]

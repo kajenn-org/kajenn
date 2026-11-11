@@ -80,8 +80,8 @@ class TokensSection(RoutingClass):
         """A key record without its ``secret_hash`` — the wire-safe projection."""
         return {k: v for k, v in record.items() if k != "secret_hash"}
 
-    @route(auth_rule="SUPERADMIN")
-    def list(self) -> dict[str, Any]:
+    @route(name="list", auth_rule="SUPERADMIN")
+    def token_list(self) -> dict[str, Any]:
         """Every api-key record, ``secret_hash`` stripped."""
         store = self.api_key_store
         if store is None:

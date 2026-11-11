@@ -122,8 +122,10 @@ In a `SessionStore`. One store ships with the core — `MemorySessionStore`,
 sessions in the process, lost on restart. `AsgiServer` always has one, and the
 session middleware is armed by `SessionMixin` without any action of yours. A
 custom backend is named as a class (`session_store=MyStore`, or
-`server.session(store_class=MyStore)` in a recipe) and must implement the
-`SessionStore` protocol.
+`server.session(store_class=MyStore)` in a recipe). It either subclasses
+`SessionStore` or implements every method `SessionStore` declares; a subclass
+inherits `save_snapshot` and `load_snapshot` bodies that do nothing and return
+`0`.
 
 `server.session(save_path=…)` — `save_session=` in the shortcut form — pickles
 every live session at shutdown and reloads it at the next startup. The CLI arms

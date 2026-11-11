@@ -38,11 +38,14 @@ from nowhere else.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from genro_storage import StorageManager
 
 from .builder import AsgiConfigBuilder, BaseConfiguration
+
+if TYPE_CHECKING:
+    from ..application import BaseApplication
 
 __all__ = [
     "CONFIGURATION_TEMPLATES",
@@ -125,7 +128,9 @@ class ShortcutConfiguration(AsgiConfigBuilder):
         self.credentials = kwargs.pop("auth", None)
         self.app_entries = self.application_entries(kwargs.pop("applications", ()))
 
-    def application_entries(self, declared: Any) -> list[tuple[type, dict[str, Any]]]:
+    def application_entries(
+        self, declared: Any
+    ) -> list[tuple[type[BaseApplication], dict[str, Any]]]:
         """The declared applications as ``(class, params)``, each with its ``code``.
 
         A bare class is the same entry with no parameters. The code is resolved
@@ -133,8 +138,9 @@ class ShortcutConfiguration(AsgiConfigBuilder):
         it follows the rule the application applies to itself: what the caller
         wrote, else the class attribute, else the class name lowercased.
         """
-        entries: list[tuple[type, dict[str, Any]]] = []
+        entries: list[tuple[type[BaseApplication], dict[str, Any]]] = []
         for entry in declared:
+            app_class: type[BaseApplication]
             app_class, params = self.class_and_params(entry)
             code = params.pop("code", None) or app_class.code or app_class.__name__.lower()
             entries.append((app_class, {"code": code, **params}))
@@ -233,8 +239,12 @@ class ShortcutConfiguration(AsgiConfigBuilder):
         for entry in self.credentials.get("jwt") or ():
             credentials.jwt(**entry)
 
-    def class_and_params(self, declared: Any) -> tuple[type, dict[str, Any]]:
-        """A declared class, or a ``(class, params)`` pair, as the pair it is."""
+    def class_and_params(self, declared: Any) -> tuple[Any, dict[str, Any]]:
+        """A declared class, or a ``(class, params)`` pair, as the pair it is.
+
+        The class is ``Any``: an application class and a session store class
+        both pass here, and each caller names the type it expects.
+        """
         if isinstance(declared, tuple):
             return declared[0], dict(declared[1])
         return declared, {}

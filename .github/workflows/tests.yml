@@ -1,13 +1,14 @@
 name: Tests
 
+# The whole suite runs on the release pull request to main, which requires
+# this check. Pull requests to develop run lint.yml only.
 "on":
-  push:
-    branches: ['main', 'develop']
   pull_request:
-    branches: ['main', 'develop']
+    branches: ['main']
   workflow_dispatch:
-  # Daily run against the latest released genro-* dependencies: a change
-  # published in another genro repository surfaces here without a push.
+  # Daily run of develop against the latest released genro-* dependencies:
+  # a change published in another genro repository, or a failure merged into
+  # develop, surfaces here without waiting for the release.
   schedule:
     - cron: '0 5 * * *'
 
@@ -21,6 +22,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # schedule always starts from the default branch; test develop
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,3 +49,68 @@ jobs:
           files: ./coverage.xml
           disable_search: true
           fail_ci_if_error: true
+
+  # Nightly only, and only when the suite passed: the develop image of the
+  # day, tagged develop-YYYYMMDD and develop. The last 7 nightly images are
+  # kept; release images are never deleted.
+  nightly-image:
+    name: Publish the nightly develop image
+    needs: test
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: develop
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build the wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+
+      - name: Date of the build
+        id: date
+        run: echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:develop-${{ steps.date.outputs.date }}
+            ghcr.io/${{ github.repository }}:develop
+          platforms: linux/amd64
+          provenance: false
+
+      # A version is nightly when every tag it carries starts with "develop"
+      # (an untagged one is a rebuild of the same day). Newest first; the
+      # first 7 stay.
+      - name: Delete the nightly images beyond the last 7
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          endpoint="/orgs/${{ github.repository_owner }}/packages/container/${{ github.event.repository.name }}/versions"
+          gh api --paginate "$endpoint" --jq '
+            .[] | select(all(.metadata.container.tags[]; startswith("develop")))
+            | [.created_at, .id] | @tsv' \
+          | sort -r | tail -n +8 | cut -f2 \
+          | while read -r id; do
+              echo "deleting version $id"
+              gh api --method DELETE "$endpoint/$id"
+            done
