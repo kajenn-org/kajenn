@@ -6,8 +6,9 @@ name: Tests
   pull_request:
     branches: ['main']
   workflow_dispatch:
-  # Daily run against the latest released genro-* dependencies: a change
-  # published in another genro repository surfaces here without a push.
+  # Daily run of develop against the latest released genro-* dependencies:
+  # a change published in another genro repository, or a failure merged into
+  # develop, surfaces here without waiting for the release.
   schedule:
     - cron: '0 5 * * *'
 
@@ -21,6 +22,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # schedule always starts from the default branch; test develop
+          ref: ${{ github.event_name == 'schedule' && 'develop' || '' }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
