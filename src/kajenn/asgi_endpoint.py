@@ -23,6 +23,12 @@ the application call — a seam an extension builds on.
 A ``WSK`` request has its answer adapted here, through
 ``WsxResponseEncoder``: this is the last place where the application that
 produced the media type is known.
+
+The endpoint is a boundary: the application it calls is any ASGI
+application, and the scope and body come from whoever routes. So the call
+checks its arguments and every message the application sends, and raises
+``TypeError`` or ``ValueError`` with the reason instead of passing a malformed
+message on.
 """
 
 import asyncio
