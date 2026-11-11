@@ -609,7 +609,7 @@ class BaseServer:
         """Base answer: nobody (``None``). Auth capabilities override this."""
         return None
 
-    def session(self, request: Any) -> Any:
+    def session(self, scope: Any) -> Any:
         """Base answer: none (``None``). Session capabilities override this."""
         return None
 
