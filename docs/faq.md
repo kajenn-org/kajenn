@@ -230,10 +230,10 @@ opt-out. Explicit entries only configure their options. A composition without
 
 ### How do I expose OpenAPI and a Swagger page?
 
-Subclass `OpenApiApplication` instead of `RoutedApplication` and set
-`openapi_info = {"title": ..., "version": ...}`. The schema is then at
-`/_meta/schema_json` and the Swagger UI at `/_meta/docs` (404 when the app was
-built with `docs="off"`). The root `openapi` configuration section is accepted
+Every `RoutedApplication` exposes them; set
+`openapi_info = {"title": ..., "version": ...}` for the title and the version.
+The schema is at `/_meta/api/schema_json` and the Swagger UI at
+`/_meta/api/docs` (404 when the app was built with `docs="off"`). The root `openapi` configuration section is accepted
 by the grammar but has no consumer in the core: set title, version and
 description on `openapi_info`.
 
@@ -241,18 +241,18 @@ See [OpenAPI and Swagger](guides/openapi.md).
 
 ### How do I expose MCP tools?
 
-Subclass `McpApplication` (the whole application is one JSON-RPC endpoint) or
-`McpOpenApiApplication` (REST plus OpenAPI plus an MCP face under
-`mcp_name_segment`, `mcp` by default), and mark the methods you want offered as
-tools with `@route(channel_channels="mcp")`. A plain `@route()` is not offered
-as a tool.
+Every `RoutedApplication` answers MCP JSON-RPC on `_meta/mcp`. Mark the
+methods you want offered as tools with `@route(channel_channels="mcp")`, or
+`@route(channel_channels="mcp,api")` to keep them on HTTP too. A plain
+`@route()` is not offered as a tool.
 
 See [MCP](guides/mcp.md).
 
 ### Does `channel_channels="mcp"` hide a route from HTTP?
 
-No. It includes the route in the MCP tool surface; HTTP dispatch applies no
-channel filter. Use authorization rules to restrict callers.
+Yes. A plain HTTP request is on the channel `api`, and a route whose channels
+do not include `api` answers `404` over HTTP. Declare
+`channel_channels="mcp,api"` to keep the route on both.
 
 See [MCP](guides/mcp.md#marking-a-route-as-a-tool).
 

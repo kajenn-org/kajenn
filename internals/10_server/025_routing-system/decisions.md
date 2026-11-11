@@ -104,3 +104,6 @@ a branch, and what becomes of a request in flight on it.
 [design.md](design.md):129 says "HTTP dispatch supplies none". `auth_filters`
 passes `channel_channel` for every face (`routed_application.py`, see
 [status.md](status.md)). The owner statement does not mention the channel.
+Resolved 2026-11-11: [design.md](design.md) §2 now states that every face
+supplies its channel and that a route declared for `mcp` only answers 404 to
+an HTTP request.

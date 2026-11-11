@@ -13,8 +13,11 @@ contract. `mount=""` means the root; only `None` falls back to the code.
 `app_snapshot` and `app_panel` supply generic monitor contributions. The monitor
 also accepts an optional `panel_source` supplied by an application.
 
-`RoutedApplication` combines that contract with `RoutingClass`. It plugs `auth`
-at construction. On the first router access after attachment it calls
+`RoutedApplication` combines that contract with `RoutingClass`. It plugs `auth`,
+`channel`, `pydantic` and `openapi` at construction, configures `channel` with
+`http_channel` as the default channel, and attaches the `_meta` branch
+(`ApplicationMeta`). A route named `_meta` raises `ValueError`. On the first
+router access after attachment it calls
 `server.arm_router`, which arms every plugin the server's configuration
 resolves: the fixed `pydantic`/`openapi` pair and every extra the `plugins`
 section enables. Branches use `add_branches`; the existing instance-form
@@ -32,12 +35,23 @@ and the caller's tags. Tests:
 `tests/core/test_unified_discovery.py::TestListedEqualsCallable::test_listed_equals_executable_on_both_faces`,
 `tests/core/test_unified_discovery.py::TestInvalidCredential::test_execution_with_an_invalid_bearer_is_401`.
 
-Each face has a channel name. `RoutedApplication.http_channel` is `"rest"`, and
-`__call__` puts it on a scope that carries no `kajenn.channel`. WSX sets
-`"wsx"` (`wsx.py:269`, `wsx.py:428`). The MCP transport sets `"mcp"`
-(`applications/mcp.py:184`, `:204`). `McpOpenApiApplication` declares
-`mcp_channel = "mcp"`, `rest_channel = "rest"` and `http_channel =
-rest_channel` (`applications/mcp.py:401-403`).
+Each face has a channel name. `RoutedApplication.http_channel` is `"api"`, and
+`__call__` puts it on a scope that carries no `kajenn.channel`. A route that
+declares no channel answers on `api` only. WSX sets `"wsx"`
+([`_open_gate`](../../../src/kajenn/wsx.py#WsxConnection._open_gate),
+[`_request_scope`](../../../src/kajenn/wsx.py#WsxConnection._request_scope)).
+`RoutedApplication.mcp_channel` is `"mcp"`; the MCP transport sets it
+([`McpTransport.handle`](../../../src/kajenn/applications/mcp.py#McpTransport.handle),
+[`McpTransport._invoke_tool`](../../../src/kajenn/applications/mcp.py#McpTransport._invoke_tool)).
+Every `RoutedApplication` answers MCP JSON-RPC on `_meta/mcp`; `__call__` hands
+that path to `McpTransport.handle`.
+
+The URLs of 0.8.0 (`_meta/schema_json`, `_meta/docs`, `mcp`) are listed in
+`MOVED_URLS`. `__call__` gives the answer of the new address, with a
+`Deprecation` header, a `successor-version` link and a log line. `mcp` moves
+only while the application has no route of that name. Claim anchors:
+[`moved_url`](../../../src/kajenn/routed_application.py#RoutedApplication.moved_url),
+[`deprecated_send`](../../../src/kajenn/routed_application.py#RoutedApplication.deprecated_send).
 
 No code passes a capabilities filter. The resolution filters on tags and
 channel only. The routing-system status
@@ -145,8 +159,9 @@ Applications can receive WSX messages as synthetic HTTP scopes with method
 `WSK`; the server can also hand an application its raw `serve_websocket` scope.
 The HTTP middleware does not run per WSX message.
 
-`OpenApiApplication`, `McpApplication` and `McpOpenApiApplication` ship in
-`kajenn`; `ServerApplication` ships in `kajenn.server_app`. An application that
+`RoutedApplication` carries the `api` and the MCP faces itself: `kajenn`
+ships no application class per face. `ServerApplication` ships in
+`kajenn.server_app`. An application that
 brings its own vocabulary arrives from its own distribution and is mounted by
 class reference, so the core ships no list of the applications that exist.
 
@@ -164,7 +179,7 @@ applications is fixed at construction" (`server.py:244-251`), no method removes
 an application, and `BaseApplication` carries no movability or survivability
 attribute.
 
-Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#BaseServer.on_websocket), [`_call_application`](../../../src/kajenn/wsx.py#WsxConnection._call_application), [`OpenApiApplication`](../../../src/kajenn/applications/openapi.py), [`McpApplication`](../../../src/kajenn/applications/mcp.py), [`RemoteApplication`](../../../src/kajenn/remote_application.py#RemoteApplication), [`register_application`](../../../src/kajenn/server.py#BaseServer.register_application).
+Behavior evidence: [`on_websocket`](../../../src/kajenn/server.py#BaseServer.on_websocket), [`_call_application`](../../../src/kajenn/wsx.py#WsxConnection._call_application), [`ApplicationMeta`](../../../src/kajenn/applications/openapi.py#ApplicationMeta), [`McpMeta`](../../../src/kajenn/applications/mcp.py#McpMeta), [`RemoteApplication`](../../../src/kajenn/remote_application.py#RemoteApplication), [`register_application`](../../../src/kajenn/server.py#BaseServer.register_application).
 
 ## Source and test evidence
 

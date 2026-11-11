@@ -8,6 +8,19 @@ Paths under `src/genro_asgi/` and the test paths in this file quote the verifica
 
 Source report: `kajenn-meta/verification/10_server/025_routing-system.md`.
 
+## Rows changed by #111
+
+Commit `923b7a2` (#111, 0.9.0) removed `McpOpenApiApplication` and renamed the HTTP channel from
+`rest` to `api`. The rows below quote the earlier code; their text stays verbatim.
+
+- #8: the `McpOpenApiApplication` and `rest_channel` it quotes are removed. The behaviour holds on
+  every [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication):
+  `http_channel` is `"api"`, `mcp_channel` is `"mcp"`, proved by
+  `tests/core/test_mcp_application.py::TestRoutedApplication::test_api_only_absent_from_tools_list`.
+- #9: the code now contradicts the decision. HTTP dispatch passes the channel `api`, and a route
+  declared on `mcp` only answers 404 over HTTP, proved by
+  `tests/core/test_channel_in_scope.py::TestResolutionReadsTheScope::test_a_tool_only_route_is_invisible_to_rest`.
+
 Rows of that report whose verdict is `DIVERGE` or `SILENT`, with the matching `Divergences` blocks. Both are verbatim from the report.
 
 ## Table

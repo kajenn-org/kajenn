@@ -188,7 +188,7 @@ Two more shape how you extend the framework:
 - **Routes are static from boot** — the route tree is fixed when the server
   starts; routing is never used as a mutable registry.
 - **Extension is by subclassing.** You grow an application by subclassing the
-  right base (`OpenApiApplication`, `McpApplication`, `SessionMixin`, and so on),
+  right base (`RoutedApplication`, `SessionMixin`, and so on),
   not by patching instances at runtime.
 
 ## The request flow
