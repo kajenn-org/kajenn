@@ -59,8 +59,8 @@ streaming: the body is already resident).
 TYTX mode is detected from the ``X-TYTX-Transport`` header; the paired
 ``Response`` reads ``tytx_mode`` / ``tytx_transport`` to serialize the reply
 in the same transport. The owning application creates the request
-(``Request(scope, receive, application=app)``, or ``server=`` directly) and
-holds the response seam: ``self.response`` is a ``Response`` bound back to it.
+(``Request(scope, receive, application=app)``) and holds the response seam:
+``self.response`` is a ``Response`` bound back to it.
 
 ``handler_kwargs()`` builds the kwargs a route handler receives: the query is
 the base; a form body — urlencoded OR multipart — is merged field by field
@@ -144,7 +144,7 @@ class Request:
         receive: Receive,
         *,
         server: BaseServer | None = None,
-        application: BaseApplication | None = None,
+        application: BaseApplication,
     ) -> None:
         self._scope = scope
         self._receive = receive
@@ -240,12 +240,11 @@ class Request:
         """The body as the owning application wants it: decoded, or the bytes.
 
         An application declaring ``request(body="raw")`` keeps the bytes (an
-        empty body is ``None``). Every other case — including a request no
-        application owns — goes through ``decode_body`` on the declared
-        content-type.
+        empty body is ``None``). Every other application's body goes through
+        ``decode_body`` on the declared content-type.
         """
         application = self._application
-        if application is not None and application.raw_body:
+        if application.raw_body:
             return body or None
         return self.decode_body(body, str(self.content_type or ""))
 
@@ -398,11 +397,11 @@ class Request:
         """The owning server (passed directly, or via the owning application)."""
         if self._server is not None:
             return self._server
-        return self._application.server if self._application is not None else None
+        return self._application.server
 
     @property
-    def application(self) -> BaseApplication | None:
-        """The application that created this request (``None`` if unbound)."""
+    def application(self) -> BaseApplication:
+        """The application that created this request."""
         return self._application
 
     def avatar(self, key: str = Session.ROOT_AVATAR_KEY) -> Any:
@@ -435,18 +434,11 @@ class Request:
         The owning application's ``db``: its name rule, one take per name per
         call, the release at the end of the call.
         """
-        return self.bound_application().db(name)
+        return self.application.db(name)
 
     def async_db(self, name: str | None = None) -> Any:
         """The awaitable face of ``db(name)``, for an ``async def`` handler."""
-        return self.bound_application().async_db(name)
-
-    def bound_application(self) -> BaseApplication:
-        """The owning application; a ``Request`` bound to none raises ``RuntimeError``."""
-        application = self.application
-        if application is None:
-            raise RuntimeError("this Request is bound to no application: it has no databases")
-        return application
+        return self.application.async_db(name)
 
     def handler_kwargs(self) -> dict[str, Any]:
         """Build the kwargs a route handler is called with (query + body).

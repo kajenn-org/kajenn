@@ -43,11 +43,11 @@ raise and clears the takes.
 by default an `AsyncDbView`, whose `terminals` run with `server.run_sync`.
 
 `Request.db(name)` and `Request.async_db(name)` delegate to the owning
-application through `bound_application()` (request.py:432-442). A `Request`
-bound to no application raises `RuntimeError` there (request.py:444-449). Test:
-`test_a_request_bound_to_no_application_has_no_databases`.
+application: `self.application.db(name)` and `self.application.async_db(name)`
+(request.py:431-441). A `Request` always has an application: `application` is a
+required keyword of `Request.__init__` (request.py:147).
 
-Claim anchors: [`database_name`](../../../src/kajenn/application.py#L275), [`db_name`](../../../src/kajenn/application.py#L180), [`db`](../../../src/kajenn/application.py#L289), [`async_db`](../../../src/kajenn/application.py#L297), [`Request.db`](../../../src/kajenn/request.py#L432), [`Request.async_db`](../../../src/kajenn/request.py#L440), [`bound_application`](../../../src/kajenn/request.py#L444), [`take_database`](../../../src/kajenn/server.py#L340), [`release_databases`](../../../src/kajenn/server.py#L368), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374), [`async_view`](../../../src/kajenn/db.py#L92), [`AsyncDbView`](../../../src/kajenn/db.py#L97).
+Claim anchors: [`database_name`](../../../src/kajenn/application.py#L275), [`db_name`](../../../src/kajenn/application.py#L180), [`db`](../../../src/kajenn/application.py#L289), [`async_db`](../../../src/kajenn/application.py#L297), [`Request.db`](../../../src/kajenn/request.py#L431), [`Request.async_db`](../../../src/kajenn/request.py#L439), [`take_database`](../../../src/kajenn/server.py#L340), [`release_databases`](../../../src/kajenn/server.py#L368), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374), [`async_view`](../../../src/kajenn/db.py#L92), [`AsyncDbView`](../../../src/kajenn/db.py#L97).
 
 ## Threads of take and release
 

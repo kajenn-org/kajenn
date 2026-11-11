@@ -40,7 +40,6 @@ from kajenn import (
     DbHandlerBase,
     RoutedApplication,
 )
-from kajenn.request import Request
 from kajenn.request_registry import RegisteredRequest
 from kajenn.tasks import WORKER_ID, LocalTaskExecutor, new_descriptor
 from kajenn.wsx import WsxConnection, WsxEnvelope
@@ -560,9 +559,3 @@ class TestLifespan:
         await server({"type": "lifespan"}, receive, send)
         assert server.databases["audit"].of("close")
         assert "FailingClose.close raised" in caplog.text
-
-
-def test_a_request_bound_to_no_application_has_no_databases() -> None:
-    request = Request({"type": "http", "path": "/", "headers": []}, None)
-    with pytest.raises(RuntimeError, match="bound to no application"):
-        request.db()

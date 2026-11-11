@@ -95,7 +95,7 @@ This common opt-in seam was explicitly approved in N37 on 2026-09-06; its
 relationship to the older D31 effects target remains recorded in the
 [decision follow-up](decisions.md).
 
-Claim anchors: [`Request`](../../../src/kajenn/request.py#L120), [`init`](../../../src/kajenn/request.py#L166), [`UploadedFile`](../../../src/kajenn/request.py#L102), [`content_type`](../../../src/kajenn/request.py#L362), [`handler_kwargs`](../../../src/kajenn/request.py#L451), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L389), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127).
+Claim anchors: [`Request`](../../../src/kajenn/request.py#L120), [`init`](../../../src/kajenn/request.py#L166), [`UploadedFile`](../../../src/kajenn/request.py#L102), [`content_type`](../../../src/kajenn/request.py#L361), [`handler_kwargs`](../../../src/kajenn/request.py#L443), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L389), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127).
 
 ## Dispatch, authorization and failures
 
@@ -137,7 +137,7 @@ database is taken from its handler once per name per call, and the handler's
 route, from `route_cleanup` on the route's own thread. The database contract
 is in [065_db](../065_db/status.md).
 
-Claim anchors: [`Response`](../../../src/kajenn/response.py#L60), [`set_result`](../../../src/kajenn/response.py#L200), [`StreamingResponse`](../../../src/kajenn/streaming.py#L41), [`SseStream`](../../../src/kajenn/sse.py#L53), [`Request`](../../../src/kajenn/request.py#L120), [`db`](../../../src/kajenn/request.py#L432), [`async_db`](../../../src/kajenn/request.py#L440), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374).
+Claim anchors: [`Response`](../../../src/kajenn/response.py#L60), [`set_result`](../../../src/kajenn/response.py#L200), [`StreamingResponse`](../../../src/kajenn/streaming.py#L41), [`SseStream`](../../../src/kajenn/sse.py#L53), [`Request`](../../../src/kajenn/request.py#L120), [`db`](../../../src/kajenn/request.py#L431), [`async_db`](../../../src/kajenn/request.py#L439), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374).
 
 ## WebSocket and package boundaries
 
