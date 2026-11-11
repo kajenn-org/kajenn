@@ -72,6 +72,11 @@ class RawBodySite(DefaultConfiguration):
         apps.application(code="raw", mount="", app_class=RawBodyApp).request(body="raw")
 
 
+def plain_app() -> BaseApplication:
+    """A ``BaseApplication`` at its defaults, mounted on a bare server."""
+    return BaseServer(applications=[BaseApplication(mount="")]).applications["baseapplication"]
+
+
 def raw_body_app() -> BaseApplication:
     """The mounted ``RawBodyApp``, reading its option off its own site."""
     return AsgiServer(config=RawBodySite).applications["raw"]
@@ -86,10 +91,11 @@ async def make_request(
     method: str = "GET",
     path: str = "/",
     scope_extra: dict[str, Any] | None = None,
-    **kwargs: Any,
+    application: BaseApplication | None = None,
 ) -> Request:
     """Build a ``Request`` from a synthetic ASGI scope and init it.
 
+    ``application`` owns the request; left out, a ``plain_app()`` does.
     ``chunks`` delivers the body in several ``http.request`` messages (the last
     one alone with ``more_body`` false); ``body`` delivers it in a single one.
     """
@@ -108,7 +114,8 @@ async def make_request(
     }
     if scope_extra:
         scope.update(scope_extra)
-    request = Request(scope, receive, **kwargs)
+    owner = application if application is not None else plain_app()
+    request = Request(scope, receive, application=owner)
     await request.init()
     return request
 
@@ -444,6 +451,10 @@ class TestAuthSessionAccessors:
         request = await make_request(application=app)
         assert request.application is app
         assert request.server is server
+
+    def test_a_request_without_application_is_refused(self) -> None:
+        with pytest.raises(TypeError, match="application"):
+            Request({"type": "http", "path": "/", "headers": []}, None)
 
 
 class CountingHandler(DbHandlerBase):

@@ -13,7 +13,7 @@ the rule and the application maps anonymous denial to 401 and known-user denial
 to 403. No universal hardcoded list of user roles is created by the core.
 
 `Request.auth_tags` returns the tags of the root avatar as a list, empty when
-anonymous (request.py:421-425).
+anonymous (request.py:420-424).
 
 The monitor and the databases section use `SERVER_ADMIN`; users, tokens and
 task administration use `SUPERADMIN`.
@@ -24,7 +24,7 @@ shipped recipe option.
 
 Claim anchors: [`RoutedApplication`](../../../../src/kajenn/routed_application.py#L127), [`auth_filters`](../../../../src/kajenn/routed_application.py#L315), [`Avatar`](../../../../src/kajenn/session/avatar.py#L31), [`tags`](../../../../src/kajenn/session/avatar.py#L48).
 
-Behavior evidence: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../../src/kajenn/server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../../src/kajenn/server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../../src/kajenn/server_app/server_sections/tasks_section.py#L59), [`DatabasesSection`](../../../../src/kajenn/server_app/server_sections/databases_section.py#L58), [`auth_tags`](../../../../src/kajenn/request.py#L422).
+Behavior evidence: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../../src/kajenn/server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../../src/kajenn/server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../../src/kajenn/server_app/server_sections/tasks_section.py#L59), [`DatabasesSection`](../../../../src/kajenn/server_app/server_sections/databases_section.py#L58), [`auth_tags`](../../../../src/kajenn/request.py#L421).
 
 ## Source and test evidence
 

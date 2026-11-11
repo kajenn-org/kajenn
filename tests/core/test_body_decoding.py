@@ -34,7 +34,7 @@ from typing import Any, Callable
 import pytest
 from genro_routes import route
 
-from kajenn import AsgiConfigBuilder, AsgiServer, RoutedApplication
+from kajenn import AsgiConfigBuilder, AsgiServer, Request, RoutedApplication
 from kajenn.types import Message, Scope
 from tests.conftest import start_server
 
@@ -302,9 +302,10 @@ class TestRawBody:
 
     async def test_the_decode_helpers_stay_public(self) -> None:
         """A raw application decodes by itself with the core's own helpers."""
-        from kajenn.request import Request
-
-        request = Request({"type": "http", "method": "POST", "path": "/"}, None)
+        application = plain_server().applications["body"]
+        request = Request(
+            {"type": "http", "method": "POST", "path": "/"}, None, application=application
+        )
         assert request.decode_body(b'{"x": 1}', "application/json") == {"x": 1}
         assert request.get_transport("application/vnd.tytx+msgpack") == "msgpack"
 
