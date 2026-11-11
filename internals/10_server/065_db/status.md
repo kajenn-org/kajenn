@@ -22,7 +22,7 @@ databases of applications this process does not serve and hands the rest to
 calls its `add_database` and records the name. A claimed name and a database
 with no handler class raise `ValueError`.
 
-Claim anchors: [`DatabaseGrammar`](../../../src/kajenn/application.py#L102), [`databases`](../../../src/kajenn/config/handler.py#L316), [`_register_configured_databases`](../../../src/kajenn/asgi_server.py#L231), [`db_handler_class`](../../../src/kajenn/asgi_server.py#L251), [`add_database`](../../../src/kajenn/server.py#L301), [`DbHandlerBase`](../../../src/kajenn/db.py#L55).
+Claim anchors: [`DatabaseGrammar`](../../../src/kajenn/application.py#DatabaseGrammar), [`databases`](../../../src/kajenn/config/handler.py#ConfigurationHandler.databases), [`_register_configured_databases`](../../../src/kajenn/asgi_server.py#AsgiServer._register_configured_databases), [`db_handler_class`](../../../src/kajenn/asgi_server.py#AsgiServer.db_handler_class), [`add_database`](../../../src/kajenn/server.py#BaseServer.add_database), [`DbHandlerBase`](../../../src/kajenn/db.py#DbHandlerBase).
 
 ## Call boundary
 
@@ -47,7 +47,7 @@ application: `self.application.db(name)` and `self.application.async_db(name)`
 (request.py:431-441). A `Request` always has an application: `application` is a
 required keyword of `Request.__init__` (request.py:147).
 
-Claim anchors: [`database_name`](../../../src/kajenn/application.py#L275), [`db_name`](../../../src/kajenn/application.py#L180), [`db`](../../../src/kajenn/application.py#L289), [`async_db`](../../../src/kajenn/application.py#L297), [`Request.db`](../../../src/kajenn/request.py#L431), [`Request.async_db`](../../../src/kajenn/request.py#L439), [`take_database`](../../../src/kajenn/server.py#L340), [`release_databases`](../../../src/kajenn/server.py#L368), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374), [`async_view`](../../../src/kajenn/db.py#L92), [`AsyncDbView`](../../../src/kajenn/db.py#L97).
+Claim anchors: [`database_name`](../../../src/kajenn/application.py#BaseApplication.database_name), [`db_name`](../../../src/kajenn/application.py#BaseApplication.db_name), [`db`](../../../src/kajenn/application.py#BaseApplication.db), [`async_db`](../../../src/kajenn/application.py#BaseApplication.async_db), [`Request.db`](../../../src/kajenn/request.py#Request.db), [`Request.async_db`](../../../src/kajenn/request.py#Request.async_db), [`take_database`](../../../src/kajenn/server.py#BaseServer.take_database), [`release_databases`](../../../src/kajenn/server.py#BaseServer.release_databases), [`route_cleanup`](../../../src/kajenn/routed_application.py#RoutedApplication.route_cleanup), [`async_view`](../../../src/kajenn/db.py#DbHandlerBase.async_view), [`AsyncDbView`](../../../src/kajenn/db.py#AsyncDbView).
 
 ## Threads of take and release
 
@@ -66,7 +66,7 @@ Claim anchors: [`database_name`](../../../src/kajenn/application.py#L275), [`db_
 
 kajenn-org/kajenn#90 records the backends this leaves unserved.
 
-Claim anchors: [`take_database`](../../../src/kajenn/server.py#L340), [`route_cleanup`](../../../src/kajenn/routed_application.py#L374), [`run_sync`](../../../src/kajenn/server.py#L398).
+Claim anchors: [`take_database`](../../../src/kajenn/server.py#BaseServer.take_database), [`route_cleanup`](../../../src/kajenn/routed_application.py#RoutedApplication.route_cleanup), [`run_sync`](../../../src/kajenn/server.py#BaseServer.run_sync).
 
 ## Distance from the design
 
@@ -88,7 +88,7 @@ a failing `open` is a `FatalBootError` and the handlers already opened are
 closed. `shutdown` closes them after the last `on_shutdown`; a failing `close`
 is logged and the next one runs.
 
-Claim anchors: [`startup`](../../../src/kajenn/lifespan.py#L122), [`shutdown`](../../../src/kajenn/lifespan.py#L145), [`_close_handlers`](../../../src/kajenn/lifespan.py#L169).
+Claim anchors: [`startup`](../../../src/kajenn/lifespan.py#Lifespan.startup), [`shutdown`](../../../src/kajenn/lifespan.py#Lifespan.shutdown), [`_close_handlers`](../../../src/kajenn/lifespan.py#Lifespan._close_handlers).
 
 ## Migration
 
@@ -101,7 +101,7 @@ returns the handler of a name, `LookupError` for an unknown name and
 checks the name, opens every handler, runs the operation, closes the handlers
 and prints plain JSON. The server never migrates on its own.
 
-Claim anchors: [`capabilities`](../../../src/kajenn/db.py#L70), [`database_handler`](../../../src/kajenn/server.py#L323), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#L58), [`DatabaseCommand`](../../../src/kajenn/__main__.py#L537), [`operate`](../../../src/kajenn/__main__.py#L552).
+Claim anchors: [`capabilities`](../../../src/kajenn/db.py#DbHandlerBase.capabilities), [`database_handler`](../../../src/kajenn/server.py#BaseServer.database_handler), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection), [`DatabaseCommand`](../../../src/kajenn/__main__.py#DatabaseCommand), [`operate`](../../../src/kajenn/__main__.py#DatabaseCommand.operate).
 
 ## Source and test evidence
 

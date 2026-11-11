@@ -30,7 +30,7 @@ avatar has data, the record adds `data` as TYTX json (remote_application.py:54-5
 `test_kbus_call_preserves_avatar_data`, `test_kbus_call_keeps_typed_values`
 (tests/core/test_avatar_data_on_bus.py).
 
-Claim anchors: [`Avatar`](../../../../src/kajenn/session/avatar.py#L31), [`identity`](../../../../src/kajenn/session/avatar.py#L43), [`tags`](../../../../src/kajenn/session/avatar.py#L48), [`Session`](../../../../src/kajenn/session/session.py#L60), [`Request`](../../../../src/kajenn/request.py#L120), [`avatar`](../../../../src/kajenn/session/session.py#L93), [`avatar`](../../../../src/kajenn/request.py#L407), [`avatar_auth`](../../../../src/kajenn/remote_application.py#L54), [`avatar_from_auth`](../../../../src/kajenn/remote_application.py#L62).
+Claim anchors: [`Avatar`](../../../../src/kajenn/session/avatar.py#Avatar), [`identity`](../../../../src/kajenn/session/avatar.py#Avatar.identity), [`tags`](../../../../src/kajenn/session/avatar.py#Avatar.tags), [`Session`](../../../../src/kajenn/session/session.py#Session), [`Request`](../../../../src/kajenn/request.py#Request), [`avatar`](../../../../src/kajenn/session/session.py#Session.avatar), [`avatar`](../../../../src/kajenn/request.py#Request.avatar), [`avatar_auth`](../../../../src/kajenn/remote_application.py#avatar_auth), [`avatar_from_auth`](../../../../src/kajenn/remote_application.py#avatar_from_auth).
 
 ## Source and test evidence
 

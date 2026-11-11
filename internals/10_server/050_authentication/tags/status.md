@@ -22,9 +22,9 @@ A section attached to `_server` by an application outside the core carries no
 protected sections. Per-section tag configuration remains backlog, not a
 shipped recipe option.
 
-Claim anchors: [`RoutedApplication`](../../../../src/kajenn/routed_application.py#L127), [`auth_filters`](../../../../src/kajenn/routed_application.py#L315), [`Avatar`](../../../../src/kajenn/session/avatar.py#L31), [`tags`](../../../../src/kajenn/session/avatar.py#L48).
+Claim anchors: [`RoutedApplication`](../../../../src/kajenn/routed_application.py#RoutedApplication), [`auth_filters`](../../../../src/kajenn/routed_application.py#RoutedApplication.auth_filters), [`Avatar`](../../../../src/kajenn/session/avatar.py#Avatar), [`tags`](../../../../src/kajenn/session/avatar.py#Avatar.tags).
 
-Behavior evidence: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../../src/kajenn/server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../../src/kajenn/server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../../src/kajenn/server_app/server_sections/tasks_section.py#L59), [`DatabasesSection`](../../../../src/kajenn/server_app/server_sections/databases_section.py#L58), [`auth_tags`](../../../../src/kajenn/request.py#L421).
+Behavior evidence: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`UsersSection`](../../../../src/kajenn/server_app/server_sections/users_section.py#UsersSection), [`TokensSection`](../../../../src/kajenn/server_app/server_sections/tokens_section.py#TokensSection), [`TasksSection`](../../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection), [`DatabasesSection`](../../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection), [`auth_tags`](../../../../src/kajenn/request.py#Request.auth_tags).
 
 ## Source and test evidence
 

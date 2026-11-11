@@ -30,7 +30,7 @@ or missing id (server_app.py:535-551). The route declares no `auth_rule`. The
 test `test_logout_deletes_the_session` deletes a session without presenting a
 credential.
 
-Claim anchors: [`MemorySessionStore`](../../../src/kajenn/session/store.py#L108), [`SessionStore`](../../../src/kajenn/session/store.py#L57), [`Session`](../../../src/kajenn/session/session.py#L60), [`avatar`](../../../src/kajenn/session/session.py#L93), [`attach_avatar`](../../../src/kajenn/session/session.py#L111), [`mark_dirty`](../../../src/kajenn/session/session.py#L123), [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#L54), [`avatars`](../../../src/kajenn/session/session.py#L102), [`is_expired`](../../../src/kajenn/session/session.py#L135), [`logout`](../../../src/kajenn/server_app/server_app.py#L535).
+Claim anchors: [`MemorySessionStore`](../../../src/kajenn/session/store.py#MemorySessionStore), [`SessionStore`](../../../src/kajenn/session/store.py#SessionStore), [`Session`](../../../src/kajenn/session/session.py#Session), [`avatar`](../../../src/kajenn/session/session.py#Session.avatar), [`attach_avatar`](../../../src/kajenn/session/session.py#Session.attach_avatar), [`mark_dirty`](../../../src/kajenn/session/session.py#Session.mark_dirty), [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#SessionMiddleware), [`avatars`](../../../src/kajenn/session/session.py#Session.avatars), [`is_expired`](../../../src/kajenn/session/session.py#Session.is_expired), [`logout`](../../../src/kajenn/server_app/server_app.py#ServerApplication.logout).
 
 ## Two persistence formats
 
@@ -51,7 +51,7 @@ The authenticating connection link described in the decisions is absent from
 `Session`. An identity an application keeps on a connection of its own does
 not automatically become a core session avatar.
 
-Claim anchors: [`dump`](../../../src/kajenn/session/store.py#L83), [`dump`](../../../src/kajenn/session/store.py#L159), [`restore`](../../../src/kajenn/session/store.py#L87), [`restore`](../../../src/kajenn/session/store.py#L199), [`save_snapshot`](../../../src/kajenn/session/store.py#L172), [`load_snapshot`](../../../src/kajenn/session/store.py#L187), [`SessionMixin`](../../../src/kajenn/session/mixin.py#L55), [`Session`](../../../src/kajenn/session/session.py#L60), [`save_session`](../../../src/kajenn/session/mixin.py#L83), [`SessionStore`](../../../src/kajenn/session/store.py#L57), [`session` element](../../../src/kajenn/config/elements.py#L229).
+Claim anchors: [`dump`](../../../src/kajenn/session/store.py#SessionStore.dump), [`dump`](../../../src/kajenn/session/store.py#MemorySessionStore.dump), [`restore`](../../../src/kajenn/session/store.py#SessionStore.restore), [`restore`](../../../src/kajenn/session/store.py#MemorySessionStore.restore), [`save_snapshot`](../../../src/kajenn/session/store.py#MemorySessionStore.save_snapshot), [`load_snapshot`](../../../src/kajenn/session/store.py#MemorySessionStore.load_snapshot), [`SessionMixin`](../../../src/kajenn/session/mixin.py#SessionMixin), [`Session`](../../../src/kajenn/session/session.py#Session), [`save_session`](../../../src/kajenn/session/mixin.py#SessionMixin.save_session), [`SessionStore`](../../../src/kajenn/session/store.py#SessionStore), [`session` element](../../../src/kajenn/config/elements.py#AsgiServerGrammar.session).
 
 ## Source and test evidence
 

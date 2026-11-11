@@ -28,7 +28,7 @@ Tests: `tests/core/test_server_app_always_present.py::TestTheKwargsRoad::test_a_
 `::TestTheRoleProcess::test_an_application_in_its_dedicated_process_mounts_no_server_application`,
 `tests/server_app/test_server_application.py::TestDeclaredMount::test_a_server_declaring_none_has_the_default_one`.
 
-Claim anchors: [`AsgiServer`](../../../src/kajenn/asgi_server.py#L109), [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#L207), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L389).
+Claim anchors: [`AsgiServer`](../../../src/kajenn/asgi_server.py#AsgiServer), [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#ServerApplication), [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication), [`bind_kwargs`](../../../src/kajenn/routed_application.py#RoutedApplication.bind_kwargs).
 
 ## `app_class` of the `_server` entry
 
@@ -52,7 +52,7 @@ Tests: `tests/core/test_server_app_always_present.py::TestTheConfigurationRoad::
 `_request` injection comes from the common `RoutedApplication.bind_kwargs`,
 not a private server-app override.
 
-Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`UsersSection`](../../../src/kajenn/server_app/server_sections/users_section.py#L61), [`TokensSection`](../../../src/kajenn/server_app/server_sections/tokens_section.py#L57), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#L59), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#L58).
+Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`UsersSection`](../../../src/kajenn/server_app/server_sections/users_section.py#UsersSection), [`TokensSection`](../../../src/kajenn/server_app/server_sections/tokens_section.py#TokensSection), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection).
 
 ## `ServerApplicationGrammar`: login, oidc, provider
 
@@ -142,7 +142,7 @@ Per-section configurable tags, a plugin configuration page, general dynamic
 application installation and monitor/workbench proposals are not delivered by
 the current section list.
 
-Behavior evidence: [`attach_section`](../../../src/kajenn/server_app/server_app.py#L412), [`sections`](../../../src/kajenn/server_app/server_app.py#L403).
+Behavior evidence: [`attach_section`](../../../src/kajenn/server_app/server_app.py#ServerApplication.attach_section), [`sections`](../../../src/kajenn/server_app/server_app.py#ServerApplication.sections).
 
 ## Source and test evidence
 

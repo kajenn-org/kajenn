@@ -25,7 +25,7 @@ internals reader is a separate developer documentation tool.
 Tests: `tests/server_app/test_server_monitor.py::TestMonitorGate`,
 `::TestNoMonitorPage::test_the_section_root_is_gone`, `::TestPanels`, `::TestPanelModule`.
 
-Claim anchors: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#L74), [`app_snapshot`](../../../../src/kajenn/application.py#L353), [`app_panel`](../../../../src/kajenn/application.py#L363), [`BaseApplication`](../../../../src/kajenn/application.py#L163).
+Claim anchors: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`app_snapshot`](../../../../src/kajenn/application.py#BaseApplication.app_snapshot), [`app_panel`](../../../../src/kajenn/application.py#BaseApplication.app_panel), [`BaseApplication`](../../../../src/kajenn/application.py#BaseApplication).
 
 ## Contributors: applications and sections
 

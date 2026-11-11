@@ -42,7 +42,7 @@ The ids below continue after S7, the highest id the August audit trail in
 `AsgiServerGrammar.configuration` declares ten:
 `site`, `server`, `middleware`, `authentication`, `channels`, `storage`,
 `applications`, `databases`, `plugins` and `openapi`
-([elements.py](../../../src/kajenn/config/elements.py#L93)). `site` and
+([elements.py](../../../src/kajenn/config/elements.py#AsgiServerGrammar.configuration)). `site` and
 `channels` are the two that design.md does not list.
 
 **S9 [live-config] — kajenn-org/kajenn#75 is absent from this entry.**

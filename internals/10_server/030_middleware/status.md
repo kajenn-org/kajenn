@@ -29,7 +29,7 @@ The recipe element `middleware` declares the four names and takes `**extra`.
 A middleware merged through `middleware_registry=` is switched by its own name
 through `**extra`.
 
-Claim anchors: [`default_registry`](../../../src/kajenn/middleware/__init__.py#L63), [`MiddlewareMixin`](../../../src/kajenn/middleware/__init__.py#L73), [`get_middleware`](../../../src/kajenn/middleware/__init__.py#L96), [`SessionMixin` setdefault](../../../src/kajenn/session/mixin.py#L69), [`middleware` element](../../../src/kajenn/config/elements.py#L254).
+Claim anchors: [`default_registry`](../../../src/kajenn/middleware/__init__.py#default_registry), [`MiddlewareMixin`](../../../src/kajenn/middleware/__init__.py#MiddlewareMixin), [`get_middleware`](../../../src/kajenn/middleware/__init__.py#MiddlewareMixin.get_middleware), [`SessionMixin` setdefault](../../../src/kajenn/session/mixin.py#SessionMixin.__init__), [`middleware` element](../../../src/kajenn/config/elements.py#AsgiServerGrammar.middleware).
 
 ## Request identity outside the chain
 
@@ -37,7 +37,7 @@ No middleware layer sets `scope["auth"]`. `RoutedApplication.authenticate_scope`
 writes `server.authenticate(scope)` to `scope["auth"]` when the key is missing
 or `None`. `execute` and `discover` call it before resolution.
 
-Claim anchors: [`authenticate_scope`](../../../src/kajenn/routed_application.py#L284).
+Claim anchors: [`authenticate_scope`](../../../src/kajenn/routed_application.py#RoutedApplication.authenticate_scope).
 
 ## HTTP errors
 
@@ -63,9 +63,9 @@ response bypasses inner CORS/session response wrappers and may lack their
 headers. Disabling errors is accepted and allows exceptions to escape the
 composition. Those limitations are not resolved by this documentation update.
 
-Claim anchors: [`ErrorMiddleware`](../../../src/kajenn/middleware/errors.py#L60).
+Claim anchors: [`ErrorMiddleware`](../../../src/kajenn/middleware/errors.py#ErrorMiddleware).
 
-Behavior evidence: [`_error_response`](../../../src/kajenn/middleware/errors.py#L87), [`_forward_headers`](../../../src/kajenn/middleware/errors.py#L128).
+Behavior evidence: [`_error_response`](../../../src/kajenn/middleware/errors.py#ErrorMiddleware._error_response), [`_forward_headers`](../../../src/kajenn/middleware/errors.py#ErrorMiddleware._forward_headers).
 
 ## Sessions, CORS and logging
 
@@ -85,9 +85,9 @@ level falls back to INFO. `include_headers` (default `False`) logs the request
 headers at DEBUG. `include_query` (default `True`) appends the query string to
 the logged request line.
 
-Claim anchors: [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#L54).
+Claim anchors: [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#SessionMiddleware).
 
-Behavior evidence: [`CORSMiddleware`](../../../src/kajenn/middleware/cors.py#L43), [`LoggingMiddleware`](../../../src/kajenn/middleware/logging.py#L37).
+Behavior evidence: [`CORSMiddleware`](../../../src/kajenn/middleware/cors.py#CORSMiddleware), [`LoggingMiddleware`](../../../src/kajenn/middleware/logging.py#LoggingMiddleware).
 
 ## WSX handshake boundary
 
@@ -97,7 +97,7 @@ and obtains handshake identity/session directly, using `get_middleware` and
 application owns its Origin/authentication policy after the server's state gate.
 The absence of a WebSocket middleware pass is not the absence of an Origin gate.
 
-Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#L212), [`get_middleware`](../../../src/kajenn/middleware/__init__.py#L96), [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#L54), [`get_session`](../../../src/kajenn/middleware/session.py#L79).
+Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#WsxConnection), [`get_middleware`](../../../src/kajenn/middleware/__init__.py#MiddlewareMixin.get_middleware), [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#SessionMiddleware), [`get_session`](../../../src/kajenn/middleware/session.py#SessionMiddleware.get_session).
 
 ## Source and test evidence
 
