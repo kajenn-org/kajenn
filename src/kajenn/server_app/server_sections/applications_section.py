@@ -157,8 +157,8 @@ class ApplicationsSection(RoutingClass):
         except ValueError as refused:
             raise HTTPException(409, str(refused)) from refused
 
-    @route(auth_rule=SERVER_ADMIN_TAG)
-    def list(self) -> list[dict[str, Any]]:
+    @route(name="list", auth_rule=SERVER_ADMIN_TAG)
+    def application_list(self) -> list[dict[str, Any]]:
         """Every application in registration order: ``code``, ``mount``, ``state``, ``reason``."""
         server = self.application.server
         rows = []
