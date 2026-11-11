@@ -1,0 +1,30 @@
+name: Lint
+
+# Pull requests to develop run ruff only. The whole suite runs on the
+# release pull request to main (tests.yml).
+"on":
+  pull_request:
+    branches: ['develop']
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install ruff
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+
+      - name: Ruff
+        run: ruff check src/ tests/

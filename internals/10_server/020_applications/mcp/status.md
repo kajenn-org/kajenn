@@ -8,22 +8,23 @@ below identify the executable contracts; they are not a new coverage percentage.
 ## Router-backed tools
 
 Every `RoutedApplication` builds a `McpTransport` over its own router in
-`__init__` and answers it on `_meta/mcp` (`routed_application.py:164`, `:264`).
+`__init__` and answers it on `_meta/mcp`
+([`__init__`](../../../../src/kajenn/routed_application.py#RoutedApplication.__init__), [`__call__`](../../../../src/kajenn/routed_application.py#RoutedApplication.__call__)).
 The engine handles initialize, tool listing and calls over Streamable HTTP; it
 reads the same router description and applies auth tags and channel filters.
 `OpenApiApplication`, `McpOpenApiApplication` and `McpApplication` no longer
 exist (0.9.0). The URL of 0.8.0, `mcp`, answers through `MOVED_URLS` with a
 `Deprecation` header while the application has no route of that name
-(`routed_application.py:106`).
+([`MOVED_URLS`](../../../../src/kajenn/routed_application.py#MOVED_URLS), [`moved_url`](../../../../src/kajenn/routed_application.py#RoutedApplication.moved_url)).
 
 `McpTransport` sets `kajenn.channel = "mcp"` on the MCP POST and on each
-tool-call scope (`applications/mcp.py:173`, `:217`). `tools/list` reads the
+tool-call scope ([`handle`](../../../../src/kajenn/applications/mcp.py#McpTransport.handle), [`_invoke_tool`](../../../../src/kajenn/applications/mcp.py#McpTransport._invoke_tool)). `tools/list` reads the
 application's `discover`, and `tools/call` runs through the application's
 `execute`, so a tool is listed and called on the same filters as any other face.
 `McpMeta.tools` answers the same list on `GET _meta/mcp/tools`
-(`applications/mcp.py:336`). On the `mcp` channel `bind_kwargs` always spreads
+([`McpMeta.tools`](../../../../src/kajenn/applications/mcp.py#McpMeta.tools)). On the `mcp` channel `bind_kwargs` always spreads
 the tool's `arguments` over the handler's parameters, whatever the handler
-declares (`routed_application.py:511`). A request method other than GET and
+declares ([`bind_kwargs`](../../../../src/kajenn/routed_application.py#RoutedApplication.bind_kwargs)). A request method other than GET and
 POST answers 405. Tests:
 `tests/core/test_unified_discovery.py::TestListedEqualsCallable::test_mcp_tools_list_lists_what_the_caller_may_call`,
 `tests/core/test_mcp_application.py::TestMcpFace::test_other_method_is_method_not_allowed`,
@@ -34,7 +35,7 @@ loop. Protocol/session bookkeeping and optional SSE push do not create a second
 application state store. The task integration publishes lifecycle and progress
 to the launching MCP session; the spool remains the durable snapshot source.
 
-Claim anchors: [`RoutedApplication`](../../../../src/kajenn/routed_application.py#L132), [`McpTransport`](../../../../src/kajenn/applications/mcp.py#L76), [`McpMeta`](../../../../src/kajenn/applications/mcp.py#L336), [`McpEngine`](../../../../src/kajenn/mcp/engine.py#L106).
+Claim anchors: [`RoutedApplication`](../../../../src/kajenn/routed_application.py#RoutedApplication), [`McpTransport`](../../../../src/kajenn/applications/mcp.py#McpTransport), [`McpMeta`](../../../../src/kajenn/applications/mcp.py#McpMeta), [`McpEngine`](../../../../src/kajenn/mcp/engine.py#McpEngine).
 
 ## Source and test evidence
 

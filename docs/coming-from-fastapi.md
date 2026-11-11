@@ -47,7 +47,7 @@ OpenAPI schema, as MCP tools and as WSX messages without being rewritten.
 
 | Task | FastAPI / Starlette | kajenn |
 |------|---------------------|--------|
-| Create the app | `app = FastAPI()` | subclass `RoutedApplication` (or `OpenApiApplication`); build `AsgiServer(applications=[App])` |
+| Create the app | `app = FastAPI()` | subclass `RoutedApplication`; build `AsgiServer(applications=[App])` |
 | Define a route | `@app.get("/greet")` on a function | `@route()` on a **method** (name = URL segment), imported from `genro_routes` |
 | Middleware | `app.add_middleware(...)` | `middleware={...}` kwarg; ordered built-in chain |
 | Start the server | `uvicorn.run(app, ...)` | `server.serve(host=..., port=...)` (programmatic uvicorn, blocking) |
@@ -55,11 +55,11 @@ OpenAPI schema, as MCP tools and as WSX messages without being rewritten.
 ## The same endpoint
 
 ```python
-from kajenn import AsgiServer, OpenApiApplication
+from kajenn import AsgiServer, RoutedApplication
 from genro_routes import route
 
 
-class Shop(OpenApiApplication):
+class Shop(RoutedApplication):
     mount = ""
     openapi_info = {"title": "Shop API", "version": "1.0.0"}
 
@@ -74,9 +74,9 @@ server.serve(host="127.0.0.1", port=8000)
 
 The visible difference from the FastAPI equivalent is small: a method on a class
 instead of a free function, and a server that mounts the app instead of *being*
-the app. The invisible one matters more — switch the base class to
-`McpOpenApiApplication` and mark `search` with
-`@route(channel_channels="mcp,rest")`, and the same method is also an MCP tool.
+the app. The invisible one matters more — mark `search` with
+`@route(channel_channels="mcp,api")`, and the same method is also an MCP tool,
+served on `/_meta/mcp`. The OpenAPI document is at `/_meta/api/schema_json`.
 
 ## Error codes
 
@@ -100,7 +100,7 @@ application chose.
   serve ./config.py` points at a configuration recipe the server builds itself
   from. `kajenn serve application=./hello.py:Hello` is the closer analogue for a
   single application with no recipe of its own.
-- **The OpenAPI prefix.** `/_meta/docs` and `/_meta/schema_json`, not `/docs`.
+- **The OpenAPI prefix.** `/_meta/api/docs` and `/_meta/api/schema_json`, not `/docs`.
 - **Reverse-proxy headers.** The core reads no `X-Forwarded-*`; the public base
   address is declared with `external_url`. See the [FAQ](faq.md).
 

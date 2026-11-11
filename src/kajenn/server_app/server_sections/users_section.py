@@ -90,8 +90,8 @@ class UsersSection(RoutingClass):
             return None
         return password
 
-    @route(auth_rule="SUPERADMIN")
-    def list(self) -> dict[str, Any]:
+    @route(name="list", auth_rule="SUPERADMIN")
+    def user_list(self) -> dict[str, Any]:
         """Every user record, ``password_hash`` stripped."""
         store = self.user_store
         if store is None:

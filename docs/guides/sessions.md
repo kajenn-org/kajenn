@@ -46,8 +46,11 @@ One store ships with kajenn: **`MemorySessionStore`** — sessions live in
 the process. Simple, fast, lost on restart (but see the shutdown snapshot
 below). A custom backend is named as a CLASS — `session_store=MyStore`, or
 `(MyStore, {...})` with its own parameters — and the server builds it; in a
-recipe the same thing is `server.session(store_class=MyStore)`. It must
-implement the `SessionStore` protocol.
+recipe the same thing is `server.session(store_class=MyStore)`. It either
+subclasses `SessionStore` or implements every method `SessionStore` declares.
+`SessionStore` gives `save_snapshot` and `load_snapshot` default bodies that
+do nothing and return `0`: a store that persists on its own (a database,
+Redis) subclasses `SessionStore` and needs no snapshot.
 
 ## The shutdown snapshot
 

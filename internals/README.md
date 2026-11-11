@@ -34,8 +34,10 @@ For a parallel checkout, choose a separate free port:
 python -m mkdocs serve --dev-addr 127.0.0.1:18771
 ```
 
-Source and test links open numbered local source views. `#L42` selects a line;
-a GitHub range such as `#L42-L48` opens at its first line. Source views rebuild
+Source and test links open numbered local source views. A link names a symbol,
+not a line: `server.py#BaseServer.demux` opens the view at the `def` line of
+`demux` in `BaseServer`. The build resolves the name; an unknown or ambiguous
+name, or a line anchor such as `#L42`, fails the build. Source views rebuild
 when source files change. Markdown links on disk retain their normal relative
 paths for editors and GitHub. Views are restricted to Python files in `src/`
 and `tests/`, plus `pyproject.toml`; links outside those boundaries fail the

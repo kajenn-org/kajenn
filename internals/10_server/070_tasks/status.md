@@ -19,7 +19,7 @@ running call. Runs are system calls without HTTP middleware or caller auth
 filters. `every`, `cron` and `at` schedules compute future instants without
 backfilling downtime.
 
-Claim anchors: [`TaskMixin`](../../../src/kajenn/tasks/mixin.py#L89), [`TaskManager`](../../../src/kajenn/tasks/manager.py#L67), [`tasks`](../../../src/kajenn/tasks/mixin.py#L76), [`tasks`](../../../src/kajenn/tasks/mixin.py#L112), [`TaskScheduler`](../../../src/kajenn/tasks/scheduler.py#L64).
+Claim anchors: [`TaskMixin`](../../../src/kajenn/tasks/mixin.py#TaskMixin), [`TaskManager`](../../../src/kajenn/tasks/manager.py#TaskManager), [`tasks`](../../../src/kajenn/tasks/mixin.py#TaskGrammar.tasks), [`tasks`](../../../src/kajenn/tasks/mixin.py#TaskMixin.tasks), [`TaskScheduler`](../../../src/kajenn/tasks/scheduler.py#TaskScheduler).
 
 ## The `tasks` configuration element
 
@@ -93,7 +93,7 @@ The only `settle` call in `src/` is in `LocalTaskExecutor.execute`
 (`src/kajenn/tasks/executor.py:137`). No code sweeps `active/` at boot
 (kajenn-org/kajenn#4).
 
-Claim anchors: [`TaskSpool`](../../../src/kajenn/tasks/spool.py#L115), [`LocalTaskExecutor`](../../../src/kajenn/tasks/executor.py#L67), [`TaskManager`](../../../src/kajenn/tasks/manager.py#L67), [`publish_progress`](../../../src/kajenn/tasks/manager.py#L160).
+Claim anchors: [`TaskSpool`](../../../src/kajenn/tasks/spool.py#TaskSpool), [`LocalTaskExecutor`](../../../src/kajenn/tasks/executor.py#LocalTaskExecutor), [`TaskManager`](../../../src/kajenn/tasks/manager.py#TaskManager), [`publish_progress`](../../../src/kajenn/tasks/manager.py#TaskManager.publish_progress).
 
 ## Task runs in the request registry
 

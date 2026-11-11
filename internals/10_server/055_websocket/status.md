@@ -25,7 +25,7 @@ away by that one refusal.
 
 **The raw seam across processes** — an application declared with `spawner=` is
 mounted as `RemoteApplication`
-([remote_application.py:139](../../../src/kajenn/remote_application.py#L139)).
+([remote_application.py:139](../../../src/kajenn/remote_application.py#RemoteApplication)).
 When the real class defines `serve_websocket`, the mount sets its own
 `serve_websocket` to `_forward_websocket` (remote_application.py:168-169). That
 method opens one kbus stream to the member named after the application code and
@@ -37,7 +37,7 @@ on that stream and hands it `websocket.disconnect` with code 1006 when the
 stream ends or fails (kbus_mixin.py:565-594). kbus is the kajenn-kbus library
 (`import kbus`, pyproject.toml:41). Tests: `tests/core/test_external_application_websocket.py`.
 
-Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#L141), [`on_websocket`](../../../src/kajenn/server.py#L607), [`RemoteApplication`](../../../src/kajenn/remote_application.py#L139), [`_forward_websocket`](../../../src/kajenn/remote_application.py#L317), [`_serve_websocket_stream`](../../../src/kajenn/kbus_mixin.py#L565).
+Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#BaseServer), [`on_websocket`](../../../src/kajenn/server.py#BaseServer.on_websocket), [`RemoteApplication`](../../../src/kajenn/remote_application.py#RemoteApplication), [`_forward_websocket`](../../../src/kajenn/remote_application.py#RemoteApplication._forward_websocket), [`_serve_websocket_stream`](../../../src/kajenn/kbus_mixin.py#KBusMixin._serve_websocket_stream).
 
 ## Page channel binding and the openchannel seam
 
@@ -69,7 +69,7 @@ which socket. Which process serves the message, and how a request is placed
 among several, is left to whatever mounts an application above the core. The
 core names no such extension and imports none.
 
-Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#L212), [`_call_application`](../../../src/kajenn/wsx.py#L370), [`OPENCHANNEL_PATH`](../../../src/kajenn/wsx.py#L97), [`WebSocketRegistry`](../../../src/kajenn/websocket.py#L301), [`bind_page`](../../../src/kajenn/websocket.py#L333), [`get_page_socket`](../../../src/kajenn/websocket.py#L347), [`RoutedApplication`](../../../src/kajenn/routed_application.py#L127), [`bind_kwargs`](../../../src/kajenn/routed_application.py#L389), [`websocket`](../../../src/kajenn/config/elements.py#L175).
+Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#WsxConnection), [`_call_application`](../../../src/kajenn/wsx.py#WsxConnection._call_application), [`OPENCHANNEL_PATH`](../../../src/kajenn/wsx.py#OPENCHANNEL_PATH), [`WebSocketRegistry`](../../../src/kajenn/websocket.py#WebSocketRegistry), [`bind_page`](../../../src/kajenn/websocket.py#WebSocketRegistry.bind_page), [`get_page_socket`](../../../src/kajenn/websocket.py#WebSocketRegistry.get_page_socket), [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication), [`bind_kwargs`](../../../src/kajenn/routed_application.py#RoutedApplication.bind_kwargs), [`websocket`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.websocket).
 
 ## The synchronous pool behind a blocking call
 
@@ -84,7 +84,7 @@ and no private executor.
 differently overrides `run_sync` and every application follows it without
 changing a line. The base implementation makes that override optional.
 
-Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#L141), [`run_sync`](../../../src/kajenn/server.py#L398).
+Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#BaseServer), [`run_sync`](../../../src/kajenn/server.py#BaseServer.run_sync).
 
 ## Server-initiated page messages
 
@@ -108,7 +108,7 @@ server, which knows the protocol, and the registry stays a map. There is no
 sending by identity or by connection, and the registry does not learn a
 socket's identity, because nothing reads either yet.
 
-Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#L141), [`send_message`](../../../src/kajenn/server.py#L445), [`send_serialized_message`](../../../src/kajenn/server.py#L471).
+Claim anchors: [`BaseServer`](../../../src/kajenn/server.py#BaseServer), [`send_message`](../../../src/kajenn/server.py#BaseServer.send_message), [`send_serialized_message`](../../../src/kajenn/server.py#BaseServer.send_serialized_message).
 
 ## WSX handshake, registry and concurrency configuration
 
@@ -222,7 +222,7 @@ recipe, a list on the server) and `max_concurrent`
 defaults to 16 (`WEBSOCKET_MAX_CONCURRENT` in
 [server.py](../../../src/kajenn/server.py)).
 
-Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#L212), [`_open_gate`](../../../src/kajenn/wsx.py#L250), [`_read_messages`](../../../src/kajenn/wsx.py#L309), [`_serve_message`](../../../src/kajenn/wsx.py#L348), [`_request_scope`](../../../src/kajenn/wsx.py#L409), [`WsxResponseEncoder`](../../../src/kajenn/wsx_payload.py#L41), [`ExternalFailure`](../../../src/kajenn/exceptions.py#L142), [`refuse`](../../../src/kajenn/websocket.py#L160), [`demux`](../../../src/kajenn/server.py#L535), [`on_websocket`](../../../src/kajenn/server.py#L607), [`websocket`](../../../src/kajenn/config/elements.py#L175), [`authenticate`](../../../src/kajenn/server.py#L428), [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#L54), [`get_session`](../../../src/kajenn/middleware/session.py#L79), [`HTTPException`](../../../src/kajenn/exceptions.py#L59), [`MiddlewareMixin`](../../../src/kajenn/middleware/__init__.py#L73).
+Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#WsxConnection), [`_open_gate`](../../../src/kajenn/wsx.py#WsxConnection._open_gate), [`_read_messages`](../../../src/kajenn/wsx.py#WsxConnection._read_messages), [`_serve_message`](../../../src/kajenn/wsx.py#WsxConnection._serve_message), [`_request_scope`](../../../src/kajenn/wsx.py#WsxConnection._request_scope), [`WsxResponseEncoder`](../../../src/kajenn/wsx_payload.py#WsxResponseEncoder), [`ExternalFailure`](../../../src/kajenn/exceptions.py#ExternalFailure), [`refuse`](../../../src/kajenn/websocket.py#WebSocket.refuse), [`demux`](../../../src/kajenn/server.py#BaseServer.demux), [`on_websocket`](../../../src/kajenn/server.py#BaseServer.on_websocket), [`websocket`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.websocket), [`authenticate`](../../../src/kajenn/server.py#BaseServer.authenticate), [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#SessionMiddleware), [`get_session`](../../../src/kajenn/middleware/session.py#SessionMiddleware.get_session), [`HTTPException`](../../../src/kajenn/exceptions.py#HTTPException), [`MiddlewareMixin`](../../../src/kajenn/middleware/__init__.py#MiddlewareMixin).
 
 ## WebSocket facade and WSX envelope
 
@@ -265,7 +265,7 @@ not a value a read can return, so it arrives as an exception.
 base64 inside the JSON body (`test_bytes_travel_base64_inside_the_json_body`),
 and the page encodes nothing by hand.
 
-Claim anchors: [`WebSocket`](../../../src/kajenn/websocket.py#L63), [`accept`](../../../src/kajenn/websocket.py#L127), [`WebSocketDisconnect`](../../../src/kajenn/exceptions.py#L178), [`connected`](../../../src/kajenn/websocket.py#L103), [`WsxEnvelope`](../../../src/kajenn/wsx.py#L103), [`data`](../../../src/kajenn/wsx.py#L164), [`encode`](../../../src/kajenn/wsx.py#L191), [`SerializedWsxPayload`](../../../src/kajenn/wsx_payload.py#L20).
+Claim anchors: [`WebSocket`](../../../src/kajenn/websocket.py#WebSocket), [`accept`](../../../src/kajenn/websocket.py#WebSocket.accept), [`WebSocketDisconnect`](../../../src/kajenn/exceptions.py#WebSocketDisconnect), [`connected`](../../../src/kajenn/websocket.py#WebSocket.connected), [`WsxEnvelope`](../../../src/kajenn/wsx.py#WsxEnvelope), [`data`](../../../src/kajenn/wsx.py#WsxEnvelope.data), [`encode`](../../../src/kajenn/wsx.py#WsxEnvelope.encode), [`SerializedWsxPayload`](../../../src/kajenn/wsx_payload.py#SerializedWsxPayload).
 
 ## HTTP middleware and transport boundaries
 
@@ -304,7 +304,7 @@ that carries a WSX message or a raw websocket over it is
 `RemoteApplication` (remote_application.py:171-199, 317-363) and
 `KBusMixin.serve_kbus_call` (kbus_mixin.py:316-343, 565-594).
 
-Claim anchors: [`middleware`](../../../src/kajenn/config/elements.py#L254), [`BaseServer`](../../../src/kajenn/server.py#L141), [`on_websocket`](../../../src/kajenn/server.py#L607), [`MiddlewareMixin`](../../../src/kajenn/middleware/__init__.py#L73), [`serve_kbus_call`](../../../src/kajenn/kbus_mixin.py#L316).
+Claim anchors: [`middleware`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.middleware), [`BaseServer`](../../../src/kajenn/server.py#BaseServer), [`on_websocket`](../../../src/kajenn/server.py#BaseServer.on_websocket), [`MiddlewareMixin`](../../../src/kajenn/middleware/__init__.py#MiddlewareMixin), [`serve_kbus_call`](../../../src/kajenn/kbus_mixin.py#KBusMixin.serve_kbus_call).
 
 ## The handshake cookie an application may require
 
@@ -326,7 +326,7 @@ returns it.
 asked for is [decisions.md](decisions.md) and [design.md](design.md), and the
 code follows in phases 1 to 5.
 
-Claim anchors: [`BaseApplication`](../../../src/kajenn/application.py#L163), [`handshake_cookie`](../../../src/kajenn/application.py#L328), [`WsxConnection`](../../../src/kajenn/wsx.py#L212), [`_open_gate`](../../../src/kajenn/wsx.py#L250).
+Claim anchors: [`BaseApplication`](../../../src/kajenn/application.py#BaseApplication), [`handshake_cookie`](../../../src/kajenn/application.py#BaseApplication.handshake_cookie), [`WsxConnection`](../../../src/kajenn/wsx.py#WsxConnection), [`_open_gate`](../../../src/kajenn/wsx.py#WsxConnection._open_gate).
 
 ## Distance from the design
 

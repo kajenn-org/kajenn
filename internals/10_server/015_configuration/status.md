@@ -34,7 +34,7 @@ a `ShortcutConfiguration` layered over the `default` template
 (`DefaultConfiguration`). `server.config` is a `ConfigurationHandler` on both
 roads.
 
-Claim anchors: [`AsgiConfigBuilder`](../../../src/kajenn/config/builder.py#L61), [`AsgiServerGrammar`](../../../src/kajenn/config/elements.py#L83), [`AsgiServer`](../../../src/kajenn/asgi_server.py#L109), [`site_section`](../../../src/kajenn/config/builder.py#L106), [`storage_mounts`](../../../src/kajenn/config/builder.py#L117), [`BaseConfiguration`](../../../src/kajenn/config/builder.py#L140), [`storage_key`](../../../src/kajenn/config/builder.py#L163), [`server_section`](../../../src/kajenn/config/builder.py#L173), [`DefaultConfig`](../../../src/kajenn/config/default_config.py#L64), [`parents_for`](../../../src/kajenn/config/default_config.py#L75), [`ConfigError`](../../../src/kajenn/config/handler.py#L76), [`ConfigurationHandler`](../../../src/kajenn/config/handler.py#L80), [`ShortcutConfiguration`](../../../src/kajenn/config/templates.py#L84), [`_build_config`](../../../src/kajenn/asgi_server.py#L151).
+Claim anchors: [`AsgiConfigBuilder`](../../../src/kajenn/config/builder.py#AsgiConfigBuilder), [`AsgiServerGrammar`](../../../src/kajenn/config/elements.py#AsgiServerGrammar), [`AsgiServer`](../../../src/kajenn/asgi_server.py#AsgiServer), [`site_section`](../../../src/kajenn/config/builder.py#AsgiConfigBuilder.site_section), [`storage_mounts`](../../../src/kajenn/config/builder.py#AsgiConfigBuilder.storage_mounts), [`BaseConfiguration`](../../../src/kajenn/config/builder.py#BaseConfiguration), [`storage_key`](../../../src/kajenn/config/builder.py#BaseConfiguration.storage_key), [`server_section`](../../../src/kajenn/config/builder.py#BaseConfiguration.server_section), [`DefaultConfig`](../../../src/kajenn/config/default_config.py#DefaultConfig), [`parents_for`](../../../src/kajenn/config/default_config.py#DefaultConfig.parents_for), [`ConfigError`](../../../src/kajenn/config/handler.py#ConfigError), [`ConfigurationHandler`](../../../src/kajenn/config/handler.py#ConfigurationHandler), [`ShortcutConfiguration`](../../../src/kajenn/config/templates.py#ShortcutConfiguration), [`_build_config`](../../../src/kajenn/asgi_server.py#AsgiServer._build_config).
 
 Behavior evidence: `tests/core/test_site_home.py::test_a_homeless_server_has_no_site_section_at_all`, `test_the_home_anchors_the_home_volume_and_site_stays_where_it_was`, `tests/core/test_config.py::test_a_server_composed_in_code_has_one_too`.
 
@@ -84,7 +84,7 @@ The `authentication` section declares the `users`/`tokens` store descriptors
 `credentials` children; it carries no bootstrap password, because the server
 creates no user.
 
-Claim anchors: [`configuration`](../../../src/kajenn/config/elements.py#L93), [`site`](../../../src/kajenn/config/elements.py#L109), [`server`](../../../src/kajenn/config/elements.py#L134), [`websocket`](../../../src/kajenn/config/elements.py#L175), [`kbus`](../../../src/kajenn/config/elements.py#L194), [`authentication`](../../../src/kajenn/config/elements.py#L275), [`channels`](../../../src/kajenn/config/elements.py#L393), [`channel`](../../../src/kajenn/config/elements.py#L399), [`site_kwargs`](../../../src/kajenn/config/handler.py#L83), [`server_kwargs`](../../../src/kajenn/config/handler.py#L92), [`identity_kwargs`](../../../src/kajenn/config/handler.py#L166), [`channels()`](../../../src/kajenn/config/handler.py#L186), [`applications()`](../../../src/kajenn/config/handler.py#L289), [`databases()`](../../../src/kajenn/config/handler.py#L316), [`orchestration_kwargs`](../../../src/kajenn/config/handler.py#L352), [`_server` default class](../../../src/kajenn/config/builder.py#L75), [`RemoteApplication` built](../../../src/kajenn/asgi_server.py#L222).
+Claim anchors: [`configuration`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.configuration), [`site`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.site), [`server`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.server), [`websocket`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.websocket), [`kbus`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.kbus), [`authentication`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.authentication), [`channels`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.channels), [`channel`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.channel), [`site_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.site_kwargs), [`server_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.server_kwargs), [`identity_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.identity_kwargs), [`channels()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.channels), [`applications()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.applications), [`databases()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.databases), [`orchestration_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.orchestration_kwargs), [`_server` default class](../../../src/kajenn/config/builder.py#AsgiConfigBuilder.__getattr__), [`RemoteApplication` built](../../../src/kajenn/asgi_server.py#AsgiServer._configured_kwargs).
 
 Behavior evidence: `tests/core/test_config.py::test_a_second_channels_element_is_rejected_by_the_grammar`, `tests/core/test_server_app_always_present.py::test_the_recipe_customises_without_app_class`, `test_a_class_that_is_not_a_server_application_is_refused`, `tests/core/test_external_application_streaming.py::test_an_answer_larger_than_one_frame_streams_through`.
 
@@ -99,21 +99,21 @@ own subtree, with its own validation and its own lock. Nothing in the core
 commits such a change, and a bounded operation of that kind is not evidence
 that the general live-tree design has landed.
 
-Claim anchors: [`ConfigurationHandler`](../../../src/kajenn/config/handler.py#L80).
+Claim anchors: [`ConfigurationHandler`](../../../src/kajenn/config/handler.py#ConfigurationHandler).
 
 ## Remaining design distance
 
 - **Bootstrap administrator password.** design.md §1 describes a bootstrap
   administrator password declared in a way that rejects a literal. No such
   word exists: the `authentication` element and `identity_kwargs` state that
-  there is no bootstrap password ([elements.py](../../../src/kajenn/config/elements.py#L275), [handler.py](../../../src/kajenn/config/handler.py#L166)).
+  there is no bootstrap password ([elements.py](../../../src/kajenn/config/elements.py#AsgiServerGrammar.authentication), [handler.py](../../../src/kajenn/config/handler.py#ConfigurationHandler.identity_kwargs)).
 - **Survivable application failure.** design.md §5 describes an application
   that declares a failure of its own survivable, so that the server starts
   without it. `BaseApplication` has no such declaration
-  ([application.py](../../../src/kajenn/application.py#L163)).
+  ([application.py](../../../src/kajenn/application.py#BaseApplication)).
   `AsgiServer` instantiates every configured application in `__init__`, and an
   exception there stops the construction
-  ([asgi_server.py](../../../src/kajenn/asgi_server.py#L187)).
+  ([asgi_server.py](../../../src/kajenn/asgi_server.py#AsgiServer._configured_kwargs)).
 
 ## Source and test evidence
 

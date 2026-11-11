@@ -36,7 +36,7 @@ its own `finally`, instead of being cancelled when the grace runs out. Any
 other endless source reads the same awaitable and ends the same way. Measured 2026-09-12 on a real
 `kajenn serve` with an SSE stream open: SIGTERM to process exit, 0.36 s.
 
-Claim anchors: [`Lifespan`](../../../src/kajenn/lifespan.py#L95), [`Lifespan.shutdown`](../../../src/kajenn/lifespan.py#L145), [`shutdown_timeout_seconds`](../../../src/kajenn/server.py#L687), [`UvicornServer`](../../../src/kajenn/server.py#L120), [`start_leaving`](../../../src/kajenn/server.py#L665), [`get_until_leaving`](../../../src/kajenn/server.py#L670).
+Claim anchors: [`Lifespan`](../../../src/kajenn/lifespan.py#Lifespan), [`Lifespan.shutdown`](../../../src/kajenn/lifespan.py#Lifespan.shutdown), [`shutdown_timeout_seconds`](../../../src/kajenn/server.py#BaseServer.shutdown_timeout_seconds), [`UvicornServer`](../../../src/kajenn/server.py#UvicornServer), [`start_leaving`](../../../src/kajenn/server.py#BaseServer.start_leaving), [`get_until_leaving`](../../../src/kajenn/server.py#BaseServer.get_until_leaving).
 
 ## The shutdown hook an application saves through
 
@@ -50,7 +50,7 @@ implements it.
 Session snapshots are separate and can preserve complete live sessions for a
 named instance.
 
-Claim anchors: [`on_shutdown`](../../../src/kajenn/application.py#L377), [`factory`](../../../src/kajenn/__main__.py#L874), [`FACTORY_TARGET`](../../../src/kajenn/reloading.py#L46).
+Claim anchors: [`on_shutdown`](../../../src/kajenn/application.py#BaseApplication.on_shutdown), [`factory`](../../../src/kajenn/__main__.py#factory), [`FACTORY_TARGET`](../../../src/kajenn/reloading.py#FACTORY_TARGET).
 
 ## Relaunch and stop of an external application's process
 
@@ -81,7 +81,7 @@ Tests: `test_a_killed_process_is_relaunched`,
 `tests/core/test_revocation_across_processes.py`. No test exercises the
 backoff values.
 
-Claim anchors: [`SubprocessSpawner`](../../../src/kajenn/spawner.py#L84), [`relaunch`](../../../src/kajenn/spawner.py#L127), [`_relaunch`](../../../src/kajenn/spawner.py#L159), [`stop`](../../../src/kajenn/spawner.py#L177), [`_stop_children`](../../../src/kajenn/kbus_mixin.py#L249), [`_member_lost`](../../../src/kajenn/kbus_mixin.py#L275), [`_relaunch_role`](../../../src/kajenn/kbus_mixin.py#L281).
+Claim anchors: [`SubprocessSpawner`](../../../src/kajenn/spawner.py#SubprocessSpawner), [`relaunch`](../../../src/kajenn/spawner.py#SubprocessSpawner.relaunch), [`_relaunch`](../../../src/kajenn/spawner.py#SubprocessSpawner._relaunch), [`stop`](../../../src/kajenn/spawner.py#SubprocessSpawner.stop), [`_stop_children`](../../../src/kajenn/kbus_mixin.py#KBusMixin._stop_children), [`_member_lost`](../../../src/kajenn/kbus_mixin.py#KBusMixin._member_lost), [`_relaunch_role`](../../../src/kajenn/kbus_mixin.py#KBusMixin._relaunch_role).
 
 ## Remaining restart target
 

@@ -51,8 +51,14 @@ distinguish Design, Decisions, Implementation status and Technical notes.
 The allowlist is `src/**/*.py`, `tests/**/*.py` and root `pyproject.toml`.
 Path normalization and symlink containment reject targets outside their
 intended tree. No file-serving endpoint or arbitrary file path is added.
-Line anchors use `#L<number>`; GitHub ranges open at their first line and both
-endpoints must exist. Query strings and unsupported anchors fail the build.
+A source anchor names a symbol by its dotted qualified name: a class, a
+function or method (`#AuthCore`, `#AuthMixin.authenticate`), or a module or
+class assignment (`#SHUTDOWN_TIMEOUT_SECONDS`). The hook parses the file with
+`ast` on each build and links the view at the line of the `def`, `class` or
+assignment; a decorated definition opens at its `def` or `class` line, not at
+its first decorator. A line number drifts with every edit above it, so
+`#L<number>` and line ranges are rejected. Unknown or ambiguous symbols, query
+strings and unsupported anchors fail the build.
 
 ## Browser verification
 

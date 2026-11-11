@@ -8,6 +8,18 @@ Paths under `src/genro_asgi/` and the test paths in this file quote the verifica
 
 Source report: `kajenn-meta/verification/10_server/020_applications.md`.
 
+## Rows changed by #111
+
+Commit `923b7a2` (#111, 0.9.0) removed `OpenApiApplication`, `McpOpenApiApplication`,
+`McpApplication` and the mounted mode (`routing_class`, `module`, `api_name`). The rows below
+quote that code; their text stays verbatim.
+
+- #21: the `api_name` branch it quotes is removed; the instance form still holds, for example
+  the `_meta` branch in [`RoutedApplication.__init__`](../../../src/kajenn/routed_application.py#RoutedApplication.__init__).
+- #31: made moot. The faces are no longer subclasses: every
+  [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication) carries the
+  `api` face and the MCP face on one router.
+
 Rows of that report whose verdict is `DIVERGE` or `SILENT`, with the matching `Divergences` blocks. Both are verbatim from the report.
 
 ## Table

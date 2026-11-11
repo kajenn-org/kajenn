@@ -302,7 +302,7 @@ corresponding capabilities.
 
 The server application exposes login, users, tokens, tasks and
 monitoring under `/_server/`. Its OpenAPI schema lives at
-`/_server/_meta/schema_json`.
+`/_server/_meta/api/schema_json`.
 
 It is always present: the server mounts it with code `_server` when the
 configuration names none, and the configuration may only customise it

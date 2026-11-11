@@ -76,8 +76,8 @@ class DatabasesSection(RoutingClass):
         except ValueError as error:
             raise HTTPUnprocessableContent(str(error)) from error
 
-    @route(media_type="application/json", auth_rule=DATABASES_RULE)
-    def list(self) -> list[dict[str, Any]]:
+    @route(name="list", media_type="application/json", auth_rule=DATABASES_RULE)
+    def database_list(self) -> list[dict[str, Any]]:
         """Every declared database, in registration order.
 
         ``owner`` follows the name rule: ``None`` for a server database

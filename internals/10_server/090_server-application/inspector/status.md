@@ -22,7 +22,7 @@ The core keeps no list of attachable sections and imports none. Further
 per-application panels remain an open direction, not part of this read
 surface.
 
-Claim anchors: [`ServerApplication`](../../../../src/kajenn/server_app/server_app.py#L207), [`attach_section`](../../../../src/kajenn/server_app/server_app.py#L412), [`sections`](../../../../src/kajenn/server_app/server_app.py#L403).
+Claim anchors: [`ServerApplication`](../../../../src/kajenn/server_app/server_app.py#ServerApplication), [`attach_section`](../../../../src/kajenn/server_app/server_app.py#ServerApplication.attach_section), [`sections`](../../../../src/kajenn/server_app/server_app.py#ServerApplication.sections).
 
 ## Source and test evidence
 
