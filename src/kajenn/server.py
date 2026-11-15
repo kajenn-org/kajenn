@@ -36,7 +36,9 @@ else 404 — ``websocket`` runs
 ``on_websocket``,
 whose DEFAULT is the empty socket of D7 (accepts nothing, closes cleanly with
 code 1000); ``lifespan`` runs the ``Lifespan`` handler (ordered startup,
-reverse shutdown, error isolation). Each http dispatch is registered in the
+reverse shutdown, error isolation). ``applications_broadcast`` calls one
+``@broadcast_hook`` method on every application and collects the answers;
+the shutdown runs ``on_shutdown`` through it. Each http dispatch is registered in the
 ``RequestRegistry`` (``requests``) for the span of the request — the current
 request and the in-flight picture. ``serve()`` boots uvicorn programmatically.
 
@@ -298,6 +300,53 @@ class BaseServer:
             self._enabled.add(app.code)
         else:
             self._disabled[app.code] = MOUNTING
+
+    async def applications_broadcast(
+        self,
+        method_name: str,
+        *args: Any,
+        on_error: Callable[[str, Exception], Any] | None = None,
+        reverse: bool = False,
+        **kwargs: Any,
+    ) -> list[tuple[str, Any]]:
+        """Call ``method_name`` on every application and collect the answers.
+
+        Every application in ``applications`` is asked, in every state,
+        management application included, for the callable of that hook: in
+        registration order, or in reverse order with ``reverse=True``. An
+        application that answers none (its class has no ``@broadcast_hook``
+        with that name) is skipped; when none answers the result is ``[]``. A
+        ``RemoteApplication`` answers with a call to its spawned process. ``args`` and ``kwargs`` reach
+        each call. A sync method is called, an async one awaited.
+
+        An application that raises goes to ``on_error(code, exception)``: when
+        it returns, the broadcast goes on with the next application; when it
+        raises, the broadcast stops and that exception reaches the caller. With
+        ``on_error=None`` the first exception reaches the caller at once.
+
+        Returns:
+            ``[(code, result)]`` for the applications that answered.
+        """
+        apps = list(self.applications.values())
+        if reverse:
+            apps.reverse()
+        answers: list[tuple[str, Any]] = []
+        for app in apps:
+            method = app._broadcast_callable(method_name)
+            if method is None:
+                continue
+            try:
+                if inspect.iscoroutinefunction(method):
+                    result = await method(*args, **kwargs)
+                else:
+                    result = method(*args, **kwargs)
+            except Exception as exception:
+                if on_error is None:
+                    raise
+                on_error(app.code, exception)
+                continue
+            answers.append((app.code, result))
+        return answers
 
     def starts_enabled(self, app: BaseApplication) -> bool:
         """Whether ``app`` answers as soon as it is registered.

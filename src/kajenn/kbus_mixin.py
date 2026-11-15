@@ -38,6 +38,7 @@ bytes, so nothing the handler does to its arguments reaches the caller.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import secrets
 import shutil
@@ -345,7 +346,8 @@ class KBusMixin:
 
     async def serve_kbus_call(self, message: kbus.Message, reply: Any) -> None:
         """The handler of the member: an http or websocket stream, ``joined``
-        from a process, ``forget_credentials`` from the server, or a message to serve.
+        from a process, ``forget_credentials`` or ``remote_call`` from the
+        server, or a message to serve.
 
         ``reply`` is a ``kbus.Stream`` for a forwarded http request or
         websocket, ``None`` for a send: the message is served, nothing answers.
@@ -360,6 +362,9 @@ class KBusMixin:
             self._external_joined(message.meta["from"], message.meta)
             await reply.send(kbus.Message())
             return
+        if message.meta["route"] == "remote_call":
+            await reply.send(await self._serve_remote_call(message))
+            return
         if message.meta["route"] == "forget_credentials":
             if "credential" in message.meta:
                 self.forget_credential(message.meta["credential"])
@@ -371,6 +376,31 @@ class KBusMixin:
         answer = await self.serve_kbus_message(message)
         if reply is not None:
             await reply.send(answer)
+
+    async def _serve_remote_call(self, message: kbus.Message) -> kbus.Message:
+        """Run ``meta["method"]`` on the hosted application and answer with its result.
+
+        Accepted only in an application's dedicated process and only from the
+        server member (``meta["from"]``): the server process, and a spawned
+        process for a call from another member, raise ``kbus.Refused``, so a
+        spawned process cannot make the server or another spawned process run
+        a method. ``args`` and ``kwargs`` arrive as TYTX json; a sync
+        method is called, an async one awaited; the result answers as TYTX
+        json. An exception of the method reaches the caller as a kbus error
+        reply.
+        """
+        if self.kbus_role is None:
+            raise kbus.Refused("remote_call is accepted only in an application's process")
+        if message.meta["from"] != SERVER_MEMBER:
+            raise kbus.Refused("remote_call is accepted only from the server")
+        app = self.applications[self.kbus_role.partition(":")[2]]
+        method = getattr(app, message.meta["method"])
+        call = from_tytx(message.payload.decode(), "json")
+        if inspect.iscoroutinefunction(method):
+            result = await method(*call["args"], **call["kwargs"])
+        else:
+            result = method(*call["args"], **call["kwargs"])
+        return kbus.Message({}, to_tytx(result, "json").encode())
 
     async def run_role(self) -> None:
         """Live as the process of one role: lifespan, join, wait, shutdown.

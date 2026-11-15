@@ -19,6 +19,15 @@ stamped on the scope — travels as ``meta["auth"]``; the scope's channel, its
 ``kajenn.kbus`` flag and its ``genro.page_id``/``genro.reply_path`` travel as
 ``meta["channel"]``, ``meta["kbus"]`` and ``meta["genro"]``.
 
+An application moves to its own process by adding ``spawner`` and nothing
+else: every ``@broadcast_hook`` of the real class (``app_class``) is forwarded
+by the mount to the spawned process with ``remote_call``: the server's
+``applications_broadcast`` asks the mount for each hook at call time and the
+mount answers with a call to ``remote_call``. The
+methods this class defines itself stay local: ``on_startup`` waits for
+``joined`` and ``on_shutdown`` does nothing, because the spawned process runs
+both in its own lifespan.
+
 The kwargs of the declaration are split in two: ``PROXY_OPTIONS`` belong to
 this mount, every other kwarg belongs to the real application, built in the
 spawned process. The mount resolves ``code`` and ``mount`` as the real class
@@ -27,12 +36,13 @@ does, so both processes answer the same URLs.
 
 import asyncio
 import json
+from collections.abc import Callable
 from typing import Any
 
 import kbus
 from genro_tytx import from_tytx, to_tytx
 
-from .application import BaseApplication
+from .application import BaseApplication, is_broadcast_hook
 from .spawner import cancel_and_wait
 from .asgi_endpoint import BufferedAsgiEndpoint
 from .exceptions import ExternalFailure, HTTPException, Redirect, failure_text
@@ -137,7 +147,8 @@ def raised_failure(record: dict[str, Any]) -> Exception:
 
 
 class RemoteApplication(BaseApplication):
-    """Forward one mounted application to the member named after its code."""
+    """The mount of an application hosted in a spawned process, forwarding to
+    the member named after its code."""
 
     #: Read by ``WsxConnection``: the answers this mount hands back were
     #: already adapted at the endpoint that produced them, so they travel on
@@ -163,6 +174,7 @@ class RemoteApplication(BaseApplication):
         super().__init__(
             code=app_kwargs.get("code", app_class.code) or app_class.__name__.lower(),
             mount=app_kwargs.get("mount", app_class.mount), mandatory=mandatory)
+        self.app_class = app_class
         self.spawner = spawner
         self.request_timeout = request_timeout
         self.max_calls = max_calls
@@ -178,6 +190,52 @@ class RemoteApplication(BaseApplication):
     async def on_startup(self) -> None:
         """Return once the spawned process has joined: then the server sends ``ready``."""
         await self._joined.wait()
+
+    def on_shutdown(self) -> None:
+        """Do nothing: the spawned process runs ``on_shutdown`` in its own lifespan."""
+
+    def _broadcast_callable(self, name: str) -> Callable[..., Any] | None:
+        """The callable the broadcast runs for the hook ``name``, or ``None``.
+
+        A name this class defines itself stays local: its bound method when it
+        is a broadcast hook (``on_shutdown``), else ``None``. Otherwise a
+        ``@broadcast_hook`` of ``app_class`` answers with a coroutine function
+        that runs it in the spawned process through ``remote_call``; any other
+        name answers ``None``.
+        """
+        own = type(self).__mro__[:type(self).__mro__.index(BaseApplication)]
+        if any(name in vars(klass) for klass in own):
+            return super()._broadcast_callable(name)
+        if not is_broadcast_hook(self.app_class, name):
+            return None
+
+        async def remote(*args: Any, **kwargs: Any) -> Any:
+            return await self.remote_call(name, *args, **kwargs)
+
+        return remote
+
+    async def remote_call(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+        """Run ``method_name`` on the application hosted in the spawned process.
+
+        The spawned process is the one this mount forwards to, where the real
+        ``app_class`` is built. A kbus call with the ``"remote_call"`` label
+        carries the name in ``meta["method"]`` and ``args``/``kwargs`` as TYTX
+        json; the process calls the method, sync or async, on its application
+        and answers with the result, which comes back decoded from TYTX json.
+
+        Returns:
+            The result of the method in the spawned process.
+
+        Raises:
+            TimeoutError: no answer within ``request_timeout``.
+            kbus.Error: the process is not reachable, or the method raised
+                there (``kbus.RemoteError``).
+        """
+        payload = to_tytx({"args": list(args), "kwargs": kwargs}, "json").encode()
+        async with asyncio.timeout(self.request_timeout):
+            reply = await self.server.kbus_member.call(
+                f"{self.code}.remote_call", kbus.Message({"method": method_name}, payload))
+        return from_tytx(reply.payload.decode(), "json")
 
     async def __call__(self, scope, receive, send) -> None:
         """Forward one request to the member and write its answer as it streams.

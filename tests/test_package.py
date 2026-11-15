@@ -83,6 +83,7 @@ def test_root_exports_public_api():
         "UserStore",
         "WebSocketDisconnect",
         "__version__",
+        "broadcast_hook",
         "router_openapi",
     ]
     assert kajenn.__all__ == expected
