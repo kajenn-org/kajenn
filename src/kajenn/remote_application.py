@@ -25,8 +25,8 @@ by the mount to the spawned process with ``remote_call``: the server's
 ``applications_broadcast`` asks the mount for each hook at call time and the
 mount answers with a call to ``remote_call``. The
 methods this class defines itself stay local: ``on_startup`` waits for
-``joined`` and ``on_shutdown`` does nothing, because the spawned process runs
-both in its own lifespan.
+``joined``, ``on_shutdown`` and ``plugin_configuration`` do nothing, because
+the spawned process runs all three in its own lifespan.
 
 The kwargs of the declaration are split in two: ``PROXY_OPTIONS`` belong to
 this mount, every other kwarg belongs to the real application, built in the
@@ -193,6 +193,9 @@ class RemoteApplication(BaseApplication):
 
     def on_shutdown(self) -> None:
         """Do nothing: the spawned process runs ``on_shutdown`` in its own lifespan."""
+
+    def plugin_configuration(self) -> None:
+        """Do nothing: the spawned process runs ``plugin_configuration`` in its own lifespan."""
 
     def _broadcast_callable(self, name: str) -> Callable[..., Any] | None:
         """The callable the broadcast runs for the hook ``name``, or ``None``.
