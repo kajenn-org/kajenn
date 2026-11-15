@@ -69,8 +69,8 @@ no name, ``db_name`` decides; without it the application's own ``default``
 when it declares one, else the server's ``default``.
 
 A method marked ``@broadcast_hook`` is one ``server.applications_broadcast``
-may call on every application; the mark is read from the first definition of
-the method along the MRO, so an override stays subscribed. ``on_shutdown`` is
+may call on every application; the mark counts on any definition of the
+method along the MRO, so an override stays subscribed. ``on_shutdown`` is
 one.
 
 An app READS that subtree back through ``self.config(path)``, which prefixes
@@ -105,24 +105,23 @@ ERROR_CODES: dict[str, int] = {"strict": 400, "fastapi": 422}
 def broadcast_hook(method: Callable[..., Any]) -> Callable[..., Any]:
     """Mark ``method`` as a hook ``server.applications_broadcast`` may call.
 
-    The mark says nothing else: the method itself decides what it does. It is
-    read from the first definition of the method along the MRO, so an override
-    in a subclass stays subscribed without repeating the decorator.
+    The mark says nothing else: the method itself decides what it does. It
+    counts on any definition of the method along the MRO, so an override in a
+    subclass stays subscribed without repeating the decorator.
     """
     setattr(method, "_kajenn_broadcast_hook", True)  # noqa: B010
     return method
 
 
 def is_broadcast_hook(cls: type, name: str) -> bool:
-    """Whether the first definition of ``name`` along ``cls``'s MRO carries ``@broadcast_hook``.
+    """Whether any definition of ``name`` along ``cls``'s MRO carries ``@broadcast_hook``.
 
-    The first definition is the one in the class nearest the root of the MRO.
+    An override without the decorator stays subscribed, and an unmarked
+    definition in a mixin nearer the root of the MRO does not hide the mark.
     A name no class defines is not a broadcast hook.
     """
-    for klass in reversed(cls.__mro__):
-        if name in klass.__dict__:
-            return bool(getattr(klass.__dict__[name], "_kajenn_broadcast_hook", False))
-    return False
+    return any(getattr(klass.__dict__[name], "_kajenn_broadcast_hook", False)
+               for klass in cls.__mro__ if name in klass.__dict__)
 
 
 # A collection key is a Bag label and a path segment: an identifier, never

@@ -248,7 +248,7 @@ class RoutedApplication(BaseApplication, RoutingClass):
                     f"application {self.code!r}: route {entry['name']!r} is the broadcast "
                     f"hook {method.__name__!r}"
                 )
-        BaseApplication.server.fset(self, value)
+        vars(BaseApplication)["server"].__set__(self, value)
 
     @property
     def route(self) -> Router:

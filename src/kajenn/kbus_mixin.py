@@ -380,15 +380,19 @@ class KBusMixin:
     async def _serve_remote_call(self, message: kbus.Message) -> kbus.Message:
         """Run ``meta["method"]`` on the hosted application and answer with its result.
 
-        Accepted only in an application's dedicated process: the server
-        process raises ``kbus.Refused``, so a spawned process cannot make the
-        server run a method. ``args`` and ``kwargs`` arrive as TYTX json; a sync
+        Accepted only in an application's dedicated process and only from the
+        server member (``meta["from"]``): the server process, and a spawned
+        process for a call from another member, raise ``kbus.Refused``, so a
+        spawned process cannot make the server or another spawned process run
+        a method. ``args`` and ``kwargs`` arrive as TYTX json; a sync
         method is called, an async one awaited; the result answers as TYTX
         json. An exception of the method reaches the caller as a kbus error
         reply.
         """
         if self.kbus_role is None:
             raise kbus.Refused("remote_call is accepted only in an application's process")
+        if message.meta["from"] != SERVER_MEMBER:
+            raise kbus.Refused("remote_call is accepted only from the server")
         app = self.applications[self.kbus_role.partition(":")[2]]
         method = getattr(app, message.meta["method"])
         call = from_tytx(message.payload.decode(), "json")

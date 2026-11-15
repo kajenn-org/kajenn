@@ -156,6 +156,24 @@ async def test_on_error_that_raises_stops_the_broadcast() -> None:
     assert server.applications["gamma"].calls == []
 
 
+class Unmarked:
+    """A mixin nearer the root of the MRO than ``BaseApplication``, no decorator."""
+
+    def on_shutdown(self) -> str:
+        return "mixin"
+
+
+class Mixed(RoutedApplication, Unmarked):
+    def on_shutdown(self) -> str:
+        return "application"
+
+
+async def test_an_unmarked_mixin_definition_does_not_hide_the_mark() -> None:
+    server = await start_server(AsgiServer(applications=[(Mixed, {"code": "mixed"})]))
+    answers = dict(await server.applications_broadcast("on_shutdown"))
+    assert answers["mixed"] == "application"
+
+
 class RoutedHook(Probe, RoutedApplication):
     @route()
     def probe_hook(self, word: str = "", *, suffix: str = "") -> str:
@@ -338,3 +356,53 @@ async def test_on_shutdown_of_a_spawned_application_runs_once(tmp_path) -> None:
     async with running(config):
         pass
     assert len(shutdown_log.read_text().splitlines()) == 1
+
+
+TWO_SPAWNED = '''
+import os
+
+import kbus
+from genro_routes import route
+from genro_tytx import to_tytx
+
+from kajenn import RoutedApplication, broadcast_hook
+from kajenn.config.templates import CONFIGURATION_TEMPLATES
+
+
+class Asker(RoutedApplication):
+    @route()
+    async def ask_other(self):
+        payload = to_tytx({"args": ["w"], "kwargs": {}}, "json").encode()
+        try:
+            await self.server.kbus_member.call(
+                "other.remote_call", kbus.Message({"method": "probe_hook"}, payload))
+        except kbus.Error as failure:
+            return {"refused": type(failure).__name__}
+        return {"refused": None}
+
+
+class Other(RoutedApplication):
+    @broadcast_hook
+    def probe_hook(self, word):
+        return {"word": word, "pid": os.getpid()}
+
+
+class Recipe(CONFIGURATION_TEMPLATES["default"]):
+    def applications_section(self, cfg):
+        apps = cfg.applications()
+        apps.application(code="asker", app_class=Asker, spawner="subprocess",
+                         request_timeout=5)
+        apps.application(code="other", app_class=Other, spawner="subprocess",
+                         request_timeout=5)
+'''
+
+
+async def test_a_spawned_process_cannot_remote_call_another(tmp_path) -> None:
+    config = tmp_path / "config.py"
+    config.write_text(TWO_SPAWNED)
+    async with running(str(config)) as server:
+        refused = await server.kbus_call("/asker/ask_other")
+        answer = await server.applications["other"].remote_call("probe_hook", "w")
+    assert refused == {"refused": "Refused"}
+    assert answer["word"] == "w"
+    assert answer["pid"] != os.getpid()
