@@ -30,6 +30,9 @@ adds:
   sections: ``attach_section`` links a ``RoutingClass`` under ``name``
   (endpoints at ``/_server/<name>/...``) and records it so the introspection
   surfaces (``index`` and ``MonitorSection``) can enumerate them;
+- ``prometheus_metrics`` — the server's own families (build, process,
+  ``WorkPool``, requests in flight, spawned processes), read by the
+  ``metrics`` section at ``/_server/metrics`` with the rest;
 - the PASSWORD login surface: ``login`` (JSON POST → ``UserStore.verify`` →
   ``Avatar`` → ``request.session.attach_avatar``), ``logout`` and the public
   ``login_methods``. There is no login PAGE here: the management pages belong
@@ -75,22 +78,28 @@ at attachment by ``read_declared_login_surface``. Both absent, the defaults
 from __future__ import annotations
 
 import logging
+import os
+import platform
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
+import psutil
 from genro_bag import BagResolver
 from genro_builders.builder import element
 from genro_routes import RoutingClass, route
+from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily, InfoMetricFamily
 
+import kajenn
 from kajenn.application import ApplicationGrammar, BaseApplication
 from kajenn.exceptions import HTTPNotFound
 from kajenn.routed_application import RoutedApplication
 from kajenn.session import Avatar
 from kajenn.well_known import as_list
 
+from ._exposition import families_text
 from .auth_method import AuthMethod, PasswordMethod
 from .oidc_method import OidcMethod
 from .server_sections import (
@@ -98,6 +107,7 @@ from .server_sections import (
     AuthSection,
     DatabasesSection,
     K8sSection,
+    MetricsSection,
     MonitorSection,
     TasksSection,
     TokensSection,
@@ -260,6 +270,7 @@ class ServerApplication(RoutedApplication):
         self.attach_section(DatabasesSection(self), name="databases")
         self.attach_section(K8sSection(self), name="k8s")
         self.attach_section(ApplicationsSection(self), name="applications")
+        self.attach_section(MetricsSection(self), name="metrics")
 
     @BaseApplication.server.setter
     def server(self, value: Any) -> None:
@@ -460,6 +471,62 @@ class ServerApplication(RoutedApplication):
         backoff = policy.get("backoff", LOCKOUT_BACKOFF_SECONDS)
         window = backoff * 2 ** (failed - max_attempts)
         return max(0.0, record.get("last_failed_at", 0.0) + window - time.time())
+
+    def prometheus_metrics(self) -> str:
+        """The server's own families, read at call time, as exposition text.
+
+        Build (kajenn and Python versions), the process (pid, start time, CPU
+        seconds, resident memory, open file descriptors, from psutil), the
+        ``WorkPool`` gauges (``pool.metrics``), the requests in flight
+        (``requests.in_flight``) and, for every started spawner backend, the
+        processes still running.
+        """
+        server = self.server
+        process = psutil.Process()
+        cpu = process.cpu_times()
+        pool = server.pool.metrics
+        spawned = GaugeMetricFamily(
+            "kajenn_spawned_processes",
+            "Processes of external applications still running, per spawner backend.",
+            labels=["spawner"])
+        for backend, spawner in server.kbus_spawners.items():
+            running = sum(1 for item in spawner.processes.values() if item.returncode is None)
+            spawned.add_metric([backend], running)
+        return families_text([
+            InfoMetricFamily(
+                "kajenn_build", "kajenn and Python versions of the server process.",
+                value={"version": kajenn.__version__,
+                       "python_version": platform.python_version()}),
+            GaugeMetricFamily(
+                "kajenn_process_pid", "Process id of the server process.",
+                value=os.getpid()),
+            GaugeMetricFamily(
+                "kajenn_process_start_time_seconds",
+                "Start time of the server process since the Unix epoch, in seconds.",
+                value=process.create_time()),
+            CounterMetricFamily(
+                "kajenn_process_cpu_seconds",
+                "User and system CPU time of the server process, in seconds.",
+                value=cpu.user + cpu.system),
+            GaugeMetricFamily(
+                "kajenn_process_resident_memory_bytes",
+                "Resident memory size of the server process, in bytes.",
+                value=process.memory_info().rss),
+            GaugeMetricFamily(
+                "kajenn_process_open_fds", "Open file descriptors of the server process.",
+                value=process.num_fds()),
+            GaugeMetricFamily(
+                "kajenn_pool_threads", "Threads of the WorkPool, 0 before the first sync call.",
+                value=pool["total"]),
+            GaugeMetricFamily(
+                "kajenn_pool_calls_in_flight",
+                "Calls entered in the WorkPool and not yet exited, queued ones included.",
+                value=pool["busy"]),
+            GaugeMetricFamily(
+                "kajenn_requests_in_flight", "Requests registered on the server right now.",
+                value=server.requests.in_flight),
+            spawned,
+        ])
 
     @route()
     def index(self) -> dict[str, Any]:
