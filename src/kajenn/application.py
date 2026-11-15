@@ -429,6 +429,14 @@ class BaseApplication:
         """
         return {"panel": "generic"}
 
+    def _broadcast_callable(self, name: str) -> Callable[..., Any] | None:
+        """The callable ``applications_broadcast`` runs for the hook ``name``, or ``None``.
+
+        The bound method when ``name`` is a ``@broadcast_hook`` of this class;
+        ``None`` skips the application.
+        """
+        return getattr(self, name) if is_broadcast_hook(type(self), name) else None
+
     def on_startup(self) -> None:
         """Lifecycle hook run at server startup. Override as sync or async."""
 

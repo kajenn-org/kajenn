@@ -77,7 +77,7 @@ from typing import TYPE_CHECKING, Any, Callable, Coroutine, Iterable
 
 import uvicorn
 
-from .application import BaseApplication, is_broadcast_hook
+from .application import BaseApplication
 from .db import DbHandlerBase
 from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
@@ -311,11 +311,12 @@ class BaseServer:
     ) -> list[tuple[str, Any]]:
         """Call ``method_name`` on every application and collect the answers.
 
-        Every application in ``applications`` whose class has ``method_name``
-        as a ``@broadcast_hook`` is called, in every state, management
-        application included: in registration order, or in reverse order with
-        ``reverse=True``. An application without that hook is skipped; when no
-        application has it the answer is ``[]``. ``args`` and ``kwargs`` reach
+        Every application in ``applications`` is asked, in every state,
+        management application included, for the callable of that hook: in
+        registration order, or in reverse order with ``reverse=True``. An
+        application that answers none (its class has no ``@broadcast_hook``
+        with that name) is skipped; when none answers the result is ``[]``. A
+        ``RemoteApplication`` answers with a call to its spawned process. ``args`` and ``kwargs`` reach
         each call. A sync method is called, an async one awaited.
 
         An application that raises goes to ``on_error(code, exception)``: when
@@ -326,13 +327,14 @@ class BaseServer:
         Returns:
             ``[(code, result)]`` for the applications that answered.
         """
-        apps = [app for app in self.applications.values()
-                if is_broadcast_hook(type(app), method_name)]
+        apps = list(self.applications.values())
         if reverse:
             apps.reverse()
         answers: list[tuple[str, Any]] = []
         for app in apps:
-            method = getattr(app, method_name)
+            method = app._broadcast_callable(method_name)
+            if method is None:
+                continue
             try:
                 if inspect.iscoroutinefunction(method):
                     result = await method(*args, **kwargs)

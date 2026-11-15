@@ -21,8 +21,9 @@ stamped on the scope — travels as ``meta["auth"]``; the scope's channel, its
 
 An application moves to its own process by adding ``spawner`` and nothing
 else: every ``@broadcast_hook`` of the real class (``app_class``) is forwarded
-by the mount to the spawned process with ``remote_call``, and the server's
-``applications_broadcast`` reaches it as it reaches any application. The
+by the mount to the spawned process with ``remote_call``: the server's
+``applications_broadcast`` asks the mount for each hook at call time and the
+mount answers with a call to ``remote_call``. The
 methods this class defines itself stay local: ``on_startup`` waits for
 ``joined`` and ``on_shutdown`` does nothing, because the spawned process runs
 both in its own lifespan.
@@ -41,7 +42,7 @@ from typing import Any
 import kbus
 from genro_tytx import from_tytx, to_tytx
 
-from .application import BaseApplication, broadcast_hook, is_broadcast_hook
+from .application import BaseApplication, is_broadcast_hook
 from .spawner import cancel_and_wait
 from .asgi_endpoint import BufferedAsgiEndpoint
 from .exceptions import ExternalFailure, HTTPException, Redirect, failure_text
@@ -145,33 +146,13 @@ def raised_failure(record: dict[str, Any]) -> Exception:
     return HTTPException(record["status"], record["detail"], headers)
 
 
-def _remote_hook(name: str) -> Callable[..., Any]:
-    """A ``@broadcast_hook`` method named ``name`` that runs it in the spawned process."""
-
-    @broadcast_hook
-    async def hook(self: "RemoteApplication", *args: Any, **kwargs: Any) -> Any:
-        return await self.remote_call(name, *args, **kwargs)
-
-    hook.__name__ = hook.__qualname__ = name
-    return hook
-
-
 class RemoteApplication(BaseApplication):
     """Forward one mounted application to the member named after its code.
 
-    The instance is built from a subclass made for ``app_class`` when that
-    class has broadcast hooks this class does not define itself: the subclass
-    has one ``@broadcast_hook`` method per hook, which returns
-    ``remote_call(name, *args, **kwargs)``.
+    The broadcast asks the mount for each hook at call time: a hook of
+    ``app_class`` this class does not define itself runs in the spawned
+    process through ``remote_call``.
     """
-
-    def __new__(cls, *, app_class: type[BaseApplication], **kwargs: Any) -> "RemoteApplication":
-        own = cls.__mro__[:cls.__mro__.index(BaseApplication)]
-        local = {name for klass in own for name in vars(klass)}
-        forwarded = {name: _remote_hook(name) for name in dir(app_class)
-                     if name not in local and is_broadcast_hook(app_class, name)}
-        proxy_class = type(cls.__name__, (cls,), forwarded) if forwarded else cls
-        return super().__new__(proxy_class)
 
     #: Read by ``WsxConnection``: the answers this mount hands back were
     #: already adapted at the endpoint that produced them, so they travel on
@@ -216,6 +197,26 @@ class RemoteApplication(BaseApplication):
 
     def on_shutdown(self) -> None:
         """Do nothing: the spawned process runs ``on_shutdown`` in its own lifespan."""
+
+    def _broadcast_callable(self, name: str) -> Callable[..., Any] | None:
+        """The callable the broadcast runs for the hook ``name``, or ``None``.
+
+        A name this class defines itself stays local: its bound method when it
+        is a broadcast hook (``on_shutdown``), else ``None``. Otherwise a
+        ``@broadcast_hook`` of ``app_class`` answers with a coroutine function
+        that runs it in the spawned process through ``remote_call``; any other
+        name answers ``None``.
+        """
+        own = type(self).__mro__[:type(self).__mro__.index(BaseApplication)]
+        if any(name in vars(klass) for klass in own):
+            return super()._broadcast_callable(name)
+        if not is_broadcast_hook(self.app_class, name):
+            return None
+
+        async def remote(*args: Any, **kwargs: Any) -> Any:
+            return await self.remote_call(name, *args, **kwargs)
+
+        return remote
 
     async def remote_call(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
         """Run ``method_name`` on the application hosted in the spawned process.
