@@ -68,6 +68,11 @@ database, ``chat:foo`` the database ``foo`` of the application ``chat``. With
 no name, ``db_name`` decides; without it the application's own ``default``
 when it declares one, else the server's ``default``.
 
+A method marked ``@broadcast_hook`` is one ``server.applications_broadcast``
+may call on every application; the mark is read from the first definition of
+the method along the MRO, so an override stays subscribed. ``on_shutdown`` is
+one.
+
 An app READS that subtree back through ``self.config(path)``, which prefixes
 ``applications.<code>.`` and delegates to the server's own read door: the app
 never holds a slice of the tree, only an address in it.
@@ -75,6 +80,7 @@ never holds a slice of the tree, only an address in it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
 from genro_builders.builder import Regex, element
@@ -85,7 +91,7 @@ if TYPE_CHECKING:
     from .server import BaseServer
     from .types import Receive, Scope, Send
 
-__all__ = ["ApplicationGrammar", "BaseApplication"]
+__all__ = ["ApplicationGrammar", "BaseApplication", "broadcast_hook", "is_broadcast_hook"]
 
 _MISSING = object()
 
@@ -94,6 +100,29 @@ BODY_MODES: dict[str, bool] = {"decoded": False, "raw": True}
 
 ERROR_CODES: dict[str, int] = {"strict": 400, "fastapi": 422}
 """The ``request(error_codes=...)`` words, as the status a rejected value answers."""
+
+def broadcast_hook(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Mark ``method`` as a hook ``server.applications_broadcast`` may call.
+
+    The mark says nothing else: the method itself decides what it does. It is
+    read from the first definition of the method along the MRO, so an override
+    in a subclass stays subscribed without repeating the decorator.
+    """
+    setattr(method, "_kajenn_broadcast_hook", True)  # noqa: B010
+    return method
+
+
+def is_broadcast_hook(cls: type, name: str) -> bool:
+    """Whether the first definition of ``name`` along ``cls``'s MRO carries ``@broadcast_hook``.
+
+    The first definition is the one in the class nearest the root of the MRO.
+    A name no class defines is not a broadcast hook.
+    """
+    for klass in reversed(cls.__mro__):
+        if name in klass.__dict__:
+            return bool(getattr(klass.__dict__[name], "_kajenn_broadcast_hook", False))
+    return False
+
 
 # A collection key is a Bag label and a path segment: an identifier, never
 # empty, no dots and no spaces. The grammar refuses anything else before
@@ -403,8 +432,12 @@ class BaseApplication:
     def on_startup(self) -> None:
         """Lifecycle hook run at server startup. Override as sync or async."""
 
+    @broadcast_hook
     def on_shutdown(self) -> None:
-        """Lifecycle hook run at server shutdown. Override as sync or async."""
+        """Lifecycle hook run at server shutdown. Override as sync or async.
+
+        The lifespan reaches it through ``server.applications_broadcast``.
+        """
 
     def on_remove(self) -> None:
         """Lifecycle hook run when the server removes this application.

@@ -26,7 +26,7 @@ and MCP surfaces, the tasks grammar and the ASGI type aliases.
 
 from importlib.metadata import version as _distribution_version
 
-from .application import ApplicationGrammar, BaseApplication
+from .application import ApplicationGrammar, BaseApplication, broadcast_hook
 from .asgi_server import AsgiServer
 from .auth import (
     ApiKeyStore,
@@ -135,6 +135,7 @@ __all__ = [
     "UserStore",
     "WebSocketDisconnect",
     "__version__",
+    "broadcast_hook",
     "router_openapi",
 ]
 

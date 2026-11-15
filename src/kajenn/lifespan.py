@@ -20,7 +20,7 @@
 starts the activation of every application registered disabled in a task the
 startup does not wait for (``on_startup``, then ``server.application_ready``);
 on ``lifespan.shutdown`` it cancels the activations still pending and runs
-``on_shutdown`` in REVERSE order. Hooks may
+``on_shutdown`` in REVERSE order, through ``server.applications_broadcast``. Hooks may
 be sync or async, detected with ``inspect.iscoroutinefunction`` at call time.
 The server's database handlers bracket the hooks: each handler's ``open()``
 runs before the first ``on_startup``, its ``close()`` after the last
@@ -229,8 +229,8 @@ class Lifespan:
                 still_in_flight,
                 SHUTDOWN_DRAIN_TIMEOUT_SECONDS,
             )
-        for app in reversed(self._apps()):
-            await self._run_hook(app, "on_shutdown")
+        await self.server.applications_broadcast(
+            "on_shutdown", reverse=True, on_error=self._shutdown_failed)
         await self._close_handlers(self.server.db_handlers.values())
 
     async def _close_handlers(self, handlers: Iterable[DbHandlerBase]) -> None:
@@ -246,11 +246,10 @@ class Lifespan:
         return list(self.server.applications.values())
 
     async def _run_hook(self, app: BaseApplication, name: str) -> None:
-        """Call ``app``'s hook; a raise is logged, the sequence continues.
+        """Call ``app``'s startup hook; a raise is logged, the sequence continues.
 
-        ``FatalBootError`` from ``on_startup`` propagates instead — the hook
-        declared the server must not start. From ``on_shutdown`` it is an
-        ordinary error: nothing may abort the shutdown sequence.
+        ``FatalBootError`` propagates instead — the hook declared the server
+        must not start.
         """
         handler = getattr(app, name)
         try:
@@ -259,8 +258,15 @@ class Lifespan:
             else:
                 handler()
         except FatalBootError:
-            if name == "on_startup":
-                raise
-            self._logger.exception("%s.%s raised", type(app).__name__, name)
+            raise
         except Exception:
             self._logger.exception("%s.%s raised", type(app).__name__, name)
+
+    def _shutdown_failed(self, code: str, exception: Exception) -> None:
+        """The ``on_error`` of the shutdown broadcast: log, and let the next application run.
+
+        ``FatalBootError`` is an ordinary error here: nothing may abort the
+        shutdown sequence.
+        """
+        self._logger.error("%s.on_shutdown raised", type(self.server.applications[code]).__name__,
+                           exc_info=exception)

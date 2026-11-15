@@ -36,7 +36,9 @@ else 404 — ``websocket`` runs
 ``on_websocket``,
 whose DEFAULT is the empty socket of D7 (accepts nothing, closes cleanly with
 code 1000); ``lifespan`` runs the ``Lifespan`` handler (ordered startup,
-reverse shutdown, error isolation). Each http dispatch is registered in the
+reverse shutdown, error isolation). ``applications_broadcast`` calls one
+``@broadcast_hook`` method on every application and collects the answers;
+the shutdown runs ``on_shutdown`` through it. Each http dispatch is registered in the
 ``RequestRegistry`` (``requests``) for the span of the request — the current
 request and the in-flight picture. ``serve()`` boots uvicorn programmatically.
 
@@ -75,7 +77,7 @@ from typing import TYPE_CHECKING, Any, Callable, Coroutine, Iterable
 
 import uvicorn
 
-from .application import BaseApplication
+from .application import BaseApplication, is_broadcast_hook
 from .db import DbHandlerBase
 from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
@@ -298,6 +300,56 @@ class BaseServer:
             self._enabled.add(app.code)
         else:
             self._disabled[app.code] = MOUNTING
+
+    async def applications_broadcast(
+        self,
+        method_name: str,
+        *args: Any,
+        on_error: Callable[[str, Exception], Any] | None = None,
+        reverse: bool = False,
+        **kwargs: Any,
+    ) -> list[tuple[str, Any]]:
+        """Call ``method_name`` on every application and collect the answers.
+
+        Every application in ``applications`` is called, in every state,
+        management application included: in registration order, or in reverse
+        order with ``reverse=True``. ``args`` and ``kwargs`` reach each call. A
+        sync method is called, an async one awaited.
+
+        An application that raises goes to ``on_error(code, exception)``: when
+        it returns, the broadcast goes on with the next application; when it
+        raises, the broadcast stops and that exception reaches the caller. With
+        ``on_error=None`` the first exception reaches the caller at once.
+
+        Returns:
+            ``[(code, result)]`` for the applications that answered.
+
+        Raises:
+            ValueError: ``method_name`` is not a ``@broadcast_hook`` of every
+                application; nothing is called.
+        """
+        apps = list(self.applications.values())
+        if reverse:
+            apps.reverse()
+        for app in apps:
+            if not is_broadcast_hook(type(app), method_name):
+                raise ValueError(
+                    f"{type(app).__name__}.{method_name} is not a broadcast hook")
+        answers: list[tuple[str, Any]] = []
+        for app in apps:
+            method = getattr(app, method_name)
+            try:
+                if inspect.iscoroutinefunction(method):
+                    result = await method(*args, **kwargs)
+                else:
+                    result = method(*args, **kwargs)
+            except Exception as exception:
+                if on_error is None:
+                    raise
+                on_error(app.code, exception)
+                continue
+            answers.append((app.code, result))
+        return answers
 
     def starts_enabled(self, app: BaseApplication) -> bool:
         """Whether ``app`` answers as soon as it is registered.

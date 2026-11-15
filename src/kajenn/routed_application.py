@@ -78,7 +78,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from genro_routes import Router, RoutingClass, is_result_wrapper
 
-from .application import BaseApplication
+from .application import BaseApplication, is_broadcast_hook
 from .applications.mcp import McpTransport
 from .applications.openapi import ApplicationMeta
 from .exceptions import ROUTER_ERRORS, HTTPBadRequest, HTTPException
@@ -223,6 +223,25 @@ class RoutedApplication(BaseApplication, RoutingClass):
     def meta_url(self, path: str) -> str:
         """The public URL of ``_meta/<path>`` of this application."""
         return f"/{self.mount}/{META_SEGMENT}/{path}" if self.mount else f"/{META_SEGMENT}/{path}"
+
+    @BaseApplication.server.setter
+    def server(self, value: Any) -> None:
+        """Assign the owning server once, after checking that no route is a broadcast hook.
+
+        The server assigns it when it registers the application: a route whose
+        method has the name of a ``@broadcast_hook`` raises ``ValueError``
+        naming it, and the application stays unowned.
+        """
+        entries = super().route.nodes(lazy=True, forbidden=True).get("entries", {})
+        for entry in entries.values():
+            method = entry["callable"]
+            if (getattr(method, "__self__", None) is self
+                    and is_broadcast_hook(type(self), method.__name__)):
+                raise ValueError(
+                    f"application {self.code!r}: route {entry['name']!r} is the broadcast "
+                    f"hook {method.__name__!r}"
+                )
+        BaseApplication.server.fset(self, value)
 
     @property
     def route(self) -> Router:

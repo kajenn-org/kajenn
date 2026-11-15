@@ -54,7 +54,8 @@ from .exceptions import HTTPException, KBusCallError, failure_text
 from .http_record import HttpRecord
 from .middleware.errors import ErrorMiddleware
 from .remote_application import (
-    avatar_auth, avatar_from_auth, failure_message, websocket_event, websocket_message,
+    RUN_HOOK_ROUTE, avatar_auth, avatar_from_auth, failure_message, websocket_event,
+    websocket_message,
 )
 from .session.avatar import Avatar
 from .spawner import PARENT_VARIABLE, SPAWNERS, Spawner
@@ -345,7 +346,12 @@ class KBusMixin:
 
     async def serve_kbus_call(self, message: kbus.Message, reply: Any) -> None:
         """The handler of the member: an http or websocket stream, ``joined``
-        from a process, ``forget_credentials`` from the server, or a message to serve.
+        from a process, ``forget_credentials`` or ``run_hook`` from the server,
+        or a message to serve.
+
+        ``run_hook`` runs ``applications_broadcast(meta["hook"])`` in this
+        process and answers with its ``[(code, result)]`` as TYTX json; an
+        exception of the broadcast reaches the caller as a kbus error reply.
 
         ``reply`` is a ``kbus.Stream`` for a forwarded http request or
         websocket, ``None`` for a send: the message is served, nothing answers.
@@ -359,6 +365,10 @@ class KBusMixin:
         if message.meta["route"] == "joined":
             self._external_joined(message.meta["from"], message.meta)
             await reply.send(kbus.Message())
+            return
+        if message.meta["route"] == RUN_HOOK_ROUTE:
+            answers = await self.applications_broadcast(message.meta["hook"])
+            await reply.send(kbus.Message({}, to_tytx(answers, "json").encode()))
             return
         if message.meta["route"] == "forget_credentials":
             if "credential" in message.meta:
