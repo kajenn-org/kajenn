@@ -95,8 +95,9 @@ class FatalBootError(Exception):
     The one exception ``_run_hook`` does not swallow on startup: the startup
     stops at the app that raised it and ``Lifespan.__call__`` answers
     ``lifespan.startup.failed`` (message = the exception text) instead of
-    ``.complete``, so uvicorn exits. On shutdown it gets the ordinary
-    logged-and-continue isolation: nothing may abort the shutdown sequence.
+    ``.complete``, so uvicorn exits. On shutdown the broadcast's ``on_error``
+    (``_shutdown_failed``) logs it like any other error and the sequence goes
+    on: nothing may abort the shutdown sequence.
     """
 
 
@@ -163,7 +164,7 @@ class Lifespan:
         try:
             for app in self._apps():
                 if self.server.is_enabled(app.code):
-                    await self._run_hook(app, "on_startup")
+                    await self._run_hook(app)
                 else:
                     self.start_activation(app)
         except FatalBootError:
@@ -245,13 +246,13 @@ class Lifespan:
         """The server's applications, in registration order."""
         return list(self.server.applications.values())
 
-    async def _run_hook(self, app: BaseApplication, name: str) -> None:
-        """Call ``app``'s startup hook; a raise is logged, the sequence continues.
+    async def _run_hook(self, app: BaseApplication) -> None:
+        """Call ``app.on_startup``; a raise is logged, the sequence continues.
 
         ``FatalBootError`` propagates instead — the hook declared the server
         must not start.
         """
-        handler = getattr(app, name)
+        handler = app.on_startup
         try:
             if inspect.iscoroutinefunction(handler):
                 await handler()
@@ -260,7 +261,7 @@ class Lifespan:
         except FatalBootError:
             raise
         except Exception:
-            self._logger.exception("%s.%s raised", type(app).__name__, name)
+            self._logger.exception("%s.on_startup raised", type(app).__name__)
 
     def _shutdown_failed(self, code: str, exception: Exception) -> None:
         """The ``on_error`` of the shutdown broadcast: log, and let the next application run.

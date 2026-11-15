@@ -101,6 +101,7 @@ BODY_MODES: dict[str, bool] = {"decoded": False, "raw": True}
 ERROR_CODES: dict[str, int] = {"strict": 400, "fastapi": 422}
 """The ``request(error_codes=...)`` words, as the status a rejected value answers."""
 
+
 def broadcast_hook(method: Callable[..., Any]) -> Callable[..., Any]:
     """Mark ``method`` as a hook ``server.applications_broadcast`` may call.
 

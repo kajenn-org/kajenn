@@ -237,7 +237,9 @@ class Billing(Probe, RoutedApplication):
 
 
 class Local(RoutedApplication):
-    pass
+    @broadcast_hook
+    def local_hook(self):
+        return {"code": self.code}
 
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
@@ -306,6 +308,15 @@ async def test_a_hook_that_raises_in_the_process_reaches_on_error(tmp_path) -> N
     assert code == "billing"
     assert isinstance(failure, kbus.RemoteError)
     assert "LookupError: failing in the process" in str(failure)
+
+
+async def test_a_spawned_application_without_the_hook_is_skipped(tmp_path) -> None:
+    config, _ = write_recipe(tmp_path)
+    async with running(config) as server:
+        only_local = await server.applications_broadcast("local_hook")
+        nobody = await server.applications_broadcast("ask_server")
+    assert only_local == [("local", {"code": "local"})]
+    assert nobody == []
 
 
 async def test_remote_call_returns_the_result_of_the_method(tmp_path) -> None:

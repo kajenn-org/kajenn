@@ -147,12 +147,8 @@ def raised_failure(record: dict[str, Any]) -> Exception:
 
 
 class RemoteApplication(BaseApplication):
-    """Forward one mounted application to the member named after its code.
-
-    The broadcast asks the mount for each hook at call time: a hook of
-    ``app_class`` this class does not define itself runs in the spawned
-    process through ``remote_call``.
-    """
+    """The mount of an application hosted in a spawned process, forwarding to
+    the member named after its code."""
 
     #: Read by ``WsxConnection``: the answers this mount hands back were
     #: already adapted at the endpoint that produced them, so they travel on
