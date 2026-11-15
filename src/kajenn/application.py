@@ -70,8 +70,8 @@ when it declares one, else the server's ``default``.
 
 A method marked ``@broadcast_hook`` is one ``server.applications_broadcast``
 may call on every application; the mark counts on any definition of the
-method along the MRO, so an override stays subscribed. ``on_shutdown`` is
-one.
+method along the MRO, so an override stays subscribed. ``on_shutdown`` and
+``plugin_configuration`` are two.
 
 An app READS that subtree back through ``self.config(path)``, which prefixes
 ``applications.<code>.`` and delegates to the server's own read door: the app
@@ -162,11 +162,13 @@ class DatabaseGrammar:
 class ApplicationGrammar(DatabaseGrammar):
     """The configuration grammar every application inherits.
 
-    Three elements: ``parameters``, for the free options a plain app needs — an
+    Four elements: ``parameters``, for the free options a plain app needs — an
     application with nothing of its own still has a mountable grammar (an EMPTY
     grammar class is rejected by builders) — ``request``, the two options
-    every application has about the requests the core serves for it, and
-    ``databases``, the application's own databases (from ``DatabaseGrammar``).
+    every application has about the requests the core serves for it,
+    ``databases``, the application's own databases (from ``DatabaseGrammar``),
+    and ``plugin_configuration``, the plugin options this installation gives
+    to the routes of the application.
     A richer app subclasses this to add its own vocabulary.
     """
 
@@ -188,6 +190,27 @@ class ApplicationGrammar(DatabaseGrammar):
         validation is a 400 like every other failure the core judges — 422
         belongs to the handler, for a domain rule) or ``"fastapi"`` (that one
         case answers 422, the convention a FastAPI client expects).
+        """
+
+    @element(sub_tags="configure")
+    def plugin_configuration(self, plugin: Annotated[str, Regex(CODE_PATTERN)]) -> None:
+        """The options this installation gives to the routes for one plugin.
+
+        ``plugin`` names a plugin of the application router (``auth``,
+        ``channel``, ``openapi``, one armed by the ``plugins`` section). Each
+        ``configure`` child gives its options to one route or to several.
+        """
+
+    @element(parent_tags="plugin_configuration", sub_tags="")
+    def configure(self, route: str, **options: Any) -> None:
+        """The options of the block's plugin for ``route``.
+
+        ``route`` is the path of a route relative to the application, as in
+        the URL after the mount and without a leading slash
+        (``"products/list"``), or several such paths separated by commas.
+        ``options`` are the parameters of that plugin's ``configure``
+        (``rule`` for ``auth``, ``channels`` for ``channel``): they replace
+        what ``@route(...)`` wrote for those routes.
         """
 
 
@@ -436,6 +459,17 @@ class BaseApplication:
         ``None`` skips the application.
         """
         return getattr(self, name) if is_broadcast_hook(type(self), name) else None
+
+    @broadcast_hook
+    def plugin_configuration(self) -> None:
+        """Hook that gives the routes the plugin options of this installation.
+
+        The server reaches it through ``applications_broadcast`` at startup,
+        before any ``on_startup``; alone, on an application added to a running
+        server and on one whose ``plugin_configuration`` changed. The default
+        does nothing: an application without a router has no plugin to
+        configure. Override as sync or async.
+        """
 
     def on_startup(self) -> None:
         """Lifecycle hook run at server startup. Override as sync or async."""

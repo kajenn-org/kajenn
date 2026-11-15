@@ -265,6 +265,40 @@ class RoutedApplication(BaseApplication, RoutingClass):
             arm_router(router)
         return router
 
+    def plugin_configuration(self) -> None:
+        """Give the routes the plugin options the configuration declares.
+
+        Each ``configure`` line of this application's ``plugin_configuration``
+        blocks is applied to every route it names, in the order written: the
+        value replaces what ``@route(...)`` wrote for that route. Nothing is
+        read when the application has no configured server.
+        """
+        handler = getattr(self.server, "config", None)
+        if handler is None:
+            return
+        for plugin, routes, options in handler.plugin_configuration(self.code):
+            for path in routes.split(","):
+                self.configure_route_plugin(plugin, path.strip(), options)
+
+    def configure_route_plugin(self, plugin: str, path: str, options: dict[str, Any]) -> None:
+        """Write ``options`` of ``plugin`` on the route at ``path``.
+
+        ``path`` is relative to the application (``"products/list"``). The
+        write is one ``routing.configure`` of genro-routes on the routing
+        class that owns the route. A write genro-routes refuses — no such
+        route, no such plugin on the router, an option the plugin does not
+        accept — is logged as a warning and nothing else happens.
+        """
+        parent, _, name = path.rpartition("/")
+        branch = self.route.router_at_path(parent)
+        try:
+            if branch is None:
+                raise KeyError(f"No routing class at {parent!r}")
+            branch.instance.routing.configure(f"{plugin}/{name}", **options)
+        except (KeyError, AttributeError, ValueError) as refused:
+            logger.warning("application %r: %s options of route %r not applied: %s",
+                           self.code, plugin, path, refused)
+
     def active_well_known(self) -> dict[str, str]:
         """The declared well-known paths, each route checked against the router.
 

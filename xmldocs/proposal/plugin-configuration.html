@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<!-- generated from plugin-configuration.xml by xmldocs: do not edit, edit the XML -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Plugin configuration of routes in the recipe</title><style>
+:root {
+  --bg: #fbfaf7; --fg: #1d1d1b; --muted: #6b6a66; --line: #e2dfd8; --panel: #f3f1ec;
+  --code-bg: #f0eee8; --accent: #2f5d8a;
+  --ok: #2e7d4f; --warn: #a86b00; --bad: #b23b3b; --info: #2f5d8a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #18181a; --fg: #e8e6e1; --muted: #9a9890; --line: #33332f; --panel: #212123;
+    --code-bg: #26262a; --accent: #8fb4dc;
+    --ok: #6cc28f; --warn: #e0a940; --bad: #e57373; --info: #8fb4dc;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #18181a; --fg: #e8e6e1; --muted: #9a9890; --line: #33332f; --panel: #212123;
+  --code-bg: #26262a; --accent: #8fb4dc;
+  --ok: #6cc28f; --warn: #e0a940; --bad: #e57373; --info: #8fb4dc;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 4px 0 8px; }
+h2 { font-size: 1.35rem; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 1.12rem; margin: 28px 0 8px; }
+h4 { font-size: 1rem; margin: 20px 0 6px; }
+a { color: var(--accent); }
+code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg);
+  padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+pre { margin: 0; overflow-x: auto; }
+pre code { display: block; padding: 12px 14px; background: none; }
+figure { margin: 16px 0; }
+figure.code { background: var(--code-bg); border-radius: 8px; }
+figure.code figcaption { font-size: 0.8rem; color: var(--muted); padding: 8px 14px 0; }
+figure.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+figure.embed { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+figure.embed figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 8px; }
+figure.embed svg { max-width: 100%; height: auto; }
+.tag-script { color: var(--bad); }
+figure.diagram figcaption { font-size: 0.85rem; color: var(--muted); text-align: center; margin-top: 8px; }
+figure.diagram svg { max-width: 100%; height: auto; }
+.diagram-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .diagram-light { display: none; }
+  :root:not([data-theme="light"]) .diagram-dark { display: block; }
+}
+:root[data-theme="dark"] .diagram-light { display: none; }
+:root[data-theme="dark"] .diagram-dark { display: block; }
+.doc-type { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: var(--muted); }
+.doc-meta { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 0.9rem; }
+.muted { color: var(--muted); font-size: 0.9em; }
+.box { border: 1px solid var(--line); border-left: 4px solid var(--line); background: var(--panel);
+  border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+.box-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.box-foot { margin-top: 6px; }
+.box.fact { border-left-color: var(--info); }
+.box.rule-must { border-left-color: var(--ok); }
+.box.rule-must-not { border-left-color: var(--bad); }
+.box.rule-should { border-left-color: var(--warn); }
+.box.limit { border-left-color: var(--warn); }
+.box.decision-open, .box.decision-proposed { border-left-color: var(--warn); }
+.box.decision-decided { border-left-color: var(--ok); }
+.box.decision-rejected { border-left-color: var(--bad); }
+.box.example { border-left-color: var(--accent); }
+.box.done { border-left-color: var(--ok); }
+.tag-done { color: var(--ok); }
+.tag-doing, .tag-in-progress { color: var(--info); }
+.tag-todo { color: var(--muted); }
+.tag-approved { color: var(--ok); }
+.source { font-size: 0.8rem; }
+.why { margin-top: 4px; }
+.tag { display: inline-block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; padding: 1px 7px; border-radius: 10px; border: 1px solid currentColor; color: var(--muted); }
+.tag-test, .tag-run, .tag-must, .tag-decided, .tag-accepted { color: var(--ok); }
+.tag-read, .tag-review { color: var(--info); }
+.tag-should, .tag-open, .tag-proposed, .tag-draft { color: var(--warn); }
+.tag-must-not, .tag-rejected { color: var(--bad); }
+.options li { margin: 6px 0; }
+.options li.chosen b { color: var(--ok); }
+.choice { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.step-num { color: var(--muted); font-weight: 400; margin-right: 6px; }
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
+caption { text-align: left; color: var(--muted); padding-bottom: 6px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--panel); }
+  </style></head><body><main><header class="doc-head"><div class="doc-type">Proposal</div><h1>Plugin configuration of routes in the recipe</h1><div class="doc-meta"><span>proposal/plugin-configuration</span><span>2026-11-15</span><span>Giovanni Porcari</span><span class="tag tag-draft">draft</span></div></header><section class="part problem"><h2>Problem</h2>
+    <p>The code of an application sets the plugin options of each route in <code>@route(...)</code>: the <code>auth</code> rule, the <code>channel</code> channels, the <code>openapi</code> options, the <code>env</code> requirements. Every installation of that application gets the same values.</p>
+    <p>An installation cannot change them. The <code>plugins</code> section of the recipe switches plugins on for all the applications together and does not address a route. Changing an option at runtime would need a management application that does not exist.</p>
+    <p>Each installation must be able to decide the rules of its routes in its recipe, without a management application.</p>
+  </section><section class="part current"><h2>Current state</h2>
+    <section class="section"><h3>kajenn today</h3>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/routed_application.py:180</code><span class="muted">2026-11-15</span></div><div><code>RoutedApplication.__init__</code> plugs <code>auth</code>, <code>channel</code>, <code>pydantic</code> and <code>openapi</code> on the application router. The only option it sets is <code>channels</code> at router level. Nothing is read from the recipe.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/config/elements.py:440</code><span class="muted">2026-11-15</span></div><div>The <code>plugins</code> section of the recipe has <code>plugin</code> children. Each one switches a plugin on and carries the options handed to <code>router.plug(code, **options)</code>. The section belongs to the server and applies to every routed application.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/routed_application.py:228</code><span class="muted">2026-11-15</span></div><div>The plugins of the <code>plugins</code> section are plugged by <code>server.arm_router</code> on the first access to <code>route</code> made once a server owns the application.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/application.py:133</code><span class="muted">2026-11-15</span></div><div><code>ApplicationGrammar</code> is the grammar every application inherits. Its elements are <code>parameters</code>, <code>request</code> and <code>databases</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/application.py:258</code><span class="muted">2026-11-15</span></div><div>An application reads its own part of the recipe at <code>applications.&lt;code&gt;.&lt;path&gt;</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/config/handler.py:299</code><span class="muted">2026-11-15</span></div><div>The recipe can declare an <code>application</code> element with code <code>_server</code>. It customises the management application and its class must be <code>ServerApplication</code> or a subclass.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server_app/server_app.py:210</code><span class="muted">2026-11-15</span></div><div><code>ServerApplication</code> is a <code>RoutedApplication</code> with code <code>_server</code>. Its sections (<code>users</code>, <code>tokens</code>, <code>tasks</code>, <code>monitor</code>, <code>databases</code>, <code>k8s</code>, <code>applications</code>) are attached with <code>add_branches</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server_app/server_app.py:252</code><span class="muted">2026-11-15</span></div><div>The <code>auth</code> section of <code>_server</code> is attached inside the constructor, when the first login method is registered.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/lifespan.py:164</code><span class="muted">2026-11-15</span></div><div>The lifespan startup runs <code>on_startup</code> of the applications in registration order. The activation of an application is <code>on_startup</code>, then <code>ready</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/asgi_server.py:361</code><span class="muted">2026-11-15</span></div><div>In the main process only <code>_server</code> answers at once; every other application waits for its <code>ready</code>. In the dedicated process of an application the applications answer at once.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/remote_application.py:153</code><span class="muted">2026-11-15</span></div><div>An application declared with <code>spawner</code> is a <code>RemoteApplication</code> in the main process. The real application class is built in the spawned process, from the same recipe.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/asgi_server.py:190</code><span class="muted">2026-11-15</span></div><div>An application added to a running server is built from its <code>application</code> node, registered and then activated.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/asgi_server.py:181</code><span class="muted">2026-11-15</span></div><div>The configuration of a running server is a genro-bag tree. The server subscribes to its <code>applications</code> branch with <code>subscribe(id, insert=..., delete=...)</code>: a node written there adds an application, a node taken away removes it. genro-bag <code>subscribe</code> also takes <code>update</code> and <code>any</code> callbacks.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/kbus_mixin.py:202</code><span class="muted">2026-11-15</span></div><div>A spawned process loads its configuration from a file or a template when it starts. In <code>kbus_mixin.py</code>, <code>spawner.py</code> and <code>remote_application.py</code> no code sends it a later change of the configuration.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:276</code><span class="muted">2026-11-15</span></div><div><code>register_application</code> is a sync method.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/routed_application.py:401</code><span class="muted">2026-11-15</span></div><div><code>discover</code> returns the <code>nodes()</code> tree filtered by the channel of the request and by the tags of the caller: an entry the caller may not execute is not listed.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/plugins/openapi/translator.py:230</code><span class="muted">2026-11-15</span></div><div>The OpenAPI document derives <code>security</code> of an operation from the <code>auth</code> rule in force on the entry.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-run">run</span><code class="source">src/kajenn/config/elements.py:451</code><span class="muted">2026-11-15</span></div><div>A value written without a name in a recipe element becomes the value of its node; the keywords become its attributes. <code>shop.parameters("x", currency="EUR")</code> gives a node with value <code>"x"</code> and attribute <code>currency</code>. A node that receives children loses that value: after <code>cfg.plugins("x").plugin(code="logging")</code> the value of the <code>plugins</code> node is its children and <code>"x"</code> is gone. <code>plugins.plugin("logging")</code> raises <code>ValueError</code>: the collection key needs the attribute <code>code</code>.</div></div>
+    </section>
+
+    <section class="section"><h3>genro-routes 0.30.1</h3>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">genro_routes/core/routing.py:453</code><span class="muted">2026-11-15</span></div><div><code>routing.configure(target, **options)</code> acts on the router of one routing class. <code>target</code> is <code>"&lt;plugin&gt;"</code> for the router level or <code>"&lt;plugin&gt;/&lt;selector&gt;"</code> for its entries. It is also a dict with the key <code>target</code>, or a list of such dicts. <code>options</code> are the parameters of the <code>configure</code> method of that plugin.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-run">run</span><code class="source">genro_routes/core/routing.py:420</code><span class="muted">2026-11-15</span></div><div>The selector is a glob matched against the entry names of that router, several separated by commas. It does not descend into the sections. A selector that matches no entry raises <code>KeyError</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-run">run</span><code class="source">genro_routes/core/routing.py:488</code><span class="muted">2026-11-15</span></div><div>A plugin that is not on the router raises <code>AttributeError</code>. An option the plugin does not know raises a pydantic <code>ValidationError</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-run">run</span><code class="source">genro_routes/plugins/auth.py:139</code><span class="muted">2026-11-15</span></div><div><code>routing.configure("auth/&lt;name&gt;", rule="")</code> opens an entry whose code declares an <code>auth_rule</code>. A non-empty <code>rule</code> replaces the one of the code.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-run">run</span><code class="source">genro_routes/plugins/_base_plugin.py:202</code><span class="muted">2026-11-15</span></div><div>A value written at router level (<code>routing.configure("auth", rule=...)</code>) applies to the entries that declare none. An entry that declares its own value in the code keeps it.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-run">run</span><code class="source">genro_routes/core/routing.py:431</code><span class="muted">2026-11-15</span></div><div><code>routing.configure("?")</code> returns the description of the router: for each plugin the router-level <code>config</code> and the value in force on each entry (<code>overrides</code>), then the sections under <code>routers</code>. It reports the values in force and does not say where a value comes from. Its shape is not the shape <code>routing.configure</code> takes as input.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">genro_routes/plugins/auth.py:112</code><span class="muted">2026-11-15</span></div><div>Parameters of <code>configure</code>: <code>auth</code> takes <code>rule</code>, <code>channel</code> takes <code>channels</code>, <code>env</code> takes <code>requires</code>, <code>pydantic</code> takes <code>disabled</code>. The kajenn <code>openapi</code> plugin takes <code>method</code>, <code>tags</code>, <code>summary</code>, <code>description</code>, <code>deprecated</code>, <code>security_scheme</code>, <code>security</code>.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-run">run</span><code class="source">genro-org/genro-routes#74</code><span class="muted">2026-11-15</span></div><div>When the routes are resolved before a plugin class is registered, the options written in <code>@route(...)</code> for that plugin are lost. A <code>routing.configure</code> call made after the plugin is plugged writes the option and the plugin applies it.</div></div>
+    </section>
+
+    <section class="section"><h3>applications_broadcast</h3>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/server.py:304</code><span class="muted">2026-11-15</span></div><div>On <code>origin/develop</code> f9487ec (PR 147, issue 142) <code>applications_broadcast(method_name, *args, on_error=None, reverse=False, **kwargs)</code> is an async method of the server. It calls the <code>@broadcast_hook</code> of that name on every application, in registration order, and returns <code>[(code, result)]</code>. An application whose class has no such hook is skipped. An application that raises goes to <code>on_error(code, exception)</code>; with <code>on_error=None</code> the first exception reaches the caller.</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/application.py:116</code><span class="muted">2026-11-15</span></div><div>On <code>origin/develop</code> f9487ec a method is a broadcast hook when any definition of its name along the MRO carries <code>@broadcast_hook</code>. A route whose method has the name of a broadcast hook raises <code>ValueError</code> when the application is registered (<code>routed_application.py:239</code>).</div></div>
+      <div class="box fact"><div class="box-head"><span class="tag tag-read">read</span><code class="source">src/kajenn/remote_application.py:196</code><span class="muted">2026-11-15</span></div><div>On <code>origin/develop</code> f9487ec the <code>RemoteApplication</code> of an application declared with <code>spawner</code> forwards every <code>@broadcast_hook</code> of the real class to the spawned process with <code>remote_call</code>, a kbus call with a timeout. The names <code>RemoteApplication</code> defines itself stay local: <code>on_startup</code> waits for <code>joined</code>, <code>on_shutdown</code> does nothing, because the spawned process runs both in its own lifespan.</div></div>
+    </section>
+  </section><section class="part solution"><h2>Proposed solution</h2>
+    <section class="section"><h3>Behaviour</h3>
+      <ul>
+        <li>The recipe of an installation names a route of an application and writes the options of one plugin for it.</li>
+        <li>The value of the recipe replaces the value written in <code>@route(...)</code> for that route. The two are not combined.</li>
+        <li>A route the recipe does not name keeps the value of the code.</li>
+        <li>The recipe can close a route the code leaves open and open a route the code closes.</li>
+        <li>Two installations of the same code have different rules.</li>
+        <li>No management application is needed: the recipe is enough.</li>
+        <li>A route named in the recipe that does not exist gives at most a warning. The boot goes on.</li>
+        <li>The plugin configuration can change on a running server, like other parts of the configuration. A subscription updates the plugins when it changes.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>Recipe</h3>
+      <p>The example application <code>Shop</code> attaches a section <code>products</code> with three routes. In the code <code>list</code> has no rule; <code>insert</code> and <code>delete</code> have <code>auth_rule="shop_admin"</code>. Their URLs are <code>/shop/products/list</code>, <code>/shop/products/insert</code>, <code>/shop/products/delete</code>.</p>
+      <figure class="code"><figcaption>python</figcaption><pre><code>shop = cfg.applications().application(code="shop", app_class=Shop)
+
+shop_plugin_auth = shop.plugin_configuration(plugin="auth")
+shop_plugin_auth.configure(route="products/list,products/insert", rule="staff")
+shop_plugin_auth.configure(route="products/delete", rule="boss")
+
+shop_plugin_channel = shop.plugin_configuration(plugin="channel")
+shop_plugin_channel.configure(route="products/list", channels="api,mcp")</code></pre></figure>
+      <ul>
+        <li><code>plugin_configuration</code> is an element of <code>ApplicationGrammar</code>: every application has it, <code>_server</code> included. It is written only under an <code>application</code> element.</li>
+        <li>One <code>plugin_configuration</code> block names one plugin. The plugins are configured separately.</li>
+        <li>Each <code>configure</code> line carries <code>route</code> and the parameters of the <code>configure</code> method of that plugin. <code>route</code> is the path of one route, or the paths of several routes separated by commas. Each path is complete, relative to the application, written as in the URL after the mount, without a leading slash.</li>
+        <li>Every plugin present on the router of the application can be configured, a plugin registered from outside included.</li>
+        <li><code>_server</code> is configured by declaring <code>application(code="_server", app_class=ServerApplication)</code> in the recipe and writing <code>plugin_configuration</code> under it.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>What kajenn calls</h3>
+      <p>kajenn adds no syntax of its own for the options: each <code>configure</code> line becomes one call of <code>routing.configure</code> of genro-routes on the routing class that owns the route.</p>
+      <figure class="code"><figcaption>python</figcaption><pre><code>shop.products.routing.configure("auth/list,insert", rule="staff")
+shop.products.routing.configure("auth/delete", rule="boss")
+shop.products.routing.configure("channel/list", channels="api,mcp")</code></pre></figure>
+      <ul>
+        <li>The plugin of the block gives the first part of the target. The path gives the routing class and the name of the entry.</li>
+        <li>After these calls <code>/shop/products/list</code> asks for the tag <code>staff</code> and answers on the channel <code>mcp</code> too; <code>/shop/products/delete</code> asks for <code>boss</code> instead of <code>shop_admin</code>; <code>/shop/products/insert</code> asks for <code>staff</code> instead of <code>shop_admin</code>.</li>
+        <li>A <code>KeyError</code> of <code>routing.configure</code> (no entry with that name) becomes the warning.</li>
+        <li>A route of a section attached after the hook ran does not exist when the hook runs: its line is a line that names a route that does not exist.</li>
+        <li>A line that names a plugin that is not on the router, or an option the plugin does not know, is not applied either. Nothing stops.</li>
+      </ul>
+      <div class="box rule rule-must-not"><div class="box-head"><span class="tag tag-must-not">must-not</span></div><div>kajenn adds no defensive code against errors in the plugin configuration: no boot stop, no restore of earlier values, no handling of a hook that refuses.</div><div class="muted why">Defensive code prevents only the stupid errors; the dangerous ones pass anyway. An error has consequences for who made it.</div></div>
+    </section>
+
+    <section class="section"><h3>The plugin_configuration hook</h3>
+      <ul>
+        <li>Every application has a hook <code>plugin_configuration</code>, marked <code>@broadcast_hook</code> (<a href="https://github.com/kajenn-org/kajenn/issues/142">kajenn-org/kajenn#142</a>).</li>
+        <li>The server calls it on every application with <code>applications_broadcast("plugin_configuration")</code>.</li>
+        <li>The default does nothing. <code>RoutedApplication</code> reads its <code>plugin_configuration</code> blocks from the recipe and makes the calls above. An application with no block in the recipe does nothing.</li>
+        <li>A subclass redefines the hook to refuse a configuration or to take the export of its router before the configuration is applied.</li>
+        <li>No hook runs after the configuration is applied.</li>
+        <li>For an application declared with <code>spawner</code> the hook runs in the spawned process, where the application is built. Who calls it there at boot is open (<a class="ref" href="#d-spawned-boot">d-spawned-boot</a>).</li>
+      </ul>
+      <figure class="code"><figcaption>python</figcaption><pre><code>class Shop(RoutedApplication):
+    def plugin_configuration(self):
+        self.code_configuration = self.routing.configure("?")
+        super().plugin_configuration()</code></pre></figure>
+    </section>
+
+    <section class="section"><h3>Changes on a running server</h3>
+      <ul>
+        <li>The server calls the hook in the lifespan startup, before <code>on_startup</code>: no request arrives before the configuration.</li>
+        <li>After the boot the <code>plugin_configuration</code> blocks of an application can change in the configuration of the running server.</li>
+        <li>A change on a running server is a new configuration. There are no actions that insert or delete a single line: the new configuration only says which values there are.</li>
+        <li>A subscription updates the plugins of that application with the values of the new configuration.</li>
+        <li>To give a route its code value back, the new configuration writes that value.</li>
+        <li>An application declared with <code>spawner</code> needs nothing specific to plugins. Any change of the configuration, of plugins or of anything else, is carried to the spawned process, which applies it to its own configuration. Its own subscriptions fire there, the one of <code>plugin_configuration</code> included.</li>
+        <li>The hook runs before any configuration that does not come from the code: the subscription goes through the hook of that application, so the application can refuse a change made on a running server too.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>Reading what the recipe changed</h3>
+      <ul>
+        <li>kajenn adds no log line, no route and no discovery field for this.</li>
+        <li><code>nodes()</code> called with the tags of a user says which routes that user may execute. <code>discover</code> already does it.</li>
+        <li><code>routing.configure("?")</code> gives the values in force.</li>
+        <li>Who wants the differences takes the export in the hook, before the configuration is applied, and keeps it. A method compares that export with the export taken when it is called. After the configuration is applied the router no longer holds the values of the code: the first export cannot be rebuilt later from the running server.</li>
+      </ul>
+    </section>
+
+    <section class="section"><h3>JSON form</h3>
+      <p>A JSON form of the plugin configuration, such as the one an administration page would send, is set aside for now (owner, 2026-11-15). Its shape is not decided and it is not part of this proposal.</p>
+    </section>
+
+    <section class="section"><h3>genro-routes#74</h3>
+      <p>The options written by the recipe are not exposed to <a href="https://github.com/genro-org/genro-routes/issues/74">genro-org/genro-routes#74</a>: they are written with <code>routing.configure</code> after the plugin is on the router, not read from the decorator. The hook must run after <code>server.arm_router</code> has plugged the plugins of the <code>plugins</code> section; before that, a block naming one of them meets a router without that plugin.</p>
+    </section>
+  </section><section class="part decisions"><h2>Decisions</h2>
+    <div class="box decision decision-decided" id="d-place"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-place</span></div><div class="question">Where does the recipe hold the plugin options of the routes?</div><ol class="options"><li id="d-place-application" class="chosen"><b>Under each application element</b>
+        <ul>
+          <li>The path is relative to the application.</li>
+          <li>Removing the application from the recipe removes its options.</li>
+          <li>An application added to a running server and the spawned process of an application find the options in the node they already read.</li>
+          <li>The changed rules of an installation sit in one place per application.</li>
+        </ul>
+      </li><li id="d-place-server"><b>One section for the whole server</b>
+        <ul>
+          <li>All the changed rules are read in one place.</li>
+          <li>Each line names the application; a line can name an application that is not there.</li>
+        </ul>
+      </li><li id="d-place-both"><b>Both: from the server or from the application</b></li></ol><div class="choice"><b>Choice: Under each application element</b><span class="muted"> (GP, 2026-11-15)</span><div>Plugin configurations belong to the application only. The form starting from the server was admitted during the discussion and then withdrawn.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-element-name"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-element-name</span></div><div class="question">What is the name of the element under <code>application</code>?</div><ol class="options"><li id="d-element-name-plugin"><b>plugin</b>
+        <p>The server-level <code>plugins</code> section already has <code>plugin</code> children with another function: switching plugins on.</p>
+      </li><li id="d-element-name-plugin-configuration" class="chosen"><b>plugin_configuration</b></li></ol><div class="choice"><b>Choice: plugin_configuration</b><span class="muted"> (GP, 2026-11-15)</span></div></div>
+
+    <div class="box decision decision-decided" id="d-shape"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-shape</span></div><div class="question">How is a configuration written inside the application?</div><ol class="options"><li id="d-shape-route-first"><b>From the route: route(path).configure(...)</b>
+        <p>All the options changed on one route are read together. Each line must also name the plugin.</p>
+      </li><li id="d-shape-plugin-first" class="chosen"><b>One block per plugin: plugin_configuration('auth'), then configure(path, options)</b>
+        <p>All the rules of one plugin are read in one block. The options changed on one route sit in one block per plugin.</p>
+      </li><li id="d-shape-single-block"><b>One block per application, each line with the target "plugin/path"</b>
+        <p>A list of these lines is already a JSON form.</p>
+      </li></ol><div class="choice"><b>Choice: One block per plugin: plugin_configuration('auth'), then configure(path, options)</b><span class="muted"> (GP, 2026-11-15)</span><div>From a human point of view the plugins are configured separately.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-arguments"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-arguments</span></div><div class="question">What does a <code>configure</code> line carry?</div><ol class="options"><li id="d-arguments-method" class="chosen"><b>What routing.configure asks: the path and the parameters of the plugin (rule, channels)</b></li><li id="d-arguments-route-keywords"><b>The keywords of @route: auth_rule, channel_channels</b></li></ol><div class="choice"><b>Choice: What routing.configure asks: the path and the parameters of the plugin (rule, channels)</b><span class="muted"> (GP, 2026-11-15)</span><div>kajenn calls the <code>configure</code> of the routing class: what the recipe holds is what that method asks.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-plugins"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-plugins</span></div><div class="question">Which plugins can the recipe configure?</div><ol class="options"><li id="d-plugins-all" class="chosen"><b>Every plugin present on the router</b>
+        <ul>
+          <li>No list to maintain in kajenn; a plugin registered from outside is configured like the others.</li>
+          <li>The recipe can change the contract of a route: <code>pydantic</code> with <code>disabled</code> removes the validation, <code>openapi</code> with <code>method</code> changes the HTTP method the route answers.</li>
+        </ul>
+      </li><li id="d-plugins-closed"><b>A closed list: auth, channel, env, openapi</b></li></ol><div class="choice"><b>Choice: Every plugin present on the router</b><span class="muted"> (GP, 2026-11-15)</span></div></div>
+
+    <div class="box decision decision-decided" id="d-missing-route"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-missing-route</span></div><div class="question">What happens when the recipe names a route that does not exist?</div><ol class="options"><li id="d-missing-route-stop"><b>The boot stops</b></li><li id="d-missing-route-warning" class="chosen"><b>At most a warning; the boot goes on</b></li></ol><div class="choice"><b>Choice: At most a warning; the boot goes on</b><span class="muted"> (GP, 2026-11-15)</span></div></div>
+
+    <div class="box decision decision-decided" id="d-visibility"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-visibility</span></div><div class="question">Where does one read which options the recipe changed?</div><ol class="options"><li id="d-visibility-log"><b>Log lines when the configuration is applied</b></li><li id="d-visibility-route"><b>A route of _server listing the changed options</b></li><li id="d-visibility-discovery"><b>A field in the discovery and in the OpenAPI document</b></li><li id="d-visibility-nothing" class="chosen"><b>Nothing added: nodes() for a user and the export of genro-routes</b></li></ol><div class="choice"><b>Choice: Nothing added: nodes() for a user and the export of genro-routes</b><span class="muted"> (GP, 2026-11-15)</span><div>Calling <code>nodes</code> as a user says whether that user can or cannot. genro-routes has an export of the configuration.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-after-hook"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-after-hook</span></div><div class="question">Does a second hook run after the configuration is applied?</div><ol class="options"><li id="d-after-hook-yes"><b>Yes: the pair before and after gives the two exports to compare</b></li><li id="d-after-hook-no" class="chosen"><b>No: a method compares the export taken before with the current state</b></li></ol><div class="choice"><b>Choice: No: a method compares the export taken before with the current state</b><span class="muted"> (GP, 2026-11-15)</span><div>Who wants the differences has a method that takes the saved export and compares it with the current state.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-hook"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-hook</span></div><div class="question">Who applies the configuration, and who can refuse it or take the export before it is applied?</div><ol class="options"><li id="d-hook-application" class="chosen"><b>A plugin_configuration hook of the application, called with applications_broadcast</b>
+        <ul>
+          <li>Words of the owner, 2026-11-15: a hook before any configuration that does not come from the code, to refuse it or to take the export; a hook <code>plugin_configuration</code> that does nothing when there is nothing; a broadcast of plugin configuration.</li>
+          <li>The hook that applies the recipe and the hook that can refuse or take the export are one method, redefined by the subclass.</li>
+          <li>The author of an application can refuse a change on its own routes.</li>
+        </ul>
+      </li><li id="d-hook-server"><b>A hook of the server, one for all the applications</b>
+        <p>One place takes the export of every application. The author of an application cannot refuse anything.</p>
+      </li><li id="d-hook-both"><b>Both: the server hook, then the application hook</b></li></ol><div class="choice"><b>Choice: A plugin_configuration hook of the application, called with applications_broadcast</b><span class="muted"> (GP, 2026-11-15)</span><div>A hook <code>plugin_configuration</code> that does nothing when there is nothing: a broadcast of plugin configuration.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-section-path"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-section-path</span></div><div class="question">How does one line give a value to several routes, for example to all the routes of the section <code>products</code>?</div><ol class="options"><li id="d-section-path-router"><b>A write at router level, as genro-routes does</b>
+        <ul>
+          <li>kajenn calls <code>routing.configure("auth", rule="staff")</code> on the section.</li>
+          <li><code>list</code> asks for <code>staff</code>. <code>insert</code> and <code>delete</code> keep <code>shop_admin</code>, because the code gives them a rule. No message says so.</li>
+        </ul>
+      </li><li id="d-section-path-every-route"><b>Every route under the section</b>
+        <ul>
+          <li>kajenn calls <code>routing.configure("auth/*", rule="staff")</code> on the section and on every section under it.</li>
+          <li>A longer path wins, whatever the order of the lines.</li>
+          <li>A route added by a new version of the application takes the rule of the installation.</li>
+        </ul>
+      </li><li id="d-section-path-glob"><b>A path must end with the name of an entry; the last segment accepts the glob of the method</b>
+        <ul>
+          <li><code>'products/*'</code> covers the three routes; <code>'products/insert,delete'</code> covers two; <code>'products'</code> alone gives the warning.</li>
+          <li>The glob does not descend into the sections under <code>products</code>.</li>
+          <li>Two lines on the same route are decided by the order of writing.</li>
+        </ul>
+      </li><li id="d-section-path-comma" class="chosen"><b>route holds several complete paths separated by commas</b>
+        <p>Every route is written by name. No glob and no path of a section.</p>
+      </li></ol><div class="choice"><b>Choice: route holds several complete paths separated by commas</b><span class="muted"> (GP, 2026-11-15)</span></div></div>
+
+    <div class="box decision decision-decided" id="d-moment"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-moment</span></div><div class="question">When does the server call the hook?</div><ol class="options"><li id="d-moment-before-startup" class="chosen"><b>In the lifespan startup, before on_startup</b>
+        <ul>
+          <li>No request arrives before the configuration, also for <code>_server</code> and in the spawned process of an application, which answer at once.</li>
+          <li><code>applications_broadcast</code> is async and <code>register_application</code> is sync: the call cannot sit in the registration.</li>
+          <li>A section attached in <code>on_startup</code> or later does not exist yet: its lines give the warning and are not applied.</li>
+        </ul>
+      </li><li id="d-moment-after-startup"><b>After on_startup, before ready</b>
+        <ul>
+          <li>The sections attached in <code>on_startup</code> exist.</li>
+          <li><code>_server</code> and the applications of a spawned process already answer while <code>on_startup</code> runs: in that interval the rule of the code is in force.</li>
+        </ul>
+      </li></ol><div class="choice"><b>Choice: In the lifespan startup, before on_startup</b><span class="muted"> (GP, 2026-11-15)</span><div>Before. The configurations can also change on a running server, like other things: a subscription updates the plugins when the configuration changes.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-runtime-update"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-runtime-update</span></div><div class="question">How does the subscription update the plugins when the configuration of a running server changes?</div><ol class="options"><li id="d-runtime-update-line" class="chosen"><b>Only the values the new configuration holds are applied</b>
+        <ul>
+          <li>One <code>routing.configure</code> call per value in the new configuration.</li>
+          <li>A route the new configuration does not name keeps the value it has: the value of the code is no longer on the router.</li>
+        </ul>
+      </li><li id="d-runtime-update-restore"><b>The values of the code are restored, then the whole block is applied again</b>
+        <ul>
+          <li>A written, changed or removed line is handled the same way.</li>
+          <li>kajenn takes the export of the router before the first configuration and keeps it for the life of the application.</li>
+          <li>The kept export is the one <a class="ref" href="#d-diff-method">d-diff-method</a> compares with the current state.</li>
+        </ul>
+      </li></ol><div class="choice"><b>Choice: Only the values the new configuration holds are applied</b><span class="muted"> (GP, 2026-11-15)</span><div>A change cannot take a line away. It can only say which values there are: there are no insert or delete actions, only the new configuration.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-runtime-spawned"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-runtime-spawned</span></div><div class="question">How does a change of the plugin configuration reach the application of a spawned process?</div><ol class="options"><li id="d-runtime-spawned-kbus"><b>A message of its own: the main process sends the plugin configuration over the KajennBus</b></li><li id="d-runtime-spawned-restart"><b>It does not: the spawned process reads the new configuration when it is relaunched</b></li><li id="d-runtime-spawned-generic" class="chosen"><b>Nothing specific to plugins: every change of the configuration is carried to the spawned process</b></li></ol><div class="choice"><b>Choice: Nothing specific to plugins: every change of the configuration is carried to the spawned process</b><span class="muted"> (GP, 2026-11-15)</span><div>The problem is generic. When a process is remote, any change of the configuration, not only of plugins, must be carried to the remote process, which applies it; doing so fires its own subscriptions.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-added-application"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-added-application</span></div><div class="question">How does an application added to a running server receive the hook?</div><ol class="options"><li id="d-added-application-alone" class="chosen"><b>The hook is called on that application alone, before its on_startup</b></li><li id="d-added-application-broadcast"><b>A new broadcast, which calls the hook again on every application</b></li></ol><div class="choice"><b>Choice: The hook is called on that application alone, before its on_startup</b><span class="muted"> (GP, 2026-11-15)</span></div></div>
+
+    <div class="box decision decision-decided" id="d-invalid-line"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-invalid-line</span></div><div class="question">What happens when a line names a plugin that is not on the router, or an option the plugin does not know?</div><ol class="options"><li id="d-invalid-line-stop"><b>The boot stops</b></li><li id="d-invalid-line-warning" class="chosen"><b>The line is not applied and the boot goes on, as for a route that does not exist</b></li></ol><div class="choice"><b>Choice: The line is not applied and the boot goes on, as for a route that does not exist</b><span class="muted"> (GP, 2026-11-15)</span><div>Nothing happens. Whoever wrote the line wrong answers for it.</div></div></div>
+
+    <div class="box decision decision-decided" id="d-refusal"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-refusal</span></div><div class="question">How does a hook refuse a configuration, and what does the server do then?</div><ol class="options"><li id="d-refusal-skip" class="chosen"><b>The subclass does not call the base: nothing is applied and nothing is reported</b></li><li id="d-refusal-raise-continue"><b>The hook raises: on_error logs it and the broadcast goes on</b></li><li id="d-refusal-raise-stop"><b>The hook raises: the boot stops</b></li></ol><div class="choice"><b>Choice: The subclass does not call the base: nothing is applied and nothing is reported</b><span class="muted"> (GP, 2026-11-15)</span><div>As a rule, errors cannot be prevented with defensive code at every moment. If there are errors there are consequences. Only the stupid errors can be prevented; the dangerous ones pass anyway.</div></div></div>
+
+    <div class="box decision decision-proposed" id="d-spawned-boot"><div class="box-head"><span class="tag tag-proposed">proposed</span><span class="muted">d-spawned-boot</span></div><div class="question">At boot, who calls the hook of an application declared with <code>spawner</code>? The broadcast of the main process runs before <code>on_startup</code>, and <code>RemoteApplication.on_startup</code> is what waits for the spawned process to join: a hook forwarded before that has no process to answer it. The spawned process is a server too and has its own lifespan.</div><ol class="options"><li id="d-spawned-boot-own"><b>The spawned process, in its own lifespan startup</b>
+        <p>Default of this outline. It is settled during the implementation on a branch.</p>
+        <ul>
+          <li>The hook runs before any request of that process, like in the main process.</li>
+          <li><code>RemoteApplication</code> defines <code>plugin_configuration</code> itself, so the name stays local and is not forwarded, as it does for <code>on_startup</code>.</li>
+        </ul>
+      </li><li id="d-spawned-boot-forward"><b>The main process, with the forwarded hook, once the spawned process has joined</b>
+        <ul>
+          <li>No method to add to <code>RemoteApplication</code>.</li>
+          <li>The spawned process answers requests from its start: between its start and the forwarded call the values of the code are in force.</li>
+        </ul>
+      </li></ol></div>
+
+    <div class="box decision decision-proposed" id="d-diff-method"><div class="box-head"><span class="tag tag-proposed">proposed</span><span class="muted">d-diff-method</span></div><div class="question">Who provides the method that compares the saved export with the current state, and what is its name?</div><ol class="options"><li id="d-diff-method-kajenn"><b>kajenn provides it on the application</b>
+        <p>Candidate name from the words of the owner: <code>config_diff</code>. kajenn then also takes and keeps the export.</p>
+      </li><li id="d-diff-method-application"><b>Each application that wants it writes it in its own hook</b>
+        <p>Default of this outline. It is settled during the implementation on a branch.</p>
+        <p>asqueel-migration makes the same comparison of two dicts with the library <code>dictdiffer</code>, which is not a dependency of kajenn.</p>
+      </li></ol></div>
+
+
+    <div class="box decision decision-decided" id="d-keywords"><div class="box-head"><span class="tag tag-decided">decided</span><span class="muted">d-keywords</span></div><div class="question">Which keywords carry the plugin and the path in the recipe? A value written without a name is lost on a node that receives children, so the plugin of <code>plugin_configuration</code> needs a keyword.</div><ol class="options"><li id="d-keywords-code-path"><b>plugin_configuration(code="auth") and configure(path="products/list", ...)</b>
+        <p><code>code</code> is the keyword of the existing <code>plugin</code> element.</p>
+      </li><li id="d-keywords-plugin-target"><b>plugin_configuration(plugin="auth") and configure(target="products/list", ...)</b>
+        <p><code>target</code> is the word of <code>routing.configure</code>.</p>
+      </li><li id="d-keywords-plugin-route" class="chosen"><b>plugin_configuration(plugin="auth") and configure(route="products/list", ...)</b></li></ol><div class="choice"><b>Choice: plugin_configuration(plugin="auth") and configure(route="products/list", ...)</b><span class="muted"> (GP, 2026-11-15)</span></div></div>
+  </section><section class="part consequences"><h2>Consequences</h2>
+    <ul>
+      <li>The hook depends on <code>applications_broadcast</code> and <code>@broadcast_hook</code> of <a href="https://github.com/kajenn-org/kajenn/issues/142">kajenn-org/kajenn#142</a>, merged in <code>develop</code> with PR 147.</li>
+      <li>No application can have a route named <code>plugin_configuration</code>: issue 142 refuses a route with the name of a <code>@broadcast_hook</code>.</li>
+      <li>Carrying a change of the configuration to a spawned process is a general mechanism and is not part of this proposal. It does not exist today: until it does, a change made on a running server reaches only the applications of the main process. The live configuration is the subject of <a href="https://github.com/kajenn-org/kajenn/issues/75">kajenn-org/kajenn#75</a>; the requirement is noted there in a comment of 2026-11-15.</li>
+      <li>A recipe can open a route its author closed. The author who must prevent it redefines the hook.</li>
+      <li>The OpenAPI document follows the recipe with no other change: <code>security</code> is derived from the rule in force.</li>
+      <li>The configuration guide gets a section on <code>plugin_configuration</code> with the <code>Shop</code> example.</li>
+    </ul>
+  </section><section class="part related"><h2>Related documents</h2><ul>
+    <li><a href="../proposal/live-applications.html">proposal/live-applications</a> — Applications added, switched off and removed on a running server</li>
+  </ul></section></main></body></html>

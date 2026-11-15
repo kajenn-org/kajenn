@@ -139,6 +139,11 @@ class Lifespan:
         reaches ``__call__``; without it the error is logged, the server closes
         its public part and the startup goes on.
 
+        Every application then receives ``plugin_configuration`` through
+        ``applications_broadcast``, before any ``on_startup``: no request is
+        answered on a route before the installation's plugin options are on
+        it. A hook that raises is logged and the next application is called.
+
         An application already enabled runs ``on_startup`` here, in
         registration order, and a ``FatalBootError`` it raises stops the
         startup as above. An application registered disabled is activated in
@@ -161,6 +166,8 @@ class Lifespan:
                 raise
             self._logger.exception("Fatal boot error: the server stays up for management only")
             self.server.close_public()
+        await self.server.applications_broadcast(
+            "plugin_configuration", on_error=self._plugin_configuration_failed)
         try:
             for app in self._apps():
                 if self.server.is_enabled(app.code):
@@ -171,6 +178,10 @@ class Lifespan:
             await self._close_handlers(opened)
             raise
         self._started = True
+
+    def _plugin_configuration_failed(self, code: str, failure: Exception) -> None:
+        """Log the ``plugin_configuration`` hook of ``code`` that raised."""
+        self._logger.error("application %r: plugin_configuration raised: %r", code, failure)
 
     def start_activation(self, app: BaseApplication) -> None:
         """Activate ``app`` in a task of its own, cancelled if the server shuts down first."""
