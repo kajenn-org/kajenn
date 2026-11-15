@@ -73,12 +73,15 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import time
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Iterable
 
 import uvicorn
 
 from .application import BaseApplication
 from .db import DbHandlerBase
+from .exceptions import HTTPException
+from ._http_metrics import ROUTE_SCOPE_KEY, CountedExchange, HttpMetrics
 from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
 from .request_registry import RegisteredRequest, RequestRegistry
@@ -206,6 +209,7 @@ class BaseServer:
         self._pool = WorkPool(self, max_threads=max_threads)
         self._lifespan = Lifespan(self)
         self._registry = RequestRegistry(self)
+        self._http_metrics = HttpMetrics()
         self._websockets = WebSocketRegistry()
         self._websocket_origins: list[str] = list(websocket.get("origins") or [])
         self._websocket_max_concurrent: int = int(
@@ -625,6 +629,11 @@ class BaseServer:
         """The registry of in-flight requests and the current one."""
         return self._registry
 
+    @property
+    def http_metrics(self) -> HttpMetrics:
+        """The HTTP request families, counted by ``_serve_http``."""
+        return self._http_metrics
+
     async def run_sync(self, fn: Callable[..., Any], *args: Any) -> Any:
         """Dispatch blocking ``fn`` onto the pool (the app-side sync protocol).
 
@@ -731,7 +740,8 @@ class BaseServer:
         charge, and this branch renders the refusal the way HTTP says it — 503
         and ``Retry-After``. Another transport reads the same state and renders
         its own. Whatever the middleware chain answers by itself never reaches
-        here, so it is neither registered nor refused.
+        here, so it is neither registered nor refused, nor counted in
+        ``http_metrics``.
         """
         scope_type = scope["type"]
         if scope_type == "http":
@@ -745,8 +755,7 @@ class BaseServer:
                 return
             item = self.requests.register(scope)
             try:
-                app, target = self.demux(scope)
-                await app(target, receive, send)
+                await self._serve_http(scope, receive, send)
             finally:
                 try:
                     await item.run_cleanups()
@@ -762,8 +771,49 @@ class BaseServer:
         else:
             raise ValueError(f"unsupported ASGI scope type: {scope_type}")
 
+    async def _serve_http(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Demux an http ``scope``, run what answers it, and count it in ``http_metrics``.
+
+        Every request that reaches the demux is counted: an application's
+        answer, its 503 refusal, a 404 of the demux, the ``default``
+        redirect. The duration runs from before the demux until the answer
+        returns. ``application`` is the code of the application the demux
+        chose, ``""`` when it chose none; ``route`` is what the application
+        wrote under ``"kajenn.route"`` in the scope it received, ``""`` when
+        nothing was written. An ``HTTPException`` counts with its status; any
+        other exception counts as status 500 and in the exceptions counter
+        with its class name. Either is raised again unchanged, for the
+        ``ErrorMiddleware`` to answer.
+        """
+        started = time.monotonic()
+        exchange = CountedExchange(receive, send)
+        served, app, target = self._demux_application(scope)
+        code = served.code if served is not None else ""
+        try:
+            await app(target, exchange.receive, exchange.send)
+        except HTTPException as answer:
+            exchange.status = str(answer.status)
+            raise
+        except Exception as failure:
+            exchange.status = "500"
+            self.http_metrics.record_exception(code, failure)
+            raise
+        finally:
+            self.http_metrics.record(code, target.get(ROUTE_SCOPE_KEY, ""), scope["method"],
+                                     exchange, time.monotonic() - started)
+
     def demux(self, scope: Scope) -> tuple[ASGIApp, Scope]:
-        """D3 demux: pick what answers an http scope, and the scope it receives.
+        """What answers an http ``scope`` and the scope it receives.
+
+        ``_demux_application`` without the application it chose.
+        """
+        _, app, target = self._demux_application(scope)
+        return app, target
+
+    def _demux_application(
+        self, scope: Scope
+    ) -> tuple[BaseApplication | None, ASGIApp, Scope]:
+        """D3 demux: pick the application, what answers an http scope, and its scope.
 
         One rule, four branches: the first path segment matching a mount → that
         app, with the segment stripped from ``path`` (the forwarded path is
@@ -781,29 +831,35 @@ class BaseServer:
         middleware, no switch. Any other path is ordinary, the conventional
         probes that are not well-known included (``/sitemap.xml``,
         ``/apple-touch-icon.png``).
+
+        The first item is the application chosen, also when it answers with
+        its 503 refusal; ``None`` for a 404 and for the ``default`` redirect.
         """
         path = scope["path"]
         rest = path.lstrip("/")
         if WELL_KNOWN_PATTERN.match("/" + rest):
-            return self.demux_well_known("/" + rest, scope)
+            declared = self._declared_well_known("/" + rest)
+            answer, target = self.demux_well_known("/" + rest, scope)
+            return (declared[0] if declared is not None else None), answer, target
         segment, _, remainder = rest.partition("/")
         if segment.startswith(HIDDEN_SEGMENT_PREFIX):
-            return Response(content="Not Found", status_code=404, media_type="text/plain"), scope
+            return None, Response(content="Not Found", status_code=404,
+                                  media_type="text/plain"), scope
         app = self.application_at(segment)
         if app is not None:
             refused = self.refusal(app)
             if refused is not None:
-                return refused, scope
+                return app, refused, scope
             sub_scope = dict(scope)
             sub_scope["path"] = "/" + remainder
-            return app, sub_scope
+            return app, app, sub_scope
         root = self.root_application
         if root is not None:
-            return self.refusal(root) or root, scope
+            return root, self.refusal(root) or root, scope
         default = self.default_application if not rest else None
         if default is not None:
-            return self.redirect_to_default(default, scope), scope
-        return Response(content="Not Found", status_code=404, media_type="text/plain"), scope
+            return None, self.redirect_to_default(default, scope), scope
+        return None, Response(content="Not Found", status_code=404, media_type="text/plain"), scope
 
     def demux_well_known(self, path: str, scope: Scope) -> tuple[ASGIApp, Scope]:
         """What serves a well-known ``path``: its declaring application, else **404**.
@@ -816,7 +872,7 @@ class BaseServer:
         "unimplemented well-known URL" and no application is reached, the root
         application included.
         """
-        declared = self.well_known_routes.get(path) or self.default_well_known_routes.get(path)
+        declared = self._declared_well_known(path)
         if declared is None:
             return Response(
                 content="unimplemented well-known URL", status_code=404, media_type="text/plain"
@@ -828,6 +884,13 @@ class BaseServer:
         sub_scope = dict(scope)
         sub_scope["path"] = "/" + route
         return app, sub_scope
+
+    def _declared_well_known(self, path: str) -> tuple[BaseApplication, str] | None:
+        """The application and route declaring the well-known ``path``, ``None`` if nobody does.
+
+        A path in ``well_known_routes`` wins over one in ``default_well_known_routes``.
+        """
+        return self.well_known_routes.get(path) or self.default_well_known_routes.get(path)
 
     def redirect_to_default(self, app: BaseApplication, scope: Scope) -> Response:
         """A 307 to ``app``'s mount, preserving the query string.

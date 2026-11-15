@@ -18,6 +18,11 @@ Private to ``kajenn.server_app``: ``ServerApplication.prometheus_metrics`` and
 the ``metrics`` section write their text with ``families_text``, on a
 ``CollectorRegistry`` created for each call, never the module-level
 ``REGISTRY``.
+
+The ``_created`` series ``prometheus_client`` adds to counters, histograms
+and summaries are left out of the text: inside a family as samples named
+``<family>_created``, and as the gauge family ``<family>_created`` the text
+parser makes of them when a text is read back.
 """
 
 from __future__ import annotations
@@ -42,8 +47,36 @@ class FamiliesCollector(Collector):
         return iter(self.families)
 
 
+CREATED_SUFFIX = "_created"
+"""The suffix of the creation-time series of a counter, histogram or summary."""
+
+CREATED_TYPES = frozenset({"counter", "histogram", "summary"})
+"""The family types ``prometheus_client`` writes a ``_created`` series for."""
+
+
+def without_created(families: Iterable[Metric]) -> list[Metric]:
+    """``families`` without their ``_created`` series.
+
+    A sample named ``<family>_created`` is dropped from its family; a gauge
+    family named ``<name>_created`` is dropped when a counter, histogram or
+    summary family ``<name>`` is in ``families``.
+    """
+    families = list(families)
+    owners = {family.name + CREATED_SUFFIX for family in families
+              if family.type in CREATED_TYPES}
+    kept: list[Metric] = []
+    for family in families:
+        if family.type == "gauge" and family.name in owners:
+            continue
+        copy = Metric(family.name, family.documentation, family.type, family.unit)
+        copy.samples = [sample for sample in family.samples
+                        if sample.name != family.name + CREATED_SUFFIX]
+        kept.append(copy)
+    return kept
+
+
 def families_text(families: Iterable[Metric]) -> str:
-    """The exposition text of ``families``, written on a registry of its own."""
+    """The exposition text of ``families`` without ``_created`` series, on a registry of its own."""
     registry = CollectorRegistry()
-    registry.register(FamiliesCollector(families))
+    registry.register(FamiliesCollector(without_created(families)))
     return generate_latest(registry).decode()
