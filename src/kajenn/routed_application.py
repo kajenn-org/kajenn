@@ -89,6 +89,8 @@ from .streaming import StreamingResponse
 if TYPE_CHECKING:
     from genro_routes import RouterNode
 
+    from .server import BaseServer
+
     from .types import Receive, Scope, Send
 
 __all__ = ["RoutedApplication"]
@@ -224,8 +226,13 @@ class RoutedApplication(BaseApplication, RoutingClass):
         """The public URL of ``_meta/<path>`` of this application."""
         return f"/{self.mount}/{META_SEGMENT}/{path}" if self.mount else f"/{META_SEGMENT}/{path}"
 
-    @BaseApplication.server.setter
-    def server(self, value: Any) -> None:
+    @property
+    def server(self) -> BaseServer | None:
+        """The server that owns this app (``None`` until attached)."""
+        return super().server
+
+    @server.setter
+    def server(self, value: BaseServer) -> None:
         """Assign the owning server once, after checking that no route is a broadcast hook.
 
         The server assigns it when it registers the application: a route whose
@@ -241,7 +248,7 @@ class RoutedApplication(BaseApplication, RoutingClass):
                     f"application {self.code!r}: route {entry['name']!r} is the broadcast "
                     f"hook {method.__name__!r}"
                 )
-        BaseApplication.server.fset(self, value)
+        vars(BaseApplication)["server"].__set__(self, value)
 
     @property
     def route(self) -> Router:

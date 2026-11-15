@@ -311,10 +311,12 @@ class BaseServer:
     ) -> list[tuple[str, Any]]:
         """Call ``method_name`` on every application and collect the answers.
 
-        Every application in ``applications`` is called, in every state,
-        management application included: in registration order, or in reverse
-        order with ``reverse=True``. ``args`` and ``kwargs`` reach each call. A
-        sync method is called, an async one awaited.
+        Every application in ``applications`` whose class has ``method_name``
+        as a ``@broadcast_hook`` is called, in every state, management
+        application included: in registration order, or in reverse order with
+        ``reverse=True``. An application without that hook is skipped; when no
+        application has it the answer is ``[]``. ``args`` and ``kwargs`` reach
+        each call. A sync method is called, an async one awaited.
 
         An application that raises goes to ``on_error(code, exception)``: when
         it returns, the broadcast goes on with the next application; when it
@@ -323,18 +325,11 @@ class BaseServer:
 
         Returns:
             ``[(code, result)]`` for the applications that answered.
-
-        Raises:
-            ValueError: ``method_name`` is not a ``@broadcast_hook`` of every
-                application; nothing is called.
         """
-        apps = list(self.applications.values())
+        apps = [app for app in self.applications.values()
+                if is_broadcast_hook(type(app), method_name)]
         if reverse:
             apps.reverse()
-        for app in apps:
-            if not is_broadcast_hook(type(app), method_name):
-                raise ValueError(
-                    f"{type(app).__name__}.{method_name} is not a broadcast hook")
         answers: list[tuple[str, Any]] = []
         for app in apps:
             method = getattr(app, method_name)

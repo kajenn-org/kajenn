@@ -7,8 +7,9 @@ Every test below drives a real ``AsgiServer``: the broadcast calls the hook on
 every registered application, ``_server`` included, in registration order or in
 reverse, collects ``[(code, result)]`` and routes the failures through
 ``on_error``. A route on a broadcast hook is refused when the application is
-registered. An application with ``spawner`` runs the hook in its own process
-through ``RemoteApplication.forward_hook``.
+registered. An application without the hook is skipped. An application with
+``spawner`` answers the same way: the mount forwards every ``@broadcast_hook`` of the real class
+with ``RemoteApplication.remote_call``, and the server refuses ``remote_call``.
 """
 
 from __future__ import annotations
@@ -107,13 +108,24 @@ async def test_a_disabled_application_is_called_too() -> None:
     assert answers["beta"] == "beta:x"
 
 
-async def test_a_method_that_is_not_a_broadcast_hook_is_refused() -> None:
+class Plain(RoutedApplication):
+    """No hook: the broadcast skips it."""
+
+    def probe_hook(self, word: str, *, suffix: str = "") -> str:
+        return "never"
+
+
+async def test_an_application_without_the_hook_is_skipped() -> None:
+    server = await start_server(AsgiServer(applications=[
+        (Beta, {"code": "beta"}), (Plain, {"code": "plain"})]))
+    answers = await server.applications_broadcast("probe_hook", "x")
+    assert answers == [("beta", "beta:x")]
+
+
+async def test_a_hook_nobody_has_answers_an_empty_list() -> None:
     server = await probed_server()
-    with pytest.raises(ValueError, match="total is not a broadcast hook"):
-        await server.applications_broadcast("total")
-    with pytest.raises(ValueError, match="nothing_at_all is not a broadcast hook"):
-        await server.applications_broadcast("nothing_at_all")
-    assert server.applications["alpha"].calls == []
+    assert await server.applications_broadcast("total") == []
+    assert await server.applications_broadcast("nothing_at_all") == []
 
 
 async def test_without_on_error_the_first_exception_stops_the_broadcast() -> None:
@@ -192,6 +204,7 @@ async def test_the_shutdown_still_runs_on_shutdown_in_reverse_order() -> None:
 RECIPE = '''
 import os
 
+import kbus
 from genro_routes import route
 
 from kajenn import RoutedApplication, broadcast_hook
@@ -200,26 +213,50 @@ from kajenn.config.templates import CONFIGURATION_TEMPLATES
 
 class Probe:
     @broadcast_hook
-    def probe_hook(self):
-        return {"code": self.code, "pid": os.getpid()}
+    def probe_hook(self, word, *, suffix=""):
+        return {"code": self.code, "word": word + suffix, "pid": os.getpid()}
 
     @broadcast_hook
-    def failing_hook(self):
+    async def failing_hook(self):
         raise LookupError("failing in the process")
 
 
 class Billing(Probe, RoutedApplication):
+    def on_shutdown(self):
+        with open(SHUTDOWN_LOG, "a") as log:
+            log.write(f"{os.getpid()}\\n")
+
     @route()
-    def plain(self):
-        return {"plain": True}
+    async def ask_server(self):
+        try:
+            await self.server.kbus_member.call(
+                "server.remote_call", kbus.Message({"method": "on_shutdown"}, b'"{}"'))
+        except kbus.Error as failure:
+            return {"refused": type(failure).__name__}
+        return {"refused": None}
+
+
+class Local(RoutedApplication):
+    pass
 
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
         apps = cfg.applications()
-        apps.application(code="billing", app_class=Billing, spawner="subprocess",
-                         request_timeout=5)
+        apps.application(code="billing", app_class=Billing, DECLARATION)
+        apps.application(code="local", app_class=Local)
 '''
+
+SPAWNED = 'spawner="subprocess", request_timeout=5'
+INPROCESS = 'mount="billing"'
+
+
+def write_recipe(tmp_path, declaration: str = SPAWNED) -> tuple[str, Any]:
+    shutdown_log = tmp_path / "shutdown.log"
+    path = tmp_path / "config.py"
+    path.write_text(RECIPE.replace("DECLARATION", declaration)
+                    .replace("SHUTDOWN_LOG", repr(str(shutdown_log))))
+    return str(path), shutdown_log
 
 
 @asynccontextmanager
@@ -233,7 +270,7 @@ async def running(config: str):
     assert (await outbox.get())["type"] == "lifespan.startup.complete"
     try:
         async with asyncio.timeout(30):
-            while not server.is_enabled("billing"):
+            while not all(server.is_enabled(code) for code in server.applications):
                 await asyncio.sleep(0.05)
         yield server
     finally:
@@ -242,21 +279,51 @@ async def running(config: str):
         await lifespan
 
 
-async def test_forward_hook_runs_the_hook_in_the_spawned_process(tmp_path) -> None:
-    config = tmp_path / "config.py"
-    config.write_text(RECIPE)
-    async with running(str(config)) as server:
-        answer = await server.applications["billing"].forward_hook("probe_hook")
-    assert answer["code"] == "billing"
+async def test_a_hook_of_a_spawned_application_answers_through_the_broadcast(tmp_path) -> None:
+    config, _ = write_recipe(tmp_path)
+    async with running(config) as server:
+        spawned = await server.applications_broadcast("probe_hook", "hi", suffix="!")
+    (tmp_path / "inproc").mkdir()
+    config, _ = write_recipe(tmp_path / "inproc", INPROCESS)
+    async with running(config) as server:
+        inprocess = await server.applications_broadcast("probe_hook", "hi", suffix="!")
+    [(spawned_code, spawned_answer)] = spawned
+    [(inprocess_code, inprocess_answer)] = inprocess
+    assert spawned_code == inprocess_code == "billing"
+    assert spawned_answer.pop("pid") != os.getpid()
+    assert inprocess_answer.pop("pid") == os.getpid()
+    assert spawned_answer == inprocess_answer == {"code": "billing", "word": "hi!"}
+
+
+async def test_a_hook_that_raises_in_the_process_reaches_on_error(tmp_path) -> None:
+    config, _ = write_recipe(tmp_path)
+    seen: list[tuple[str, Exception]] = []
+    async with running(config) as server:
+        answers = await server.applications_broadcast(
+            "failing_hook", on_error=lambda code, exc: seen.append((code, exc)))
+    assert answers == []
+    [(code, failure)] = seen
+    assert code == "billing"
+    assert isinstance(failure, kbus.RemoteError)
+    assert "LookupError: failing in the process" in str(failure)
+
+
+async def test_remote_call_returns_the_result_of_the_method(tmp_path) -> None:
+    config, _ = write_recipe(tmp_path)
+    async with running(config) as server:
+        answer = await server.applications["billing"].remote_call("probe_hook", "a", suffix="b")
+    assert answer["word"] == "ab"
     assert answer["pid"] != os.getpid()
 
 
-async def test_a_hook_that_raises_in_the_process_reaches_the_proxy(tmp_path) -> None:
-    config = tmp_path / "config.py"
-    config.write_text(RECIPE)
-    async with running(str(config)) as server:
-        proxy = server.applications["billing"]
-        with pytest.raises(kbus.RemoteError, match="LookupError: failing in the process"):
-            await proxy.forward_hook("failing_hook")
-        with pytest.raises(kbus.RemoteError, match="plain is not a broadcast hook"):
-            await proxy.forward_hook("plain")
+async def test_the_server_refuses_remote_call(tmp_path) -> None:
+    config, _ = write_recipe(tmp_path)
+    async with running(config) as server:
+        assert await server.kbus_call("/billing/ask_server") == {"refused": "Refused"}
+
+
+async def test_on_shutdown_of_a_spawned_application_runs_once(tmp_path) -> None:
+    config, shutdown_log = write_recipe(tmp_path)
+    async with running(config):
+        pass
+    assert len(shutdown_log.read_text().splitlines()) == 1
