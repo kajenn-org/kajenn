@@ -270,6 +270,60 @@ The attributes of the `application` envelope itself (`code`, `mount`,
 `app_class`, plus the app's constructor kwargs) belong to the site grammar; only
 the children live in the mounted one. An undeclared child is a boot error.
 
+## Plugin options of the routes
+
+The code of an application writes the plugin options of each route in
+`@route(...)`: the `auth` rule, the `channel` channels, the `openapi` method.
+An installation gives its own values in the recipe, under the application,
+with `plugin_configuration`: one block per plugin, one `configure` line per
+value.
+
+```python
+shop = cfg.applications().application(code="shop", app_class=Shop)
+
+shop_plugin_auth = shop.plugin_configuration(plugin="auth")
+shop_plugin_auth.configure(route="products/list,products/insert", rule="staff")
+shop_plugin_auth.configure(route="products/delete", rule="boss")
+
+shop_plugin_channel = shop.plugin_configuration(plugin="channel")
+shop_plugin_channel.configure(route="products/list", channels="api,mcp")
+```
+
+- `plugin` names a plugin of the application router: `auth`, `channel`,
+  `pydantic`, `openapi`, or one armed by the `plugins` section.
+- `route` is the path of a route relative to the application, as in the URL
+  after the mount and without a leading slash. Several paths are separated by
+  commas.
+- The other keywords are the parameters of that plugin's `configure`: `rule`
+  for `auth`, `channels` for `channel`, `requires` for `env`, `method` and the
+  others for `openapi`.
+- The value replaces what `@route(...)` wrote for that route; `rule=""` opens a
+  route the code closes. A route no line names keeps the value of the code.
+  Two lines on the same route: the later one wins.
+- A line that cannot be applied (no such route, no such plugin on the router,
+  an option the plugin does not accept) is logged as a warning and left out.
+  The server starts and the other lines are applied.
+- `_server` is configured the same way, under
+  `application(code="_server", app_class=ServerApplication)`.
+
+The lines are applied by the application hook `plugin_configuration`, which the
+server calls on every application before any `on_startup`. A subclass
+overrides it to refuse the recipe (it does not call the base) or to read its
+router before the recipe is applied:
+
+```python
+class Shop(RoutedApplication):
+    def plugin_configuration(self) -> None:
+        self.code_configuration = self.routing.configure("?")
+        super().plugin_configuration()
+```
+
+A block or a line written or changed in the configuration of a running server
+runs the hook of that application again. An application added to a running
+server receives the hook before its `on_startup`. An application declared with
+`spawner` applies its lines in its own process, at its own startup; a change
+made later in the main process does not reach that process.
+
 ## The sections
 
 One line each; the deep dives live in their own guides.

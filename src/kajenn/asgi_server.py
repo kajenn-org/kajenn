@@ -76,6 +76,7 @@ dedicated process, its application's alone.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from pathlib import Path
 from typing import Any
@@ -111,6 +112,9 @@ MANAGEMENT_CODE = "_server"
 
 #: The branch of the configuration that lists the applications.
 APPLICATIONS_BRANCH = "applications"
+
+#: The tags of the nodes an application's plugin configuration is made of.
+PLUGIN_CONFIGURATION_TAGS = frozenset({"plugin_configuration", "configure"})
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +172,10 @@ class AsgiServer(
 
         A node written there builds its application, registers it disabled and,
         once the lifespan started, activates it; a node taken away removes its
-        application. The subscription starts after the boot: the declared
-        applications are already registered.
+        application. A ``plugin_configuration`` block or one of its lines
+        written or changed under an application runs that application's
+        ``plugin_configuration`` hook again. The subscription starts after the
+        boot: the declared applications are already registered.
         """
         node = self.config.node(APPLICATIONS_BRANCH)
         if node is None:
@@ -179,19 +185,25 @@ class AsgiServer(
             builder = self.config.builder
             node.value = type(builder.source)(builder=builder)
         node.value.subscribe(MANAGEMENT_CODE, insert=self._application_written,
-                             delete=self._application_taken)
+                             delete=self._application_taken,
+                             update=self._application_changed)
 
     @property
     def application_nodes(self) -> Any:
         """The ``applications`` branch of the live configuration, one node per application."""
         return self.config.node(APPLICATIONS_BRANCH).value
 
-    def _application_written(self, node: Any, **_: Any) -> None:
+    def _application_written(self, node: Any, pathlist: Any = (), **_: Any) -> None:
         """Build, register and activate the application of a node written at runtime.
 
         A refusal (an unknown keyword, a claimed code or mount) raises to the
-        writer, which takes the node away again.
+        writer, which takes the node away again. A node written inside an
+        application (``pathlist`` starts with its code) is no application: it
+        counts only as a change of that application's plugin configuration.
         """
+        if pathlist:
+            self._plugin_configuration_changed(pathlist[0], node)
+            return
         app_class, app_kwargs = self.config.application_entry(node)
         app = (RemoteApplication(app_class=app_class, **app_kwargs) if "spawner" in app_kwargs
                else app_class(**app_kwargs))
@@ -208,10 +220,43 @@ class AsgiServer(
                 logger.exception("application %r: its process did not start", app.code)
                 await self.remove_application(app.code, failed=True)
                 return
+        await self._run_plugin_configuration(app)
         self.lifespan.start_activation(app)
 
-    def _application_taken(self, node: Any, **_: Any) -> None:
-        """Remove the application of a node taken away from the configuration."""
+    def _application_changed(self, node: Any, pathlist: Any = (), **_: Any) -> None:
+        """A value or an attribute changed under the application ``pathlist[0]``."""
+        self._plugin_configuration_changed(pathlist[0], node)
+
+    def _plugin_configuration_changed(self, code: str, node: Any) -> None:
+        """Run the ``plugin_configuration`` hook of ``code`` when ``node`` is part of its blocks.
+
+        Nothing runs before the lifespan started: the startup broadcast
+        applies what the configuration holds by then.
+        """
+        app = self.applications.get(code)
+        if (app is None or not self.lifespan.started
+                or node.node_tag not in PLUGIN_CONFIGURATION_TAGS):
+            return
+        asyncio.get_running_loop().create_task(self._run_plugin_configuration(app))
+
+    async def _run_plugin_configuration(self, app: Any) -> None:
+        """Call the ``plugin_configuration`` hook of ``app`` alone; a raise is logged."""
+        method = app._broadcast_callable("plugin_configuration")
+        try:
+            if inspect.iscoroutinefunction(method):
+                await method()
+            else:
+                method()
+        except Exception:
+            logger.exception("application %r: plugin_configuration raised", app.code)
+
+    def _application_taken(self, node: Any, pathlist: Any = (), **_: Any) -> None:
+        """Remove the application of a node taken away from the configuration.
+
+        A node taken away inside an application removes nothing.
+        """
+        if pathlist:
+            return
         code = node.attr.get("code") or node.label
         if code not in self.applications or code in self._removals:
             return

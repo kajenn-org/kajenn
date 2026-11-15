@@ -1,0 +1,401 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<proposal id="proposal/plugin-configuration" title="Plugin configuration of routes in the recipe" date="2026-11-15" lang="en" author="Giovanni Porcari" status="draft">
+
+  <problem>
+    <p>The code of an application sets the plugin options of each route in <c>@route(...)</c>: the <c>auth</c> rule, the <c>channel</c> channels, the <c>openapi</c> options, the <c>env</c> requirements. Every installation of that application gets the same values.</p>
+    <p>An installation cannot change them. The <c>plugins</c> section of the recipe switches plugins on for all the applications together and does not address a route. Changing an option at runtime would need a management application that does not exist.</p>
+    <p>Each installation must be able to decide the rules of its routes in its recipe, without a management application.</p>
+  </problem>
+
+  <current>
+    <section title="kajenn today">
+      <fact source="src/kajenn/routed_application.py:180" method="read" verified="2026-11-15"><c>RoutedApplication.__init__</c> plugs <c>auth</c>, <c>channel</c>, <c>pydantic</c> and <c>openapi</c> on the application router. The only option it sets is <c>channels</c> at router level. Nothing is read from the recipe.</fact>
+      <fact source="src/kajenn/config/elements.py:440" method="read" verified="2026-11-15">The <c>plugins</c> section of the recipe has <c>plugin</c> children. Each one switches a plugin on and carries the options handed to <c>router.plug(code, **options)</c>. The section belongs to the server and applies to every routed application.</fact>
+      <fact source="src/kajenn/routed_application.py:228" method="read" verified="2026-11-15">The plugins of the <c>plugins</c> section are plugged by <c>server.arm_router</c> on the first access to <c>route</c> made once a server owns the application.</fact>
+      <fact source="src/kajenn/application.py:133" method="read" verified="2026-11-15"><c>ApplicationGrammar</c> is the grammar every application inherits. Its elements are <c>parameters</c>, <c>request</c> and <c>databases</c>.</fact>
+      <fact source="src/kajenn/application.py:258" method="read" verified="2026-11-15">An application reads its own part of the recipe at <c>applications.&lt;code&gt;.&lt;path&gt;</c>.</fact>
+      <fact source="src/kajenn/config/handler.py:299" method="read" verified="2026-11-15">The recipe can declare an <c>application</c> element with code <c>_server</c>. It customises the management application and its class must be <c>ServerApplication</c> or a subclass.</fact>
+      <fact source="src/kajenn/server_app/server_app.py:210" method="read" verified="2026-11-15"><c>ServerApplication</c> is a <c>RoutedApplication</c> with code <c>_server</c>. Its sections (<c>users</c>, <c>tokens</c>, <c>tasks</c>, <c>monitor</c>, <c>databases</c>, <c>k8s</c>, <c>applications</c>) are attached with <c>add_branches</c>.</fact>
+      <fact source="src/kajenn/server_app/server_app.py:252" method="read" verified="2026-11-15">The <c>auth</c> section of <c>_server</c> is attached inside the constructor, when the first login method is registered.</fact>
+      <fact source="src/kajenn/lifespan.py:164" method="read" verified="2026-11-15">The lifespan startup runs <c>on_startup</c> of the applications in registration order. The activation of an application is <c>on_startup</c>, then <c>ready</c>.</fact>
+      <fact source="src/kajenn/asgi_server.py:361" method="read" verified="2026-11-15">In the main process only <c>_server</c> answers at once; every other application waits for its <c>ready</c>. In the dedicated process of an application the applications answer at once.</fact>
+      <fact source="src/kajenn/remote_application.py:153" method="read" verified="2026-11-15">An application declared with <c>spawner</c> is a <c>RemoteApplication</c> in the main process. The real application class is built in the spawned process, from the same recipe.</fact>
+      <fact source="src/kajenn/asgi_server.py:190" method="read" verified="2026-11-15">An application added to a running server is built from its <c>application</c> node, registered and then activated.</fact>
+      <fact source="src/kajenn/asgi_server.py:181" method="read" verified="2026-11-15">The configuration of a running server is a genro-bag tree. The server subscribes to its <c>applications</c> branch with <c>subscribe(id, insert=..., delete=...)</c>: a node written there adds an application, a node taken away removes it. genro-bag <c>subscribe</c> also takes <c>update</c> and <c>any</c> callbacks.</fact>
+      <fact source="src/kajenn/kbus_mixin.py:202" method="read" verified="2026-11-15">A spawned process loads its configuration from a file or a template when it starts. In <c>kbus_mixin.py</c>, <c>spawner.py</c> and <c>remote_application.py</c> no code sends it a later change of the configuration.</fact>
+      <fact source="src/kajenn/server.py:276" method="read" verified="2026-11-15"><c>register_application</c> is a sync method.</fact>
+      <fact source="src/kajenn/routed_application.py:401" method="read" verified="2026-11-15"><c>discover</c> returns the <c>nodes()</c> tree filtered by the channel of the request and by the tags of the caller: an entry the caller may not execute is not listed.</fact>
+      <fact source="src/kajenn/plugins/openapi/translator.py:230" method="read" verified="2026-11-15">The OpenAPI document derives <c>security</c> of an operation from the <c>auth</c> rule in force on the entry.</fact>
+      <fact source="src/kajenn/config/elements.py:451" method="run" verified="2026-11-15">A value written without a name in a recipe element becomes the value of its node; the keywords become its attributes. <c>shop.parameters("x", currency="EUR")</c> gives a node with value <c>"x"</c> and attribute <c>currency</c>. A node that receives children loses that value: after <c>cfg.plugins("x").plugin(code="logging")</c> the value of the <c>plugins</c> node is its children and <c>"x"</c> is gone. <c>plugins.plugin("logging")</c> raises <c>ValueError</c>: the collection key needs the attribute <c>code</c>.</fact>
+    </section>
+
+    <section title="genro-routes 0.30.1">
+      <fact source="genro_routes/core/routing.py:453" method="read" verified="2026-11-15"><c>routing.configure(target, **options)</c> acts on the router of one routing class. <c>target</c> is <c>"&lt;plugin&gt;"</c> for the router level or <c>"&lt;plugin&gt;/&lt;selector&gt;"</c> for its entries. It is also a dict with the key <c>target</c>, or a list of such dicts. <c>options</c> are the parameters of the <c>configure</c> method of that plugin.</fact>
+      <fact source="genro_routes/core/routing.py:420" method="run" verified="2026-11-15">The selector is a glob matched against the entry names of that router, several separated by commas. It does not descend into the sections. A selector that matches no entry raises <c>KeyError</c>.</fact>
+      <fact source="genro_routes/core/routing.py:488" method="run" verified="2026-11-15">A plugin that is not on the router raises <c>AttributeError</c>. An option the plugin does not know raises a pydantic <c>ValidationError</c>.</fact>
+      <fact source="genro_routes/plugins/auth.py:139" method="run" verified="2026-11-15"><c>routing.configure("auth/&lt;name&gt;", rule="")</c> opens an entry whose code declares an <c>auth_rule</c>. A non-empty <c>rule</c> replaces the one of the code.</fact>
+      <fact source="genro_routes/plugins/_base_plugin.py:202" method="run" verified="2026-11-15">A value written at router level (<c>routing.configure("auth", rule=...)</c>) applies to the entries that declare none. An entry that declares its own value in the code keeps it.</fact>
+      <fact source="genro_routes/core/routing.py:431" method="run" verified="2026-11-15"><c>routing.configure("?")</c> returns the description of the router: for each plugin the router-level <c>config</c> and the value in force on each entry (<c>overrides</c>), then the sections under <c>routers</c>. It reports the values in force and does not say where a value comes from. Its shape is not the shape <c>routing.configure</c> takes as input.</fact>
+      <fact source="genro_routes/plugins/auth.py:112" method="read" verified="2026-11-15">Parameters of <c>configure</c>: <c>auth</c> takes <c>rule</c>, <c>channel</c> takes <c>channels</c>, <c>env</c> takes <c>requires</c>, <c>pydantic</c> takes <c>disabled</c>. The kajenn <c>openapi</c> plugin takes <c>method</c>, <c>tags</c>, <c>summary</c>, <c>description</c>, <c>deprecated</c>, <c>security_scheme</c>, <c>security</c>.</fact>
+      <fact source="genro-org/genro-routes#74" method="run" verified="2026-11-15">When the routes are resolved before a plugin class is registered, the options written in <c>@route(...)</c> for that plugin are lost. A <c>routing.configure</c> call made after the plugin is plugged writes the option and the plugin applies it.</fact>
+    </section>
+
+    <section title="applications_broadcast">
+      <fact source="src/kajenn/server.py:304" method="read" verified="2026-11-15">On <c>origin/develop</c> f9487ec (PR 147, issue 142) <c>applications_broadcast(method_name, *args, on_error=None, reverse=False, **kwargs)</c> is an async method of the server. It calls the <c>@broadcast_hook</c> of that name on every application, in registration order, and returns <c>[(code, result)]</c>. An application whose class has no such hook is skipped. An application that raises goes to <c>on_error(code, exception)</c>; with <c>on_error=None</c> the first exception reaches the caller.</fact>
+      <fact source="src/kajenn/application.py:116" method="read" verified="2026-11-15">On <c>origin/develop</c> f9487ec a method is a broadcast hook when any definition of its name along the MRO carries <c>@broadcast_hook</c>. A route whose method has the name of a broadcast hook raises <c>ValueError</c> when the application is registered (<c>routed_application.py:239</c>).</fact>
+      <fact source="src/kajenn/remote_application.py:196" method="read" verified="2026-11-15">On <c>origin/develop</c> f9487ec the <c>RemoteApplication</c> of an application declared with <c>spawner</c> forwards every <c>@broadcast_hook</c> of the real class to the spawned process with <c>remote_call</c>, a kbus call with a timeout. The names <c>RemoteApplication</c> defines itself stay local: <c>on_startup</c> waits for <c>joined</c>, <c>on_shutdown</c> does nothing, because the spawned process runs both in its own lifespan.</fact>
+    </section>
+  </current>
+
+  <solution>
+    <section title="Behaviour">
+      <list>
+        <item>The recipe of an installation names a route of an application and writes the options of one plugin for it.</item>
+        <item>The value of the recipe replaces the value written in <c>@route(...)</c> for that route. The two are not combined.</item>
+        <item>A route the recipe does not name keeps the value of the code.</item>
+        <item>The recipe can close a route the code leaves open and open a route the code closes.</item>
+        <item>Two installations of the same code have different rules.</item>
+        <item>No management application is needed: the recipe is enough.</item>
+        <item>A route named in the recipe that does not exist gives at most a warning. The boot goes on.</item>
+        <item>The plugin configuration can change on a running server, like other parts of the configuration. A subscription updates the plugins when it changes.</item>
+      </list>
+    </section>
+
+    <section title="Recipe">
+      <p>The example application <c>Shop</c> attaches a section <c>products</c> with three routes. In the code <c>list</c> has no rule; <c>insert</c> and <c>delete</c> have <c>auth_rule="shop_admin"</c>. Their URLs are <c>/shop/products/list</c>, <c>/shop/products/insert</c>, <c>/shop/products/delete</c>.</p>
+      <code lang="python"><![CDATA[
+shop = cfg.applications().application(code="shop", app_class=Shop)
+
+shop_plugin_auth = shop.plugin_configuration(plugin="auth")
+shop_plugin_auth.configure(route="products/list,products/insert", rule="staff")
+shop_plugin_auth.configure(route="products/delete", rule="boss")
+
+shop_plugin_channel = shop.plugin_configuration(plugin="channel")
+shop_plugin_channel.configure(route="products/list", channels="api,mcp")
+]]></code>
+      <list>
+        <item><c>plugin_configuration</c> is an element of <c>ApplicationGrammar</c>: every application has it, <c>_server</c> included. It is written only under an <c>application</c> element.</item>
+        <item>One <c>plugin_configuration</c> block names one plugin. The plugins are configured separately.</item>
+        <item>Each <c>configure</c> line carries <c>route</c> and the parameters of the <c>configure</c> method of that plugin. <c>route</c> is the path of one route, or the paths of several routes separated by commas. Each path is complete, relative to the application, written as in the URL after the mount, without a leading slash.</item>
+        <item>Every plugin present on the router of the application can be configured, a plugin registered from outside included.</item>
+        <item><c>_server</c> is configured by declaring <c>application(code="_server", app_class=ServerApplication)</c> in the recipe and writing <c>plugin_configuration</c> under it.</item>
+      </list>
+    </section>
+
+    <section title="What kajenn calls">
+      <p>kajenn adds no syntax of its own for the options: each <c>configure</c> line becomes one call of <c>routing.configure</c> of genro-routes on the routing class that owns the route.</p>
+      <code lang="python"><![CDATA[
+shop.products.routing.configure("auth/list,insert", rule="staff")
+shop.products.routing.configure("auth/delete", rule="boss")
+shop.products.routing.configure("channel/list", channels="api,mcp")
+]]></code>
+      <list>
+        <item>The plugin of the block gives the first part of the target. The path gives the routing class and the name of the entry.</item>
+        <item>After these calls <c>/shop/products/list</c> asks for the tag <c>staff</c> and answers on the channel <c>mcp</c> too; <c>/shop/products/delete</c> asks for <c>boss</c> instead of <c>shop_admin</c>; <c>/shop/products/insert</c> asks for <c>staff</c> instead of <c>shop_admin</c>.</item>
+        <item>A <c>KeyError</c> of <c>routing.configure</c> (no entry with that name) becomes the warning.</item>
+        <item>A route of a section attached after the hook ran does not exist when the hook runs: its line is a line that names a route that does not exist.</item>
+        <item>A line that names a plugin that is not on the router, or an option the plugin does not know, is not applied either. Nothing stops.</item>
+      </list>
+      <rule level="must-not" why="Defensive code prevents only the stupid errors; the dangerous ones pass anyway. An error has consequences for who made it.">kajenn adds no defensive code against errors in the plugin configuration: no boot stop, no restore of earlier values, no handling of a hook that refuses.</rule>
+    </section>
+
+    <section title="The plugin_configuration hook">
+      <list>
+        <item>Every application has a hook <c>plugin_configuration</c>, marked <c>@broadcast_hook</c> (<link href="https://github.com/kajenn-org/kajenn/issues/142">kajenn-org/kajenn#142</link>).</item>
+        <item>The server calls it on every application with <c>applications_broadcast("plugin_configuration")</c>.</item>
+        <item>The default does nothing. <c>RoutedApplication</c> reads its <c>plugin_configuration</c> blocks from the recipe and makes the calls above. An application with no block in the recipe does nothing.</item>
+        <item>A subclass redefines the hook to refuse a configuration or to take the export of its router before the configuration is applied.</item>
+        <item>No hook runs after the configuration is applied.</item>
+        <item>For an application declared with <c>spawner</c> the hook runs in the spawned process, where the application is built. Who calls it there at boot is open (<ref to="d-spawned-boot">d-spawned-boot</ref>).</item>
+      </list>
+      <code lang="python"><![CDATA[
+class Shop(RoutedApplication):
+    def plugin_configuration(self):
+        self.code_configuration = self.routing.configure("?")
+        super().plugin_configuration()
+]]></code>
+    </section>
+
+    <section title="Changes on a running server">
+      <list>
+        <item>The server calls the hook in the lifespan startup, before <c>on_startup</c>: no request arrives before the configuration.</item>
+        <item>After the boot the <c>plugin_configuration</c> blocks of an application can change in the configuration of the running server.</item>
+        <item>A change on a running server is a new configuration. There are no actions that insert or delete a single line: the new configuration only says which values there are.</item>
+        <item>A subscription updates the plugins of that application with the values of the new configuration.</item>
+        <item>To give a route its code value back, the new configuration writes that value.</item>
+        <item>An application declared with <c>spawner</c> needs nothing specific to plugins. Any change of the configuration, of plugins or of anything else, is carried to the spawned process, which applies it to its own configuration. Its own subscriptions fire there, the one of <c>plugin_configuration</c> included.</item>
+        <item>The hook runs before any configuration that does not come from the code: the subscription goes through the hook of that application, so the application can refuse a change made on a running server too.</item>
+      </list>
+    </section>
+
+    <section title="Reading what the recipe changed">
+      <list>
+        <item>kajenn adds no log line, no route and no discovery field for this.</item>
+        <item><c>nodes()</c> called with the tags of a user says which routes that user may execute. <c>discover</c> already does it.</item>
+        <item><c>routing.configure("?")</c> gives the values in force.</item>
+        <item>Who wants the differences takes the export in the hook, before the configuration is applied, and keeps it. A method compares that export with the export taken when it is called. After the configuration is applied the router no longer holds the values of the code: the first export cannot be rebuilt later from the running server.</item>
+      </list>
+    </section>
+
+    <section title="JSON form">
+      <p>A JSON form of the plugin configuration, such as the one an administration page would send, is set aside for now (owner, 2026-11-15). Its shape is not decided and it is not part of this proposal.</p>
+    </section>
+
+    <section title="genro-routes#74">
+      <p>The options written by the recipe are not exposed to <link href="https://github.com/genro-org/genro-routes/issues/74">genro-org/genro-routes#74</link>: they are written with <c>routing.configure</c> after the plugin is on the router, not read from the decorator. The hook must run after <c>server.arm_router</c> has plugged the plugins of the <c>plugins</c> section; before that, a block naming one of them meets a router without that plugin.</p>
+    </section>
+  </solution>
+
+  <decisions>
+    <decision id="d-place" status="decided">
+      <question>Where does the recipe hold the plugin options of the routes?</question>
+      <option id="d-place-application" title="Under each application element">
+        <list>
+          <item>The path is relative to the application.</item>
+          <item>Removing the application from the recipe removes its options.</item>
+          <item>An application added to a running server and the spawned process of an application find the options in the node they already read.</item>
+          <item>The changed rules of an installation sit in one place per application.</item>
+        </list>
+      </option>
+      <option id="d-place-server" title="One section for the whole server">
+        <list>
+          <item>All the changed rules are read in one place.</item>
+          <item>Each line names the application; a line can name an application that is not there.</item>
+        </list>
+      </option>
+      <option id="d-place-both" title="Both: from the server or from the application"/>
+      <choice option="d-place-application" by="GP" date="2026-11-15">Plugin configurations belong to the application only. The form starting from the server was admitted during the discussion and then withdrawn.</choice>
+    </decision>
+
+    <decision id="d-element-name" status="decided">
+      <question>What is the name of the element under <c>application</c>?</question>
+      <option id="d-element-name-plugin" title="plugin">
+        <p>The server-level <c>plugins</c> section already has <c>plugin</c> children with another function: switching plugins on.</p>
+      </option>
+      <option id="d-element-name-plugin-configuration" title="plugin_configuration"/>
+      <choice option="d-element-name-plugin-configuration" by="GP" date="2026-11-15"/>
+    </decision>
+
+    <decision id="d-shape" status="decided">
+      <question>How is a configuration written inside the application?</question>
+      <option id="d-shape-route-first" title="From the route: route(path).configure(...)">
+        <p>All the options changed on one route are read together. Each line must also name the plugin.</p>
+      </option>
+      <option id="d-shape-plugin-first" title="One block per plugin: plugin_configuration('auth'), then configure(path, options)">
+        <p>All the rules of one plugin are read in one block. The options changed on one route sit in one block per plugin.</p>
+      </option>
+      <option id="d-shape-single-block" title="One block per application, each line with the target &quot;plugin/path&quot;">
+        <p>A list of these lines is already a JSON form.</p>
+      </option>
+      <choice option="d-shape-plugin-first" by="GP" date="2026-11-15">From a human point of view the plugins are configured separately.</choice>
+    </decision>
+
+    <decision id="d-arguments" status="decided">
+      <question>What does a <c>configure</c> line carry?</question>
+      <option id="d-arguments-method" title="What routing.configure asks: the path and the parameters of the plugin (rule, channels)"/>
+      <option id="d-arguments-route-keywords" title="The keywords of @route: auth_rule, channel_channels"/>
+      <choice option="d-arguments-method" by="GP" date="2026-11-15">kajenn calls the <c>configure</c> of the routing class: what the recipe holds is what that method asks.</choice>
+    </decision>
+
+    <decision id="d-plugins" status="decided">
+      <question>Which plugins can the recipe configure?</question>
+      <option id="d-plugins-all" title="Every plugin present on the router">
+        <list>
+          <item>No list to maintain in kajenn; a plugin registered from outside is configured like the others.</item>
+          <item>The recipe can change the contract of a route: <c>pydantic</c> with <c>disabled</c> removes the validation, <c>openapi</c> with <c>method</c> changes the HTTP method the route answers.</item>
+        </list>
+      </option>
+      <option id="d-plugins-closed" title="A closed list: auth, channel, env, openapi"/>
+      <choice option="d-plugins-all" by="GP" date="2026-11-15"/>
+    </decision>
+
+    <decision id="d-missing-route" status="decided">
+      <question>What happens when the recipe names a route that does not exist?</question>
+      <option id="d-missing-route-stop" title="The boot stops"/>
+      <option id="d-missing-route-warning" title="At most a warning; the boot goes on"/>
+      <choice option="d-missing-route-warning" by="GP" date="2026-11-15"/>
+    </decision>
+
+    <decision id="d-visibility" status="decided">
+      <question>Where does one read which options the recipe changed?</question>
+      <option id="d-visibility-log" title="Log lines when the configuration is applied"/>
+      <option id="d-visibility-route" title="A route of _server listing the changed options"/>
+      <option id="d-visibility-discovery" title="A field in the discovery and in the OpenAPI document"/>
+      <option id="d-visibility-nothing" title="Nothing added: nodes() for a user and the export of genro-routes"/>
+      <choice option="d-visibility-nothing" by="GP" date="2026-11-15">Calling <c>nodes</c> as a user says whether that user can or cannot. genro-routes has an export of the configuration.</choice>
+    </decision>
+
+    <decision id="d-after-hook" status="decided">
+      <question>Does a second hook run after the configuration is applied?</question>
+      <option id="d-after-hook-yes" title="Yes: the pair before and after gives the two exports to compare"/>
+      <option id="d-after-hook-no" title="No: a method compares the export taken before with the current state"/>
+      <choice option="d-after-hook-no" by="GP" date="2026-11-15">Who wants the differences has a method that takes the saved export and compares it with the current state.</choice>
+    </decision>
+
+    <decision id="d-hook" status="decided">
+      <question>Who applies the configuration, and who can refuse it or take the export before it is applied?</question>
+      <option id="d-hook-application" title="A plugin_configuration hook of the application, called with applications_broadcast">
+        <list>
+          <item>Words of the owner, 2026-11-15: a hook before any configuration that does not come from the code, to refuse it or to take the export; a hook <c>plugin_configuration</c> that does nothing when there is nothing; a broadcast of plugin configuration.</item>
+          <item>The hook that applies the recipe and the hook that can refuse or take the export are one method, redefined by the subclass.</item>
+          <item>The author of an application can refuse a change on its own routes.</item>
+        </list>
+      </option>
+      <option id="d-hook-server" title="A hook of the server, one for all the applications">
+        <p>One place takes the export of every application. The author of an application cannot refuse anything.</p>
+      </option>
+      <option id="d-hook-both" title="Both: the server hook, then the application hook"/>
+      <choice option="d-hook-application" by="GP" date="2026-11-15">A hook <c>plugin_configuration</c> that does nothing when there is nothing: a broadcast of plugin configuration.</choice>
+    </decision>
+
+    <decision id="d-section-path" status="decided">
+      <question>How does one line give a value to several routes, for example to all the routes of the section <c>products</c>?</question>
+      <option id="d-section-path-router" title="A write at router level, as genro-routes does">
+        <list>
+          <item>kajenn calls <c>routing.configure("auth", rule="staff")</c> on the section.</item>
+          <item><c>list</c> asks for <c>staff</c>. <c>insert</c> and <c>delete</c> keep <c>shop_admin</c>, because the code gives them a rule. No message says so.</item>
+        </list>
+      </option>
+      <option id="d-section-path-every-route" title="Every route under the section">
+        <list>
+          <item>kajenn calls <c>routing.configure("auth/*", rule="staff")</c> on the section and on every section under it.</item>
+          <item>A longer path wins, whatever the order of the lines.</item>
+          <item>A route added by a new version of the application takes the rule of the installation.</item>
+        </list>
+      </option>
+      <option id="d-section-path-glob" title="A path must end with the name of an entry; the last segment accepts the glob of the method">
+        <list>
+          <item><c>'products/*'</c> covers the three routes; <c>'products/insert,delete'</c> covers two; <c>'products'</c> alone gives the warning.</item>
+          <item>The glob does not descend into the sections under <c>products</c>.</item>
+          <item>Two lines on the same route are decided by the order of writing.</item>
+        </list>
+      </option>
+      <option id="d-section-path-comma" title="route holds several complete paths separated by commas">
+        <p>Every route is written by name. No glob and no path of a section.</p>
+      </option>
+      <choice option="d-section-path-comma" by="GP" date="2026-11-15"/>
+    </decision>
+
+    <decision id="d-moment" status="decided">
+      <question>When does the server call the hook?</question>
+      <option id="d-moment-before-startup" title="In the lifespan startup, before on_startup">
+        <list>
+          <item>No request arrives before the configuration, also for <c>_server</c> and in the spawned process of an application, which answer at once.</item>
+          <item><c>applications_broadcast</c> is async and <c>register_application</c> is sync: the call cannot sit in the registration.</item>
+          <item>A section attached in <c>on_startup</c> or later does not exist yet: its lines give the warning and are not applied.</item>
+        </list>
+      </option>
+      <option id="d-moment-after-startup" title="After on_startup, before ready">
+        <list>
+          <item>The sections attached in <c>on_startup</c> exist.</item>
+          <item><c>_server</c> and the applications of a spawned process already answer while <c>on_startup</c> runs: in that interval the rule of the code is in force.</item>
+        </list>
+      </option>
+      <choice option="d-moment-before-startup" by="GP" date="2026-11-15">Before. The configurations can also change on a running server, like other things: a subscription updates the plugins when the configuration changes.</choice>
+    </decision>
+
+    <decision id="d-runtime-update" status="decided">
+      <question>How does the subscription update the plugins when the configuration of a running server changes?</question>
+      <option id="d-runtime-update-line" title="Only the values the new configuration holds are applied">
+        <list>
+          <item>One <c>routing.configure</c> call per value in the new configuration.</item>
+          <item>A route the new configuration does not name keeps the value it has: the value of the code is no longer on the router.</item>
+        </list>
+      </option>
+      <option id="d-runtime-update-restore" title="The values of the code are restored, then the whole block is applied again">
+        <list>
+          <item>A written, changed or removed line is handled the same way.</item>
+          <item>kajenn takes the export of the router before the first configuration and keeps it for the life of the application.</item>
+          <item>The kept export is the one <ref to="d-diff-method">d-diff-method</ref> compares with the current state.</item>
+        </list>
+      </option>
+      <choice option="d-runtime-update-line" by="GP" date="2026-11-15">A change cannot take a line away. It can only say which values there are: there are no insert or delete actions, only the new configuration.</choice>
+    </decision>
+
+    <decision id="d-runtime-spawned" status="decided">
+      <question>How does a change of the plugin configuration reach the application of a spawned process?</question>
+      <option id="d-runtime-spawned-kbus" title="A message of its own: the main process sends the plugin configuration over the KajennBus"/>
+      <option id="d-runtime-spawned-restart" title="It does not: the spawned process reads the new configuration when it is relaunched"/>
+      <option id="d-runtime-spawned-generic" title="Nothing specific to plugins: every change of the configuration is carried to the spawned process"/>
+      <choice option="d-runtime-spawned-generic" by="GP" date="2026-11-15">The problem is generic. When a process is remote, any change of the configuration, not only of plugins, must be carried to the remote process, which applies it; doing so fires its own subscriptions.</choice>
+    </decision>
+
+    <decision id="d-added-application" status="decided">
+      <question>How does an application added to a running server receive the hook?</question>
+      <option id="d-added-application-alone" title="The hook is called on that application alone, before its on_startup"/>
+      <option id="d-added-application-broadcast" title="A new broadcast, which calls the hook again on every application"/>
+      <choice option="d-added-application-alone" by="GP" date="2026-11-15"/>
+    </decision>
+
+    <decision id="d-invalid-line" status="decided">
+      <question>What happens when a line names a plugin that is not on the router, or an option the plugin does not know?</question>
+      <option id="d-invalid-line-stop" title="The boot stops"/>
+      <option id="d-invalid-line-warning" title="The line is not applied and the boot goes on, as for a route that does not exist"/>
+      <choice option="d-invalid-line-warning" by="GP" date="2026-11-15">Nothing happens. Whoever wrote the line wrong answers for it.</choice>
+    </decision>
+
+    <decision id="d-refusal" status="decided">
+      <question>How does a hook refuse a configuration, and what does the server do then?</question>
+      <option id="d-refusal-skip" title="The subclass does not call the base: nothing is applied and nothing is reported"/>
+      <option id="d-refusal-raise-continue" title="The hook raises: on_error logs it and the broadcast goes on"/>
+      <option id="d-refusal-raise-stop" title="The hook raises: the boot stops"/>
+      <choice option="d-refusal-skip" by="GP" date="2026-11-15">As a rule, errors cannot be prevented with defensive code at every moment. If there are errors there are consequences. Only the stupid errors can be prevented; the dangerous ones pass anyway.</choice>
+    </decision>
+
+    <decision id="d-spawned-boot" status="proposed">
+      <question>At boot, who calls the hook of an application declared with <c>spawner</c>? The broadcast of the main process runs before <c>on_startup</c>, and <c>RemoteApplication.on_startup</c> is what waits for the spawned process to join: a hook forwarded before that has no process to answer it. The spawned process is a server too and has its own lifespan.</question>
+      <option id="d-spawned-boot-own" title="The spawned process, in its own lifespan startup">
+        <p>Default of this outline. It is settled during the implementation on a branch.</p>
+        <list>
+          <item>The hook runs before any request of that process, like in the main process.</item>
+          <item><c>RemoteApplication</c> defines <c>plugin_configuration</c> itself, so the name stays local and is not forwarded, as it does for <c>on_startup</c>.</item>
+        </list>
+      </option>
+      <option id="d-spawned-boot-forward" title="The main process, with the forwarded hook, once the spawned process has joined">
+        <list>
+          <item>No method to add to <c>RemoteApplication</c>.</item>
+          <item>The spawned process answers requests from its start: between its start and the forwarded call the values of the code are in force.</item>
+        </list>
+      </option>
+    </decision>
+
+    <decision id="d-diff-method" status="proposed">
+      <question>Who provides the method that compares the saved export with the current state, and what is its name?</question>
+      <option id="d-diff-method-kajenn" title="kajenn provides it on the application">
+        <p>Candidate name from the words of the owner: <c>config_diff</c>. kajenn then also takes and keeps the export.</p>
+      </option>
+      <option id="d-diff-method-application" title="Each application that wants it writes it in its own hook">
+        <p>Default of this outline. It is settled during the implementation on a branch.</p>
+        <p>asqueel-migration makes the same comparison of two dicts with the library <c>dictdiffer</c>, which is not a dependency of kajenn.</p>
+      </option>
+    </decision>
+
+
+    <decision id="d-keywords" status="decided">
+      <question>Which keywords carry the plugin and the path in the recipe? A value written without a name is lost on a node that receives children, so the plugin of <c>plugin_configuration</c> needs a keyword.</question>
+      <option id="d-keywords-code-path" title="plugin_configuration(code=&quot;auth&quot;) and configure(path=&quot;products/list&quot;, ...)">
+        <p><c>code</c> is the keyword of the existing <c>plugin</c> element.</p>
+      </option>
+      <option id="d-keywords-plugin-target" title="plugin_configuration(plugin=&quot;auth&quot;) and configure(target=&quot;products/list&quot;, ...)">
+        <p><c>target</c> is the word of <c>routing.configure</c>.</p>
+      </option>
+      <option id="d-keywords-plugin-route" title="plugin_configuration(plugin=&quot;auth&quot;) and configure(route=&quot;products/list&quot;, ...)"/>
+      <choice option="d-keywords-plugin-route" by="GP" date="2026-11-15"/>
+    </decision>
+  </decisions>
+
+  <consequences>
+    <list>
+      <item>The hook depends on <c>applications_broadcast</c> and <c>@broadcast_hook</c> of <link href="https://github.com/kajenn-org/kajenn/issues/142">kajenn-org/kajenn#142</link>, merged in <c>develop</c> with PR 147.</item>
+      <item>No application can have a route named <c>plugin_configuration</c>: issue 142 refuses a route with the name of a <c>@broadcast_hook</c>.</item>
+      <item>Carrying a change of the configuration to a spawned process is a general mechanism and is not part of this proposal. It does not exist today: until it does, a change made on a running server reaches only the applications of the main process. The live configuration is the subject of <link href="https://github.com/kajenn-org/kajenn/issues/75">kajenn-org/kajenn#75</link>; the requirement is noted there in a comment of 2026-11-15.</item>
+      <item>A recipe can open a route its author closed. The author who must prevent it redefines the hook.</item>
+      <item>The OpenAPI document follows the recipe with no other change: <c>security</c> is derived from the rule in force.</item>
+      <item>The configuration guide gets a section on <c>plugin_configuration</c> with the <c>Shop</c> example.</item>
+    </list>
+  </consequences>
+
+  <related>
+    <doc id="proposal/live-applications">Applications added, switched off and removed on a running server</doc>
+  </related>
+</proposal>

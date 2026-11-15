@@ -356,6 +356,25 @@ class ConfigurationHandler(ConfigHandler):
                 )
         return descriptors
 
+    def plugin_configuration(self, code: str) -> list[tuple[str, str, dict[str, Any]]]:
+        """The ``plugin_configuration`` lines of the application ``code``.
+
+        One ``(plugin, route, options)`` triple per ``configure`` line, in the
+        order written: ``plugin`` from the line's block, ``route`` as written
+        (one path, or several separated by commas), ``options`` the remaining
+        attributes. Empty when the application has no node or no block.
+        """
+        node = self.node(f"applications.{code}")
+        lines: list[tuple[str, str, dict[str, Any]]] = []
+        for block in (node.value or ()) if node is not None else ():
+            if block.node_tag != "plugin_configuration":
+                continue
+            plugin = self.open_attrs(block)["plugin"]
+            for line in block.value or ():
+                options = self.open_attrs(line)
+                lines.append((plugin, options.pop("route"), options))
+        return lines
+
     def orchestration_kwargs(self, code: str) -> dict[str, Any] | None:
         """One application's orchestration node, or ``None`` when it has none.
 
