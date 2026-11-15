@@ -25,14 +25,16 @@ API key of an identity that holds only that tag.
 
 At every scrape the route calls ``prometheus_metrics`` on every application
 through ``server.applications_broadcast``, ``_server`` included. Each answer
-is Prometheus exposition text; an empty answer is skipped, and an application
-whose hook raises is logged and left out of that scrape. Every sample gets the
-label ``app=<code>``. Families with the same name are merged across
-applications: their samples are concatenated when type and help agree; a
-family whose type or help differs from the one already collected is logged and
-that application's family is left out. The text is written with
-``generate_latest`` on a ``CollectorRegistry`` created for the answer, never
-the module-level ``REGISTRY``.
+is Prometheus exposition text, parsed in full before it is merged. An empty
+answer contributes nothing. An application is left out of that scrape, with a
+log line, when its hook raises, its answer is not a ``str`` or its text does
+not parse. Every sample gets the label ``app=<code>``, which overwrites an
+``app`` label the application set itself. Families with the same name are
+merged across applications when their type is equal, keeping the help of the
+first; a family whose type differs from the one already collected is logged
+and that application's family is left out. The text is written on a
+``CollectorRegistry`` created for the answer, never the module-level
+``REGISTRY``.
 
 Parent (dual relationship): the ServerApplication, stored as
 ``self.application``.
@@ -41,39 +43,21 @@ Parent (dual relationship): the ServerApplication, stored as
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Iterator
 from typing import TYPE_CHECKING
 
 from genro_routes import RoutingClass, route
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST
 from prometheus_client.metrics_core import Metric
 from prometheus_client.parser import text_string_to_metric_families
-from prometheus_client.registry import Collector
+
+from .._exposition import families_text
 
 if TYPE_CHECKING:
     from ..server_app import ServerApplication
 
-__all__ = ["METRICS_RULE", "MetricsSection"]
+__all__ = ["MetricsSection"]
 
 METRICS_RULE = "SERVER_METRICS"
-
-
-class _FamiliesCollector(Collector):
-    """A collector that yields a fixed list of metric families."""
-
-    def __init__(self, families: Iterable[Metric]) -> None:
-        self.families = list(families)
-
-    def collect(self) -> Iterator[Metric]:
-        """Yield the families given at construction."""
-        return iter(self.families)
-
-
-def _families_text(families: Iterable[Metric]) -> str:
-    """The exposition text of ``families``, written on a registry of its own."""
-    registry = CollectorRegistry()
-    registry.register(_FamiliesCollector(families))
-    return generate_latest(registry).decode()
 
 
 class MetricsSection(RoutingClass):
@@ -89,38 +73,27 @@ class MetricsSection(RoutingClass):
         self.application = application
         self.logger = logging.getLogger(__name__)
 
-    def log_failure(self, code: str, exception: Exception) -> None:
-        """The ``on_error`` of the broadcast: log and leave ``code`` out."""
+    def _log_failure(self, code: str, exception: Exception) -> None:
+        """Log why ``code`` is left out of the scrape; the ``on_error`` of the broadcast."""
         self.logger.exception(
-            "prometheus_metrics of %r failed", code, exc_info=exception)
+            "prometheus_metrics of %r left out", code, exc_info=exception)
 
-    def merged_families(self, answers: list[tuple[str, str]]) -> list[Metric]:
-        """Parse every answer, label its samples ``app=<code>``, merge by name.
+    def _answer_families(self, code: str, text: object) -> list[Metric]:
+        """The families of one answer, labelled ``app=<code>``.
 
-        A family whose type or help differs from the one already collected
-        under its name is logged and left out.
+        Raises:
+            TypeError: the answer is not a ``str``.
+            ValueError: the text does not parse.
         """
-        merged: dict[str, Metric] = {}
-        for code, text in answers:
-            if not text:
-                continue
-            for family in text_string_to_metric_families(text):
-                family.samples = [
-                    sample._replace(labels={**sample.labels, "app": code})
-                    for sample in family.samples
-                ]
-                collected = merged.get(family.name)
-                if collected is None:
-                    merged[family.name] = family
-                elif (collected.type, collected.documentation) != (
-                        family.type, family.documentation):
-                    self.logger.warning(
-                        "Family %r of %r (%s, %r) differs from the one collected"
-                        " (%s, %r): left out", family.name, code, family.type,
-                        family.documentation, collected.type, collected.documentation)
-                else:
-                    collected.samples.extend(family.samples)
-        return list(merged.values())
+        if not isinstance(text, str):
+            raise TypeError(f"prometheus_metrics answered {type(text).__name__}, not str")
+        families = list(text_string_to_metric_families(text))
+        for family in families:
+            family.samples = [
+                sample._replace(labels={**sample.labels, "app": code})
+                for sample in family.samples
+            ]
+        return families
 
     @route(media_type=CONTENT_TYPE_LATEST, auth_rule=METRICS_RULE)
     async def index(self) -> str:
@@ -130,5 +103,24 @@ class MetricsSection(RoutingClass):
             Route: GET /_server/metrics
         """
         answers = await self.application.server.applications_broadcast(
-            "prometheus_metrics", on_error=self.log_failure)
-        return _families_text(self.merged_families(answers))
+            "prometheus_metrics", on_error=self._log_failure)
+        merged: dict[str, Metric] = {}
+        for code, text in answers:
+            if text == "":
+                continue
+            try:
+                families = self._answer_families(code, text)
+            except (TypeError, ValueError) as exception:
+                self._log_failure(code, exception)
+                continue
+            for family in families:
+                collected = merged.setdefault(family.name, family)
+                if collected is family:
+                    continue
+                if collected.type != family.type:
+                    self.logger.warning(
+                        "Family %r of %r is %s, the one collected is %s: left out",
+                        family.name, code, family.type, collected.type)
+                    continue
+                collected.samples.extend(family.samples)
+        return families_text(merged.values())

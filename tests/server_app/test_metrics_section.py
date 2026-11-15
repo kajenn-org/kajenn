@@ -14,13 +14,16 @@ What the suite pins:
   of the server with ``app="_server"``;
 - an in-process application and a ``spawner="subprocess"`` application that
   override ``prometheus_metrics`` appear with their own ``app`` label;
-- an application whose hook raises is left out, the others still appear;
-- two applications returning the same family give one family with both labels.
+- an application whose hook raises, whose answer is not a ``str`` or whose
+  text does not parse is left out with a log line, the others still appear;
+- two applications returning the same family give one family with both
+  labels and the help of the first; a family of another type is left out.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -29,7 +32,7 @@ from prometheus_client.parser import text_string_to_metric_families
 
 from kajenn import AsgiServer, RoutedApplication
 from tests.conftest import start_server
-from tests.core.test_auth import MemoryApiKeyStore
+from tests.storage_support import MemoryApiKeyStore
 
 SERVER_FAMILIES = {
     "kajenn_build_info",
@@ -179,28 +182,80 @@ async def test_a_family_with_another_type_is_left_out() -> None:
     assert [sample.labels["app"] for sample in families["shop_orders"]] == ["shop"]
 
 
+class Reworded(RoutedApplication):
+    """Returns ``shop_orders`` with the same type and another help."""
+
+    def prometheus_metrics(self) -> str:
+        return "# HELP shop_orders Orders waiting.\n# TYPE shop_orders gauge\nshop_orders 9\n"
+
+
+async def test_the_same_type_with_another_help_merges_keeping_the_first_help() -> None:
+    server = await metrics_server((Shop, {"code": "shop"}), (Reworded, {"code": "reworded"}))
+    text = (await scrape(server, ["SERVER_METRICS"]))["body"].decode()
+    [orders] = [family for family in text_string_to_metric_families(text)
+                if family.name == "shop_orders"]
+    assert orders.documentation == "Open orders."
+    assert {(sample.labels["app"], sample.value) for sample in orders.samples} == {
+        ("shop", len("shop")), ("reworded", 9.0)}
+
+
+class Garbled(RoutedApplication):
+    """A valid family followed by a line that does not parse."""
+
+    def prometheus_metrics(self) -> str:
+        return orders_text(self.code) + "garbled line {\n"
+
+
+class Nothing(RoutedApplication):
+    """Answers ``None``, not a ``str``."""
+
+    def prometheus_metrics(self) -> None:
+        return None
+
+
+def left_out_codes(caplog: Any) -> set[str]:
+    """The codes the section logged as left out."""
+    return {record.args[0] for record in caplog.records
+            if record.getMessage().endswith("left out") and record.args}
+
+
+async def test_text_that_does_not_parse_leaves_that_application_out(caplog) -> None:
+    caplog.set_level(logging.ERROR, logger="kajenn.server_app.server_sections.metrics_section")
+    server = await metrics_server((Garbled, {"code": "garbled"}), (Shop, {"code": "shop"}))
+    families = await read_families(server)
+    apps = {sample.labels["app"] for samples in families.values() for sample in samples}
+    assert apps == {"_server", "shop"}
+    assert left_out_codes(caplog) == {"garbled"}
+
+
+async def test_an_answer_that_is_not_a_str_leaves_that_application_out(caplog) -> None:
+    caplog.set_level(logging.ERROR, logger="kajenn.server_app.server_sections.metrics_section")
+    server = await metrics_server((Nothing, {"code": "nothing"}), (Shop, {"code": "shop"}))
+    families = await read_families(server)
+    apps = {sample.labels["app"] for samples in families.values() for sample in samples}
+    assert apps == {"_server", "shop"}
+    assert left_out_codes(caplog) == {"nothing"}
+
+
+class Labelled(RoutedApplication):
+    """Writes an ``app`` label of its own: the section overwrites it."""
+
+    def prometheus_metrics(self) -> str:
+        return '# TYPE own_items gauge\nown_items{app="other",kind="a"} 1\n'
+
+
+async def test_an_app_label_set_by_the_application_is_overwritten() -> None:
+    server = await metrics_server((Labelled, {"code": "labelled"}))
+    families = await read_families(server)
+    assert families["own_items"][0].labels == {"app": "labelled", "kind": "a"}
+
+
 RECIPE = '''
 from prometheus_client import CollectorRegistry, Gauge, generate_latest
 
-from kajenn import ApiKeyStore, RoutedApplication
+from kajenn import RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
-
-
-class MemoryApiKeyStore(ApiKeyStore):
-    def __init__(self, storage=None):
-        self._records = {}
-
-    def load_all(self):
-        return list(self._records.values())
-
-    def get(self, key_id):
-        return self._records.get(key_id)
-
-    def save(self, record):
-        self._records[record["key_id"]] = record
-
-    def delete(self, key_id):
-        return self._records.pop(key_id, None) is not None
+from tests.storage_support import MemoryApiKeyStore
 
 
 class Billing(RoutedApplication):
@@ -217,11 +272,18 @@ class Local(RoutedApplication):
         return generate_latest(registry).decode()
 
 
+class Failing(RoutedApplication):
+    def prometheus_metrics(self):
+        raise LookupError("failing in the process")
+
+
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
         cfg.authentication().tokens(store_class=MemoryApiKeyStore)
         apps = cfg.applications()
         apps.application(code="billing", app_class=Billing, spawner="subprocess",
+                         request_timeout=5)
+        apps.application(code="failing", app_class=Failing, spawner="subprocess",
                          request_timeout=5)
         apps.application(code="local", app_class=Local)
 '''
@@ -255,4 +317,13 @@ async def test_a_spawned_application_appears_through_the_forwarding(tmp_path) ->
     assert families["billing_invoices"][0].labels == {"app": "billing"}
     assert families["local_items"][0].labels == {"app": "local"}
     assert [(sample.labels, sample.value) for sample in families["kajenn_spawned_processes"]] == [
-        ({"app": "_server", "spawner": "subprocess"}, 1.0)]
+        ({"app": "_server", "spawner": "subprocess"}, 2.0)]
+
+
+async def test_a_spawned_application_whose_hook_raises_is_left_out(tmp_path) -> None:
+    config = tmp_path / "config.py"
+    config.write_text(RECIPE)
+    async with running(str(config)) as server:
+        families = await read_families(server)
+    apps = {sample.labels["app"] for samples in families.values() for sample in samples}
+    assert apps == {"_server", "billing", "local"}

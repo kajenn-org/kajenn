@@ -19,6 +19,8 @@ is omitted, only rooted at a ``tmp_path`` instead of the deployment directory, s
 store test exercises the real production shape. ``site_storage`` builds the manager
 itself, for a store exercised without a server: a server never receives one, it
 builds its own from the mounts its configuration declares.
+``MemoryApiKeyStore`` is an ``ApiKeyStore`` over a dict, for a server whose API
+keys a test issues itself.
 """
 
 from __future__ import annotations
@@ -26,6 +28,8 @@ from __future__ import annotations
 from typing import Any
 
 from genro_storage import StorageManager
+
+from kajenn import ApiKeyStore
 
 
 def site_mounts(base_dir: object) -> list[dict[str, Any]]:
@@ -42,3 +46,24 @@ def site_storage(base_dir: object, storage_key: str | None = None) -> StorageMan
     storage = StorageManager()
     storage.configure(site_mounts(base_dir), storage_key=storage_key)
     return storage
+
+
+class MemoryApiKeyStore(ApiKeyStore):
+    """In-memory ``ApiKeyStore`` backend: the shared issue/verify logic over a dict."""
+
+    __slots__ = ("_records",)
+
+    def __init__(self, storage: object = None) -> None:
+        self._records: dict[str, dict] = {}
+
+    def load_all(self) -> list[dict]:
+        return list(self._records.values())
+
+    def get(self, key_id: str) -> dict | None:
+        return self._records.get(key_id)
+
+    def save(self, record: dict) -> None:
+        self._records[record["key_id"]] = record
+
+    def delete(self, key_id: str) -> bool:
+        return self._records.pop(key_id, None) is not None

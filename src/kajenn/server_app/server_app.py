@@ -99,6 +99,7 @@ from kajenn.routed_application import RoutedApplication
 from kajenn.session import Avatar
 from kajenn.well_known import as_list
 
+from ._exposition import families_text
 from .auth_method import AuthMethod, PasswordMethod
 from .oidc_method import OidcMethod
 from .server_sections import (
@@ -112,7 +113,6 @@ from .server_sections import (
     TokensSection,
     UsersSection,
 )
-from .server_sections.metrics_section import _families_text
 
 __all__ = ["ServerApplication", "ServerApplicationGrammar"]
 
@@ -492,7 +492,7 @@ class ServerApplication(RoutedApplication):
         for backend, spawner in server.kbus_spawners.items():
             running = sum(1 for item in spawner.processes.values() if item.returncode is None)
             spawned.add_metric([backend], running)
-        return _families_text([
+        return families_text([
             InfoMetricFamily(
                 "kajenn_build", "kajenn and Python versions of the server process.",
                 value={"version": kajenn.__version__,
