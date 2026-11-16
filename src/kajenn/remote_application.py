@@ -46,6 +46,7 @@ from .application import BaseApplication, is_broadcast_hook
 from .spawner import cancel_and_wait
 from .asgi_endpoint import BufferedAsgiEndpoint
 from .exceptions import ExternalFailure, HTTPException, Redirect, failure_text
+from ._http_metrics import ROUTE_SCOPE_KEY
 from .http_record import HttpRecord
 from .middleware.base import headers_dict
 from .response import Response
@@ -275,6 +276,8 @@ class RemoteApplication(BaseApplication):
 
         ``request_timeout`` bounds the wait for a ``max_calls`` slot and for
         the first message of the answer, together; never the length of the answer.
+        The ``route_name`` of the first message, ``""`` when absent, is written
+        under ``"kajenn.route"`` in ``scope``, read by the server's ``http_metrics``.
         """
         held = False
         try:
@@ -318,6 +321,7 @@ class RemoteApplication(BaseApplication):
                         head = await anext(stream, None)
                         if head is None:
                             raise kbus.LinkLost("the answer ended before it started")
+                        scope[ROUTE_SCOPE_KEY] = head.meta.get("route_name", "")
                         if "failure" in head.meta:
                             raise raised_failure(head.meta["failure"])
                         deadline.reschedule(None)

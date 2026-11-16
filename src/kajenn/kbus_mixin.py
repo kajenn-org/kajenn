@@ -52,6 +52,7 @@ from genro_tytx import from_tytx, to_tytx
 
 from .asgi_endpoint import BufferedAsgiEndpoint
 from .exceptions import HTTPException, KBusCallError, failure_text
+from ._http_metrics import ROUTE_SCOPE_KEY
 from .http_record import HttpRecord
 from .middleware.errors import ErrorMiddleware
 from .remote_application import (
@@ -573,10 +574,13 @@ class KBusMixin:
         ``meta["auth"]`` becomes the avatar, ``meta["channel"]`` the scope's
         ``"kajenn.channel"``, ``meta["kbus"]`` its ``"kajenn.kbus"`` and each key
         of ``meta["genro"]`` its ``"genro.<key>"``. The answer is one message ``{"status",
-        "headers"}``, one message ``{"more_body"}`` per body chunk with the
+        "headers", "route_name"}``, one message ``{"more_body"}`` per body chunk with the
         chunk as payload, then the close of this
         direction; a ``WSK`` answer is buffered and adapted first, a raised
         exception answered as the server's ``ErrorMiddleware`` answers it.
+        ``route_name`` is what the application wrote under ``"kajenn.route"`` in
+        its scope (``""`` when nothing); a failure message carries it too, the
+        first message of the answer in either case.
         """
         scope, body = HttpRecord().decode_request(message.payload)
         auth = message.meta.get("auth")
@@ -591,18 +595,22 @@ class KBusMixin:
         item = self.requests.register(scope)
         try:
             if scope["method"] == "WSK":
+                sub_scope = scope
                 try:
                     app, sub_scope = self.demux(scope)
                     result = await BufferedAsgiEndpoint(app).serve(sub_scope, body)
                 except Exception as failure:
                     self._log_failure(scope, failure)
-                    await stream.send(failure_message(failure))
+                    head = failure_message(failure)
+                    head.meta["route_name"] = sub_scope.get(ROUTE_SCOPE_KEY, "")
+                    await stream.send(head)
                     await stream.close()
                     async for _ in stream:
                         pass
                     return
                 await stream.send(kbus.Message(
-                    {"status": result["status"], "headers": result["headers"]}))
+                    {"status": result["status"], "headers": result["headers"],
+                     "route_name": sub_scope.get(ROUTE_SCOPE_KEY, "")}))
                 await stream.send(kbus.Message({"more_body": False}, result["body"]))
                 await stream.close()
                 async for _ in stream:
@@ -663,11 +671,13 @@ class KBusMixin:
         cancels the application. An exception raised before the answer started
         travels as one ``failure_message`` and closes this direction; an answer
         that fails after its start, or that returns unfinished, aborts the
-        stream.
+        stream. The first message carries under ``route_name`` what the application
+        wrote under ``"kajenn.route"`` in its scope, ``""`` when nothing.
         """
         requested = False
         started = False
         closed = False
+        served: Scope = scope
         left = asyncio.Event()
 
         async def receive() -> Message:
@@ -685,7 +695,8 @@ class KBusMixin:
                 await stream.send(kbus.Message({
                     "status": event["status"],
                     "headers": [[name.decode("latin-1"), value.decode("latin-1")]
-                                for name, value in event.get("headers", [])]}))
+                                for name, value in event.get("headers", [])],
+                    "route_name": served.get(ROUTE_SCOPE_KEY, "")}))
             elif event["type"] == "http.response.body":
                 more_body = event.get("more_body", False)
                 await stream.send(kbus.Message({"more_body": more_body}, event.get("body", b"")))
@@ -694,15 +705,17 @@ class KBusMixin:
                     closed = True
 
         async def routed(scope: Scope, receive: Receive, send: Send) -> None:
-            nonlocal closed
+            nonlocal closed, served
             try:
-                app, sub_scope = self.demux(scope)
-                await app(sub_scope, receive, send)
+                app, served = self.demux(scope)
+                await app(served, receive, send)
             except Exception as failure:
                 if started:
                     raise
                 self._log_failure(scope, failure)
-                await stream.send(failure_message(failure))
+                head = failure_message(failure)
+                head.meta["route_name"] = served.get(ROUTE_SCOPE_KEY, "")
+                await stream.send(head)
                 await stream.close()
                 closed = True
 

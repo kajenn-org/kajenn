@@ -265,7 +265,7 @@ class TestShutdownState:
         async def send(message):
             pass
 
-        request = asyncio.ensure_future(server({"type": "http", "path": "/"}, receive, send))
+        request = asyncio.ensure_future(server({"type": "http", "method": "GET", "path": "/"}, receive, send))
         await asyncio.sleep(0)
         closing = asyncio.ensure_future(Lifespan(server).shutdown())
         await asyncio.sleep(0)

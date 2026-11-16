@@ -70,8 +70,8 @@ when it declares one, else the server's ``default``.
 
 A method marked ``@broadcast_hook`` is one ``server.applications_broadcast``
 may call on every application; the mark counts on any definition of the
-method along the MRO, so an override stays subscribed. ``on_shutdown`` and
-``plugin_configuration`` are two.
+method along the MRO, so an override stays subscribed. ``on_shutdown``,
+``plugin_configuration`` and ``prometheus_metrics`` are three.
 
 An app READS that subtree back through ``self.config(path)``, which prefixes
 ``applications.<code>.`` and delegates to the server's own read door: the app
@@ -480,6 +480,20 @@ class BaseApplication:
 
         The lifespan reaches it through ``server.applications_broadcast``.
         """
+
+    @broadcast_hook
+    def prometheus_metrics(self) -> str:
+        """This application's Prometheus families, as exposition text.
+
+        ``_server/metrics`` reads it on every application at every scrape and
+        adds the label ``app=<code>`` to every sample. The base contributes
+        nothing (``""``). An application overrides it, builds its families
+        with ``prometheus_client`` and returns ``generate_latest(...)`` text.
+        It never uses the module-level ``REGISTRY``: it creates its metric
+        objects with ``registry=None`` or registers them on a
+        ``CollectorRegistry`` of its own. Override as sync or async.
+        """
+        return ""
 
     def on_remove(self) -> None:
         """Lifecycle hook run when the server removes this application.

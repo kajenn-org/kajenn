@@ -32,10 +32,9 @@ import pytest
 from cryptography.fernet import Fernet
 from genro_routes import route
 
-from tests.storage_support import site_mounts
+from tests.storage_support import MemoryApiKeyStore, site_mounts
 
 from kajenn import (
-    ApiKeyStore,
     AsgiServer,
     AuthCore,
     AuthMixin,
@@ -75,27 +74,6 @@ class MemoryUserStore(UserStore):
 
     def delete(self, identity: str) -> bool:
         return self._records.pop(identity, None) is not None
-
-
-class MemoryApiKeyStore(ApiKeyStore):
-    """In-memory ``ApiKeyStore`` backend: the shared issue/verify logic over a dict."""
-
-    __slots__ = ("_records",)
-
-    def __init__(self, storage: object = None) -> None:
-        self._records: dict[str, dict] = {}
-
-    def load_all(self) -> list[dict]:
-        return list(self._records.values())
-
-    def get(self, key_id: str) -> dict | None:
-        return self._records.get(key_id)
-
-    def save(self, record: dict) -> None:
-        self._records[record["key_id"]] = record
-
-    def delete(self, key_id: str) -> bool:
-        return self._records.pop(key_id, None) is not None
 
 
 def basic_header(username: str, password: str) -> str:
