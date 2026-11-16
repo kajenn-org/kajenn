@@ -14,6 +14,8 @@ What the suite pins:
   (bad arguments), one on an unknown tool (a protocol error, ``tool=""``) and
   a ``tools/list`` grow the calls counter with method, tool and outcome; the
   duration histogram counts the ``tools/call`` whose tool resolved;
+- ``initialize`` and ``ping`` count with their own method, a method the
+  engine does not serve counts as ``other``;
 - a notification (no ``id``) is not counted;
 - a ``spawner="subprocess"`` application's families reach the text through
   the forwarded hook, with its ``app`` label;
@@ -97,6 +99,20 @@ async def test_calls_of_an_in_process_application_are_counted() -> None:
     await drive_calls(server, "shop")
     samples = await read_samples(server)
     assert_counted(samples, "shop")
+
+
+async def test_protocol_methods_count_with_their_name_and_others_as_other() -> None:
+    server = await start_server(AsgiServer(
+        applications=[(Shop, {"code": "shop"})], tokens={"store_class": MemoryApiKeyStore}))
+    for ident, method in enumerate(("initialize", "ping", "resources/list"), start=1):
+        await mcp(server, "shop", {"jsonrpc": "2.0", "id": ident, "method": method,
+                                   "params": {}})
+    samples = await read_samples(server)
+    assert value(samples, CALLS, app="shop", method="initialize", tool="",
+                 outcome="result") == 1
+    assert value(samples, CALLS, app="shop", method="ping", tool="", outcome="result") == 1
+    assert value(samples, CALLS, app="shop", method="other", tool="",
+                 outcome="protocol_error") == 1
 
 
 async def test_an_override_with_super_keeps_the_mcp_families() -> None:

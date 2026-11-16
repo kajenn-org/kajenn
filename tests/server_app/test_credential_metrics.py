@@ -10,9 +10,13 @@ read adds one accepted ``api_key`` check, counted before the text is written.
 
 What the suite pins:
 
-- an accepted API key and a refused bearer grow the counter with their
+- an accepted API key and a refused one grow the counter with their
   ``scheme`` and ``outcome``; a second request with the accepted key is a
   cache hit and does not;
+- accepted ``basic`` and ``jwt`` credentials count with their backend; a
+  refused credential counts with the scheme its form shows (``gak_`` →
+  ``api_key``, three dot-separated parts → ``jwt``, otherwise the header
+  word ``bearer``/``basic``);
 - a malformed ``Authorization`` value is refused with ``scheme="other"``;
 - the credential check of a ``spawner="subprocess"`` application is counted
   in the server;
@@ -22,8 +26,10 @@ What the suite pins:
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
+import jwt
 from genro_routes import route
 
 from kajenn import AsgiServer, BaseApplication, RoutedApplication
@@ -75,6 +81,33 @@ async def test_accepted_and_refused_keys_are_counted_and_a_cache_hit_is_not() ->
     samples = await read_samples(server)
     # One check for ``key`` (the second request is a cache hit), one for the read.
     assert checks(samples, "api_key", "accepted") == 2
+    assert checks(samples, "api_key", "refused") == 1
+
+
+SECRET = "a-test-secret-of-at-least-thirty-two-bytes"
+
+
+def basic(user: str, password: str) -> list[tuple[bytes, bytes]]:
+    token = base64.b64encode(f"{user}:{password}".encode()).decode()
+    return [(b"authorization", f"Basic {token}".encode())]
+
+
+async def test_basic_and_jwt_count_with_their_scheme() -> None:
+    server = await vault_server(auth={
+        "basic": {"operator": {"password": "pw", "tags": "admin"}},
+        "jwt": [{"secret": SECRET, "tags": "admin"}],
+    })
+    token = jwt.encode({"sub": "operator"}, SECRET, algorithm="HS256")
+    forged = jwt.encode({"sub": "operator"}, SECRET + "-other", algorithm="HS256")
+    for headers, status in ((basic("operator", "pw"), 200), (bearer(token), 200),
+                            (basic("operator", "wrong"), 401), (bearer(forged), 401),
+                            (bearer("static-unknown"), 401)):
+        assert (await call(server, "GET", "/vault/secret", headers=headers))["status"] == status
+    samples = await read_samples(server)
+    assert checks(samples, "basic", "accepted") == 1
+    assert checks(samples, "jwt", "accepted") == 1
+    assert checks(samples, "basic", "refused") == 1
+    assert checks(samples, "jwt", "refused") == 1
     assert checks(samples, "bearer", "refused") == 1
 
 
@@ -120,7 +153,7 @@ async def test_the_check_of_a_spawned_application_is_counted_in_the_server(tmp_p
                            headers=bearer("gak_unknown")))["status"] == 401
         samples = await read_samples(server)
     assert checks(samples, "api_key", "accepted") == 2
-    assert checks(samples, "bearer", "refused") == 1
+    assert checks(samples, "api_key", "refused") == 1
 
 
 async def test_the_password_login_is_counted() -> None:

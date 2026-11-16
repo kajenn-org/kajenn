@@ -17,7 +17,8 @@ What the suite pins:
   with the class name;
 - a path no application serves counts with ``application=""`` and
   ``route=""``;
-- a switched-off application counts its 503 refusal with its code;
+- a switched-off application's 503 refusal counts with ``application=""``:
+  ``demux`` returns the refusal answer, not the application;
 - a ``spawner="subprocess"`` application counts in the server with the route
   name resolved in its process, also on its buffered ``WSK`` answer;
 - a request refused by the route's own rule keeps the route name.
@@ -132,7 +133,7 @@ async def test_a_switched_off_application_counts_its_refusal() -> None:
     server.disable_application("orders")
     assert (await call(server, "GET", "/orders/item/1"))["status"] == 503
     samples = await read_samples(server)
-    assert value(samples, "kajenn_http_requests_total", application="orders", route="",
+    assert value(samples, "kajenn_http_requests_total", application="", route="",
                  method="GET", status="503") == 1
 
 

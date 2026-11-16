@@ -415,12 +415,13 @@ def value(samples: list[Any], name: str, **labels: str) -> float:
 
 
 def json_body(data: dict[str, Any]) -> tuple[bytes, list[tuple[bytes, bytes]]]:
+    """``data`` as a JSON body, with its ``content-type`` header."""
     return json.dumps(data).encode(), [(b"content-type", b"application/json")]
-
 
 
 @asynccontextmanager
 async def running(config: str):
+    """A server built from ``config``, inside its lifespan, once every application is enabled."""
     server = AsgiServer(config=config)
     inbox: asyncio.Queue = asyncio.Queue()
     outbox: asyncio.Queue = asyncio.Queue()

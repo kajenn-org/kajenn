@@ -13,10 +13,13 @@ What the suite pins:
   ``route`` (the route name the application resolved) and ``status``, for an
   in-process and a ``spawner="subprocess"`` application; the duration
   histogram counts the same messages; the ``/_wsx/ping`` answered inline is
-  not counted;
+  not counted; a message to a switched-off application counts its 503 with
+  ``application=""`` (the public ``demux`` returns the refusal, not the
+  application);
 - a websocket handed to ``WsxConnection`` counts one opened and one live
   connection of kind ``wsx`` while it is open, live back to 0 after it
-  closes; a websocket handed to ``serve_websocket`` counts as kind ``raw``.
+  closes; a websocket handed to ``serve_websocket`` counts as kind ``raw``;
+  both kinds count with the code of a spawned application too.
 """
 
 from __future__ import annotations
@@ -112,6 +115,19 @@ async def test_messages_to_an_in_process_application_are_counted() -> None:
     assert value(samples, DURATION_COUNT, application="desk", route="ping") == 2
 
 
+async def test_a_message_to_a_switched_off_application_counts_without_application() -> None:
+    server = await start_server(AsgiServer(
+        applications=[(Desk, {"code": "desk"}), (Desk, {"code": "other"})],
+        tokens={"store_class": MemoryApiKeyStore}))
+    server.disable_application("other")
+    socket = Socket(server, "/desk/_wsx")
+    await socket.open()
+    assert (await socket.ask("1", "/other/ping")).status == 503
+    await socket.close()
+    samples = await read_samples(server)
+    assert counted_messages(samples) == [("", "", "503", 1.0)]
+
+
 async def test_a_wsx_connection_is_opened_and_live_until_it_closes() -> None:
     server = await desk_server()
     socket = Socket(server, "/desk/_wsx")
@@ -171,12 +187,25 @@ class Billing(RoutedApplication):
         return {"number": 7}
 
 
+class Pipe(RoutedApplication):
+    async def serve_websocket(self, scope, receive, send):
+        await receive()
+        await send({"type": "websocket.accept"})
+        while True:
+            message = await receive()
+            if message["type"] == "websocket.disconnect":
+                return
+            await send({"type": "websocket.send", "text": message["text"]})
+
+
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
         cfg.authentication().tokens(store_class=MemoryApiKeyStore)
         apps = cfg.applications()
         apps.application(code="desk", app_class=Desk)
         apps.application(code="billing", app_class=Billing,
+                         spawner="subprocess", request_timeout=5)
+        apps.application(code="pipe", app_class=Pipe,
                          spawner="subprocess", request_timeout=5)
 '''
 
@@ -194,3 +223,36 @@ async def test_messages_to_a_spawned_application_are_counted(tmp_path) -> None:
     assert counted_messages(samples) == [
         ("billing", "invoice", "200", 1.0), ("desk", "ping", "200", 1.0)]
     assert value(samples, DURATION_COUNT, application="billing", route="invoice") == 1
+
+
+async def test_connections_to_spawned_applications_are_counted(tmp_path) -> None:
+    config = tmp_path / "config.py"
+    config.write_text(RECIPE)
+    async with running(str(config)) as server:
+        socket = Socket(server, "/billing/_wsx")
+        await socket.open()
+        assert (await socket.ask("1", "/billing/invoice")).status == 200
+        inbox: asyncio.Queue = asyncio.Queue()
+        echoed = asyncio.Event()
+
+        async def send(message: dict[str, Any]) -> None:
+            if message["type"] == "websocket.send":
+                echoed.set()
+
+        await inbox.put({"type": "websocket.connect"})
+        await inbox.put({"type": "websocket.receive", "text": "hello"})
+        raw = asyncio.create_task(server(
+            {"type": "websocket", "path": "/pipe/socket", "headers": [],
+             "query_string": b""}, inbox.get, send))
+        await asyncio.wait_for(echoed.wait(), 10)
+        live = await read_samples(server)
+        await socket.close()
+        await inbox.put({"type": "websocket.disconnect", "code": 1000})
+        await asyncio.wait_for(raw, 10)
+        closed = await read_samples(server)
+    assert value(live, LIVE, application="billing", kind="wsx") == 1
+    assert value(live, LIVE, application="pipe", kind="raw") == 1
+    assert value(closed, OPENED, application="billing", kind="wsx") == 1
+    assert value(closed, OPENED, application="pipe", kind="raw") == 1
+    assert value(closed, LIVE, application="billing", kind="wsx") == 0
+    assert value(closed, LIVE, application="pipe", kind="raw") == 0

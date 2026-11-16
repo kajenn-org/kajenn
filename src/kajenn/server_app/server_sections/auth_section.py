@@ -129,9 +129,8 @@ class AuthSection(RoutingClass):
 
         Every verification is counted in ``server.event_metrics``: an accepted
         one with the scheme of the backend that accepted it, a refused one
-        with the scheme of the header (``other`` when it is not ``Basic`` or
-        ``Bearer``, a malformed value included). A caller refused by the bus
-        gate is not counted.
+        with the scheme its form shows (``refused_scheme``). A caller refused
+        by the bus gate is not counted.
 
         Note:
             Route: POST /_server/auth/authenticate
@@ -139,7 +138,7 @@ class AuthSection(RoutingClass):
         self._bus_only(_request)
         metrics = self.server.event_metrics
         try:
-            avatar, valid_until, backend = self.server.auth_core._verify_backend(credential)
+            avatar, valid_until, backend = self.server.auth_core.verify_with_backend(credential)
         except HTTPUnauthorized:
             metrics.record_credential_check(refused_scheme(credential), "refused")
             raise

@@ -39,15 +39,20 @@ from __future__ import annotations
 from prometheus_client import Counter, Gauge, Histogram
 from prometheus_client.metrics_core import Metric
 
+from .auth.api_key_store import API_KEY_PREFIX
+
 __all__: list[str] = []
 
-#: The ``scheme`` label of an accepted check, by the backend ``AuthCore`` found.
-BACKEND_SCHEMES = {"basic": "basic", "bearer": "bearer", "api_key": "api_key", "jwt": "jwt"}
+#: The ``scheme`` labels of an accepted check: the backends ``AuthCore`` names.
+BACKEND_SCHEMES = frozenset({"basic", "bearer", "api_key", "jwt"})
 
-#: The ``scheme`` label of a refused check, by the lowercased header scheme.
-HEADER_SCHEMES = {"basic": "basic", "bearer": "bearer"}
+#: The ``scheme`` labels a refused check takes from its header word.
+HEADER_SCHEMES = frozenset({"basic", "bearer"})
 
 OTHER_SCHEME = "other"
+API_KEY_SCHEME = "api_key"
+JWT_SCHEME = "jwt"
+JWT_PARTS = 3
 
 
 def accepted_scheme(backend: str) -> str:
@@ -56,20 +61,28 @@ def accepted_scheme(backend: str) -> str:
     ``jwt:<name>`` (a named verifier) is ``jwt``; a backend outside the set is
     ``other``.
     """
-    return BACKEND_SCHEMES.get(backend.partition(":")[0], OTHER_SCHEME)
+    scheme = backend.partition(":")[0]
+    return scheme if scheme in BACKEND_SCHEMES else OTHER_SCHEME
 
 
 def refused_scheme(credential: str) -> str:
-    """The ``scheme`` label of a refused ``Authorization`` value.
+    """The ``scheme`` label of a refused ``Authorization`` value, by its form.
 
-    The scheme before the first space, lowercased: ``basic`` and ``bearer``
-    keep their name, anything else — a value with no space included — is
-    ``other``.
+    A bearer token starting with ``gak_`` is ``api_key``; a bearer token of
+    three dot-separated parts is ``jwt``; otherwise the header word
+    lowercased when it is ``basic`` or ``bearer``; anything else — a value
+    with no space included — is ``other``.
     """
-    scheme, separator, _ = credential.partition(" ")
+    word, separator, token = credential.partition(" ")
     if not separator:
         return OTHER_SCHEME
-    return HEADER_SCHEMES.get(scheme.lower(), OTHER_SCHEME)
+    scheme = word.lower()
+    if scheme == "bearer":
+        if token.startswith(API_KEY_PREFIX):
+            return API_KEY_SCHEME
+        if len(token.split(".")) == JWT_PARTS:
+            return JWT_SCHEME
+    return scheme if scheme in HEADER_SCHEMES else OTHER_SCHEME
 
 
 class EventMetrics:
@@ -107,12 +120,12 @@ class EventMetrics:
         self._wsx_messages.labels(application, route, str(status)).inc()
         self._wsx_duration.labels(application, route).observe(seconds)
 
-    def websocket_opened(self, application: str, kind: str) -> None:
+    def record_websocket_opened(self, application: str, kind: str) -> None:
         """Count one connection handed to ``application``, and one more live."""
         self._websockets_opened.labels(application, kind).inc()
         self._websockets_live.labels(application, kind).inc()
 
-    def websocket_closed(self, application: str, kind: str) -> None:
+    def record_websocket_closed(self, application: str, kind: str) -> None:
         """One live connection of ``application`` less."""
         self._websockets_live.labels(application, kind).dec()
 
