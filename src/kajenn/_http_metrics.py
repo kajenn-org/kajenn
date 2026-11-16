@@ -80,23 +80,23 @@ class HttpMetrics:
     """The HTTP request counters and the duration histogram of one server."""
 
     def __init__(self) -> None:
-        self.requests = Counter(
+        self._requests = Counter(
             "kajenn_http_requests",
             "HTTP requests served, per application, route, method and status.",
             ["application", "route", "method", "status"], registry=None)
-        self.duration = Histogram(
+        self._duration = Histogram(
             "kajenn_http_request_duration_seconds",
             "Time from the demux until the application returns, in seconds.",
             ["application", "route", "method"], registry=None)
-        self.received = Counter(
+        self._received = Counter(
             "kajenn_http_request_body_bytes",
             "Bytes of HTTP request bodies received.",
             ["application", "route"], registry=None)
-        self.sent = Counter(
+        self._sent = Counter(
             "kajenn_http_response_body_bytes",
             "Bytes of HTTP response bodies sent.",
             ["application", "route"], registry=None)
-        self.exceptions = Counter(
+        self._exceptions = Counter(
             "kajenn_http_exceptions",
             "Exceptions an application raised that are not an HTTPException.",
             ["application", "exception"], registry=None)
@@ -104,18 +104,18 @@ class HttpMetrics:
     def record(self, application: str, route: str, method: str,
                exchange: CountedExchange, seconds: float) -> None:
         """Count one request served by ``application`` on ``route``."""
-        self.requests.labels(application, route, method, exchange.status).inc()
-        self.duration.labels(application, route, method).observe(seconds)
-        self.received.labels(application, route).inc(exchange.received)
-        self.sent.labels(application, route).inc(exchange.sent)
+        self._requests.labels(application, route, method, exchange.status).inc()
+        self._duration.labels(application, route, method).observe(seconds)
+        self._received.labels(application, route).inc(exchange.received)
+        self._sent.labels(application, route).inc(exchange.sent)
 
     def record_exception(self, application: str, exception: Exception) -> None:
         """Count one exception of ``application`` by the name of its class."""
-        self.exceptions.labels(application, type(exception).__name__).inc()
+        self._exceptions.labels(application, type(exception).__name__).inc()
 
     def collect(self) -> list[Metric]:
         """The families of the five metrics, with their current values."""
         return [family
-                for metric in (self.requests, self.duration, self.received,
-                               self.sent, self.exceptions)
+                for metric in (self._requests, self._duration, self._received,
+                               self._sent, self._exceptions)
                 for family in metric.collect()]

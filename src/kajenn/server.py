@@ -780,10 +780,12 @@ class BaseServer:
         returns. ``application`` is the code of the application the demux
         chose, ``""`` when it chose none; ``route`` is what the application
         wrote under ``"kajenn.route"`` in the scope it received, ``""`` when
-        nothing was written. An ``HTTPException`` counts with its status; any
-        other exception counts as status 500 and in the exceptions counter
-        with its class name. Either is raised again unchanged, for the
-        ``ErrorMiddleware`` to answer.
+        nothing was written. An exception raised before the answer started
+        sets the status: an ``HTTPException`` its own, any other 500; after
+        the start the status sent stays. Any exception that is not an
+        ``HTTPException`` also counts in the exceptions counter with its class
+        name. Either is raised again unchanged, for the ``ErrorMiddleware``
+        to answer.
         """
         started = time.monotonic()
         exchange = CountedExchange(receive, send)
@@ -792,10 +794,12 @@ class BaseServer:
         try:
             await app(target, exchange.receive, exchange.send)
         except HTTPException as answer:
-            exchange.status = str(answer.status)
+            if not exchange.status:
+                exchange.status = str(answer.status)
             raise
         except Exception as failure:
-            exchange.status = "500"
+            if not exchange.status:
+                exchange.status = "500"
             self.http_metrics.record_exception(code, failure)
             raise
         finally:

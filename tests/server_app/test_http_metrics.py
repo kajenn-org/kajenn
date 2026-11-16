@@ -30,10 +30,15 @@ import json
 from contextlib import asynccontextmanager
 from typing import Any
 
+import pytest
 from genro_routes import route
+from prometheus_client import CollectorRegistry, Counter, generate_latest
 from prometheus_client.parser import text_string_to_metric_families
 
 from kajenn import AsgiServer, RoutedApplication
+from kajenn.application import BaseApplication
+from kajenn.exceptions import Redirect
+from kajenn.streaming import StreamingResponse
 from tests.conftest import start_server
 from tests.storage_support import MemoryApiKeyStore
 
@@ -53,6 +58,29 @@ class Orders(RoutedApplication):
     def boom(self) -> None:
         raise LookupError("boom")
 
+    @route()
+    def moved(self) -> None:
+        raise Redirect("/orders/item/1", 303)
+
+    @route()
+    def broken_stream(self) -> StreamingResponse:
+        async def chunks():
+            yield b"first"
+            raise LookupError("broken after the start")
+        return StreamingResponse(chunks(), media_type="text/plain")
+
+    def prometheus_metrics(self) -> str:
+        registry = CollectorRegistry()
+        Counter("orders_placed", "Orders placed.", registry=registry).inc()
+        return generate_latest(registry).decode()
+
+
+class Silent(BaseApplication):
+    """Returns without starting an answer."""
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        return None
+
 
 async def metrics_server(*applications: Any) -> AsgiServer:
     return await start_server(AsgiServer(
@@ -62,6 +90,16 @@ async def metrics_server(*applications: Any) -> AsgiServer:
 async def call(server: AsgiServer, method: str, path: str, body: bytes = b"",
                headers: list[tuple[bytes, bytes]] | None = None) -> dict[str, Any]:
     """One request through the server's ASGI entry point: status and body."""
+    sent = await exchange(server, method, path, body, headers)
+    start = next(message for message in sent if message["type"] == "http.response.start")
+    answer = b"".join(message.get("body", b"") for message in sent
+                      if message["type"] == "http.response.body")
+    return {"status": start["status"], "body": answer}
+
+
+async def exchange(server: AsgiServer, method: str, path: str, body: bytes = b"",
+                   headers: list[tuple[bytes, bytes]] | None = None) -> list[dict[str, Any]]:
+    """One request through the server's ASGI entry point: every message sent."""
     scope = {
         "type": "http", "method": method, "path": path, "query_string": b"",
         "headers": [(b"host", b"site.example"), *(headers or [])], "scheme": "http",
@@ -83,10 +121,7 @@ async def call(server: AsgiServer, method: str, path: str, body: bytes = b"",
         sent.append(message)
 
     await server(scope, receive, send)
-    start = next(message for message in sent if message["type"] == "http.response.start")
-    answer = b"".join(message.get("body", b"") for message in sent
-                      if message["type"] == "http.response.body")
-    return {"status": start["status"], "body": answer}
+    return sent
 
 
 async def read_samples(server: AsgiServer) -> list[Any]:
@@ -259,3 +294,49 @@ async def test_a_url_of_0_8_0_counts_with_the_route_of_its_new_address() -> None
     samples = await read_samples(server)
     assert value(samples, "kajenn_http_requests_total", application="orders",
                  route="_meta/api/schema_json", method="GET", status="200") == 1
+
+
+async def test_an_exception_after_the_start_keeps_the_status_sent() -> None:
+    server = await metrics_server((Orders, {"code": "orders"}))
+    with pytest.raises(LookupError):
+        await exchange(server, "GET", "/orders/broken_stream")
+    samples = await read_samples(server)
+    assert value(samples, "kajenn_http_requests_total", application="orders",
+                 route="broken_stream", method="GET", status="200") == 1
+    assert value(samples, "kajenn_http_exceptions_total",
+                 application="orders", exception="LookupError") == 1
+
+
+async def test_a_redirect_counts_with_its_own_status() -> None:
+    server = await metrics_server((Orders, {"code": "orders"}))
+    assert (await call(server, "GET", "/orders/moved"))["status"] == 303
+    samples = await read_samples(server)
+    assert value(samples, "kajenn_http_requests_total", application="orders",
+                 route="moved", method="GET", status="303") == 1
+    assert not [sample for sample in samples if sample.name == "kajenn_http_exceptions_total"]
+
+
+async def test_a_request_that_ends_without_an_answer_counts_with_an_empty_status() -> None:
+    server = await metrics_server((Silent, {"code": "silent"}))
+    sent = await exchange(server, "GET", "/silent/anything")
+    assert not [message for message in sent if message["type"] == "http.response.start"]
+    samples = await read_samples(server)
+    assert value(samples, "kajenn_http_requests_total", application="silent", route="",
+                 method="GET", status="") == 1
+
+
+async def test_no_created_series_from_the_text_of_another_application() -> None:
+    server = await metrics_server((Orders, {"code": "orders"}))
+    samples = await read_samples(server)
+    placed = [sample for sample in samples if sample.name.startswith("orders_placed")]
+    assert [(sample.name, sample.labels, sample.value) for sample in placed] == [
+        ("orders_placed_total", {"app": "orders"}, 1.0)]
+
+
+async def test_an_mcp_call_counts_with_the_mcp_route() -> None:
+    server = await metrics_server((Orders, {"code": "orders"}))
+    body, headers = json_body({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    assert (await call(server, "POST", "/orders/_meta/mcp", body, headers))["status"] == 200
+    samples = await read_samples(server)
+    assert value(samples, "kajenn_http_requests_total", application="orders",
+                 route="_meta/mcp", method="POST", status="200") == 1
