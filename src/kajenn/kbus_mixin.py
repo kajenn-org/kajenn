@@ -166,10 +166,12 @@ class KBusMixin:
         Every joined process is called at once and confirms it forgot;
         returns when all of them answered. A process the bus cannot reach, or
         that does not confirm within ``FORGET_CREDENTIALS_TIMEOUT``, is
-        relaunched: the new process starts with an empty cache. A process that
-        does not confirm in time is counted in ``event_metrics`` as a
-        ``forget_credentials`` timeout and, relaunched, as an ``unresponsive``
-        restart; one the bus cannot reach as a ``lost`` restart.
+        relaunched: the new process starts with an empty cache. The relaunch
+        is counted in ``event_metrics``: a process that does not confirm in
+        time as a ``forget_credentials`` timeout and an ``unresponsive``
+        restart; a process reached whose ``forget_credentials`` raised
+        (``kbus.RemoteError``) as an ``unresponsive`` restart; a process the
+        bus cannot reach as a ``lost`` restart.
         """
         if credential is None:
             self.forget_all_credentials()
@@ -181,6 +183,8 @@ class KBusMixin:
             try:
                 async with asyncio.timeout(FORGET_CREDENTIALS_TIMEOUT):
                     await self.kbus_member.call(f"{code}.forget_credentials", kbus.Message(meta))
+            except kbus.RemoteError:
+                self._relaunch_unconfirmed(code, pid, "unresponsive")
             except kbus.Error:
                 self._relaunch_unconfirmed(code, pid, "lost")
             except TimeoutError:

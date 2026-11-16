@@ -28,6 +28,7 @@ What the suite pins:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import signal
@@ -39,7 +40,7 @@ from typing import Any
 import pytest
 from genro_routes import route
 
-from kajenn import AsgiServer, RoutedApplication
+from kajenn import AsgiServer, Avatar, RoutedApplication
 from kajenn.db import DbHandlerBase
 from kajenn.tasks import new_descriptor
 from tests.conftest import LifespanRunner, call, read_samples, running, start_server
@@ -233,6 +234,15 @@ class Billing(RoutedApplication):
     async def stuck(self):
         await asyncio.sleep(3)
 
+    @route()
+    async def drop_link(self):
+        async def close_later():
+            await asyncio.sleep(0.1)
+            await self.server.kbus_member.close()
+
+        self.closing = asyncio.create_task(close_later())
+        return {"dropping": True}
+
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
@@ -345,3 +355,40 @@ async def test_a_forwarded_request_past_the_timeout_is_counted(tmp_path) -> None
         assert (await call(server, "GET", "/billing/slow"))["status"] == 503
         samples = await read_samples(server)
     assert total(samples, timeouts, application="billing", operation="http_forward") == 1
+
+
+async def test_a_member_lost_while_its_process_lives_is_a_lost_restart(tmp_path) -> None:
+    restarts = "kajenn_spawned_process_restarts_total"
+    async with running(write_config(tmp_path, RECIPE)) as server:
+        assert (await call(server, "GET", "/billing/drop_link"))["status"] == 200
+        samples = await eventually(server, lambda samples: total(
+            samples, restarts, application="billing") >= 1)
+    # The member closes first; the process ends only after its own shutdown.
+    causes = {sample.labels["cause"]: sample.value for sample in samples
+              if sample.name == restarts and sample.labels["application"] == "billing"}
+    assert causes == {"lost": 1.0}
+
+
+async def test_a_process_that_does_not_confirm_forget_credentials_is_unresponsive(
+        tmp_path) -> None:
+    async with running(write_config(tmp_path, RECIPE)) as server:
+        samples = await read_samples(server)
+        [pid] = [int(sample.value) for sample in samples if sample.name == "kajenn_process_pid"
+                 and sample.labels["app"] == "billing"]
+        key_id = server.api_key_store.load_all()[0]["key_id"]
+        os.kill(pid, signal.SIGSTOP)
+        try:
+            began = time.monotonic()
+            answer = await server.kbus_call("/_server/tokens/revoke", {"key_id": key_id},
+                                            auth=Avatar("root", ["SUPERADMIN"]))
+            # The revocation waits for the forget_credentials timeout of 5 seconds.
+            assert time.monotonic() - began >= 5
+            assert answer["revoked"] is True
+            samples = await read_samples(server)
+        finally:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+    assert total(samples, "kajenn_kbus_timeouts_total", application="billing",
+                 operation="forget_credentials") == 1
+    assert total(samples, "kajenn_spawned_process_restarts_total", application="billing",
+                 cause="unresponsive") == 1

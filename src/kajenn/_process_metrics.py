@@ -146,7 +146,7 @@ class ProcessMetrics:
                 "kajenn_build", "kajenn and Python versions of the process.",
                 value={"version": kajenn.__version__,
                        "python_version": platform.python_version()}),
-            GaugeMetricFamily("kajenn_process_pid", "Process id.", value=os.getpid()),
+            GaugeMetricFamily("kajenn_process_pid", "Process id of the process.", value=os.getpid()),
             GaugeMetricFamily(
                 "kajenn_process_start_time_seconds",
                 "Start time of the process since the Unix epoch, in seconds.",
