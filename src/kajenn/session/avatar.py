@@ -16,9 +16,9 @@
 
 An ``Avatar`` is a plain slotted value object: an identity string, the active
 group, its authorization tags, and an extensible ``Bag`` of per-user data.
-``AuthCore`` returns it and sessions carry it — "nobody" is ``None``
-uniformly, never an anonymous Avatar. The constructor normalizes ``tags=None``
-to an empty list (the identity boundary for e.g. a JWT null tags claim).
+The server builds it from the answers of the authentication application and
+sessions carry it — "nobody" is ``None`` uniformly, never an anonymous Avatar.
+The constructor normalizes ``tags=None`` to an empty list.
 ``group`` is the group the identity entered with, the one whose tags it
 carries; ``None`` when it entered with no group. No framework machinery.
 """

@@ -74,7 +74,7 @@ class ServerRecipe(AsgiConfigBuilder):
         apps = cfg.applications()
         server_app = apps.application(code="_server", app_class=GreetingServer)
         server_app.greeting(text="welcome")
-        server_app.login(max_attempts=4, backoff=9)
+        server_app.security_txt(contact="mailto:ops@example.com", expires="2099-01-01T00:00:00Z")
 
 
 def test_a_mixin_word_reaches_the_application() -> None:
@@ -94,22 +94,24 @@ def test_the_inherited_words_survive_the_composition() -> None:
 
 def test_a_richer_grammar_and_a_mixin_grammar_compose() -> None:
     # wf:contract: a ServerApplication subclass using the mixin accepts both the mixin's
-    # wf:contract: greeting and ServerApplicationGrammar's login in the same recipe.
+    # wf:contract: greeting and ServerApplicationGrammar's security_txt in the same recipe.
     server = AsgiServer(config=ServerRecipe)
     app = server.applications["_server"]
     assert type(app) is GreetingServer
     assert app.config("greeting.text") == "welcome"
-    assert app.login_policy == {"max_attempts": 4, "backoff": 9}
+    assert app.config("security_txt.contact") == "mailto:ops@example.com"
 
 
 def test_a_class_without_mixins_keeps_its_grammar_words() -> None:
-    # wf:contract: ServerApplication alone still accepts login(...) after the composition.
+    # wf:contract: ServerApplication alone still accepts security_txt(...) after the composition.
     class PlainRecipe(AsgiConfigBuilder):
         def main(self, root: Any) -> None:
             cfg = root.configuration()
             cfg.server(host="127.0.0.1", port=0)
-            cfg.applications().application(code="_server").login(max_attempts=2, backoff=1)
+            cfg.applications().application(code="_server").security_txt(
+                contact="mailto:a@example.com", expires="2099-01-01T00:00:00Z"
+            )
 
     app = AsgiServer(config=PlainRecipe).applications["_server"]
     assert type(app) is ServerApplication
-    assert app.login_policy == {"max_attempts": 2, "backoff": 1}
+    assert app.config("security_txt.contact") == "mailto:a@example.com"

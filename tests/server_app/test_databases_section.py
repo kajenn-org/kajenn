@@ -112,7 +112,7 @@ class TestDatabasesGate:
             assert status(await drive(server, path, method=method)) == 401
 
     async def test_wrong_tags_are_forbidden(self) -> None:
-        server = make_server(Avatar("bob", ["SUPERADMIN"]))
+        server = make_server(Avatar("bob", ["AUTH_ADMIN"]))
         for method, path in DATABASES_ROUTES:
             assert status(await drive(server, path, method=method)) == 403
 

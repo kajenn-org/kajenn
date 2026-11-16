@@ -21,7 +21,10 @@ cookie and attaches them to ``scope["session"]``.
 **The dressing model.** A session is not one identity but a wardrobe of them,
 each stored under a key. The ``ROOT_AVATAR_KEY`` slot holds the identity of the
 primary login — the one the auth chain resolves and the one ``avatar()`` returns
-with no argument. Further keys are *sub-logins*: an identity a page acquired
+with no argument. What persists of an avatar is its identity and its group: at
+every request the server asks the authentication application for the root
+avatar's tags and replaces the root avatar with the answer, and a refusal
+deletes the session. Further keys are *sub-logins*: an identity a page acquired
 inside the same session (a second-system credential, an impersonation, a
 delegated account) that must coexist with the root one instead of replacing it.
 A consumer holding a slot key reads the identity through this collection, never

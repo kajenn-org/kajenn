@@ -469,7 +469,7 @@ is part of the migration design; the 4 call sites (`openapi.py:84`,
 `openapi.py:122`, `server_app.py:140`, `auth_section.py:90`) migrate in
 Macro 5b together with OIDC, which lands directly on branches.
 
-> Note 2026-10-14: done — `attach_instance` is removed from kajenn; `AuthSection.register` links a method's router with `add_branches({"name": method_id, "instance": method})` (src/kajenn/server_app/server_sections/auth_section.py:99-100).
+> Note 2026-10-14: done — `attach_instance` is removed from kajenn; `AuthMethodRegistry.register` links a method's router with `add_branches({"name": method_id, "instance": method})` (src/kajenn/auth_app/auth_method.py:134).
 
 **D26 — The `_server` profile flag is removed; the internal server is a
 subclass.** (Supersedes the D23 wave-ruling bullet — "one

@@ -14,41 +14,22 @@
 
 """The server application — the system surface a server exposes under ``/_server``.
 
-Everything that asks a human for a user and a password lives here: the
-application (`ServerApplication` in `server_app`), the login methods
-(`AuthMethod`, `PasswordMethod` in `auth_method`, `OidcMethod` in
-`oidc_method`) and the sections it attaches (`AuthSection`, `UsersSection`,
-`TokensSection`, `TasksSection`, `MonitorSection` in `server_sections`).
+It holds the management application (`ServerApplication` in `server_app`)
+and the sections it attaches (`TasksSection`, `MonitorSection` and the others
+in `server_sections`). Authentication is not here: it belongs to the
+application mounted at ``/_auth`` (`kajenn.auth_app`).
 
-It is a package of its own, beside `kajenn` and shipped with it:
-``import kajenn`` loads none of this, and this side imports the core by
-absolute path. The core authenticates by header credentials and by the session
-avatar (`kajenn.auth.core`, `kajenn.auth.mixin`) and knows nothing of
-this package. Nothing here is mounted automatically: the application is
-declared in the configuration like any other, with ``app_class`` from this
-package and code ``_server``.
+It is a package of its own, beside `kajenn` and shipped with it, and imports
+the core by absolute path. The server mounts the application under the code
+``_server`` when the configuration does not name it; the configuration only
+customises it.
 """
 
-from .auth_method import AuthMethod, PasswordMethod, safe_next_path
-from .oidc_method import OidcMethod
 from .server_app import ServerApplication
-from .server_sections import (
-    AuthSection,
-    MonitorSection,
-    TasksSection,
-    TokensSection,
-    UsersSection,
-)
+from .server_sections import MonitorSection, TasksSection
 
 __all__ = [
-    "AuthMethod",
-    "AuthSection",
     "MonitorSection",
-    "OidcMethod",
-    "PasswordMethod",
     "ServerApplication",
     "TasksSection",
-    "TokensSection",
-    "UsersSection",
-    "safe_next_path",
 ]

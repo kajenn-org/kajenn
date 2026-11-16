@@ -38,7 +38,7 @@ valid_until}`. It serves the bus only: an HTTP caller gets 403
 `AuthCore` verifies configured Basic, static Bearer and JWT credentials.
 `gak_` API keys use the API-key store and never fall through to JWT on a miss.
 
-Claim anchors: [`authenticate_credential`](../../../src/kajenn/auth/mixin.py#AuthMixin.authenticate_credential), [`AuthCore`](../../../src/kajenn/auth/core.py#AuthCore), [`verify_with_validity`](../../../src/kajenn/auth/core.py#AuthCore.verify_with_validity), [`AuthSection.authenticate`](../../../src/kajenn/server_app/server_sections/auth_section.py#AuthSection.authenticate).
+Claim anchors: [`authenticate_credential`](../../../src/kajenn/auth/mixin.py#AuthMixin.authenticate_credential).
 
 ## Verified-credential cache
 
@@ -96,7 +96,7 @@ construction (`discovery`, oidc_method.py:114-130). The application element
 `GET /_server/login_methods` answers the descriptors of the registered methods.
 It declares no `auth_rule` (server_app.py:554-570).
 
-Claim anchors: [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#ServerApplication), [`login_methods`](../../../src/kajenn/server_app/server_app.py#ServerApplication.login_methods), [`OidcMethod.discovery`](../../../src/kajenn/server_app/oidc_method.py#OidcMethod.discovery).
+Claim anchors: [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#ServerApplication), [`login_methods`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationBase.login_methods), [`OidcMethod.discovery`](../../../src/kajenn/auth_app/oidc_method.py#OidcMethod.discovery).
 
 ## Identity carried by a bus message
 
@@ -123,15 +123,13 @@ implemented. It remains a distinct target.
 
 Claim anchors: [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication).
 
-Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection), [`UsersSection`](../../../src/kajenn/server_app/server_sections/users_section.py#UsersSection), [`TokensSection`](../../../src/kajenn/server_app/server_sections/tokens_section.py#TokensSection), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection).
+Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection).
 
 ## Source and test evidence
 
-- [src/kajenn/auth/core.py](../../../src/kajenn/auth/core.py)
 - [src/kajenn/auth/mixin.py](../../../src/kajenn/auth/mixin.py)
 - [src/kajenn/server_app/server_app.py](../../../src/kajenn/server_app/server_app.py)
-- [src/kajenn/server_app/server_sections/auth_section.py](../../../src/kajenn/server_app/server_sections/auth_section.py)
-- [src/kajenn/server_app/oidc_method.py](../../../src/kajenn/server_app/oidc_method.py)
+- [src/kajenn/auth_app/oidc_method.py](../../../src/kajenn/auth_app/oidc_method.py)
 - [src/kajenn/routed_application.py](../../../src/kajenn/routed_application.py)
 - [src/kajenn/kbus_mixin.py](../../../src/kajenn/kbus_mixin.py)
 - [tests/core/test_auth.py](../../../tests/core/test_auth.py)
@@ -139,6 +137,4 @@ Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sect
 - [tests/core/test_authentication_precedence.py](../../../tests/core/test_authentication_precedence.py)
 - [tests/core/test_credential_validity.py](../../../tests/core/test_credential_validity.py)
 - [tests/core/test_revocation_across_processes.py](../../../tests/core/test_revocation_across_processes.py)
-- [tests/server_app/test_login_flow.py](../../../tests/server_app/test_login_flow.py)
-- [tests/server_app/test_oidc.py](../../../tests/server_app/test_oidc.py)
-- [tests/core/test_api_key_store.py](../../../tests/core/test_api_key_store.py)
+- [tests/auth_app/test_oidc.py](../../../tests/auth_app/test_oidc.py)

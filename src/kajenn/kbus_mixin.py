@@ -525,7 +525,7 @@ class KBusMixin:
         The scope is a ``POST`` of
         ``meta["path"]`` with the TYTX json payload as body and the
         ``x-tytx-transport: json`` header, so the route answers in TYTX json;
-        the avatar rebuilt from ``meta["auth"]``, no session,
+        the avatar rebuilt from ``meta["auth"]`` with its group, no session,
         ``"kajenn.kbus": True`` and ``"kajenn.channel"`` when ``meta`` carries
         one. The answer has ``meta={"status", "format": "json"}`` and the
         response body as payload; an ``HTTPException`` becomes its status with

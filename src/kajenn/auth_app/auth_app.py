@@ -23,7 +23,9 @@ credential.
 
 Configuration, under the application element (``AuthApplicationGrammar``)::
 
-    auth_app = applications.application(app_class=AuthApplicationBase, code="_auth")
+    auth_app = applications.application(
+        app_class=AuthApplicationBase, code="_auth", cache_ttl=300
+    )
     auth_app.store(store_class=FileAuthStore, prefix="auth")
     auth_app.login(max_attempts=5, backoff=30)
     auth_app.oidc().provider(
@@ -34,6 +36,11 @@ Configuration, under the application element (``AuthApplicationGrammar``)::
     )
     auth_app.self_registration(status="waiting", tags=["GUEST"])
 
+- ``cache_ttl`` — an attribute of the application element: the seconds the
+  server keeps an answer of ``authenticate`` and ``avatar`` cached, default
+  300; ``0`` disables the cache. The server reads it from the mounted
+  application. A hand-built server passes the same value as the ``cache_ttl``
+  kwarg.
 - ``store(store_class=None, **params)`` — the application builds
   ``store_class(server.storage, **params)``; ``FileAuthStore`` when
   ``store_class`` is omitted. Without the word: ``FileAuthStore(server.storage)``.
@@ -124,6 +131,7 @@ from genro_builders.builder import element
 from genro_routes import RoutingClass, route
 
 from kajenn.application import ApplicationGrammar
+from kajenn.auth.mixin import AUTHENTICATION_CODE, DEFAULT_CREDENTIAL_CACHE_TTL
 from kajenn.exceptions import HTTPForbidden, HTTPUnauthorized
 from kajenn.routed_application import RoutedApplication
 from kajenn.session import Avatar
@@ -179,11 +187,12 @@ class AuthApplicationBase(RoutedApplication):
         "title": "kajenn authentication endpoints",
         "version": "1.0.0",
     }
-    code = "_auth"
-    mount = "_auth"
+    code = AUTHENTICATION_CODE
+    mount = AUTHENTICATION_CODE
     grammar: type = AuthApplicationGrammar
 
     def __init__(self, **kwargs: Any) -> None:
+        self._cache_ttl: float = kwargs.pop("cache_ttl", DEFAULT_CREDENTIAL_CACHE_TTL)
         self._store_options: dict[str, Any] = kwargs.pop("store", {})
         self._login_policy: dict[str, Any] = kwargs.pop("login", {})
         self._oidc_providers: dict[str, dict[str, Any]] = kwargs.pop("oidc", {})
@@ -278,6 +287,11 @@ class AuthApplicationBase(RoutedApplication):
         store_class = options.pop("store_class", None) or FileAuthStore
         built: AuthStore = store_class(storage, **options)
         return built
+
+    @property
+    def cache_ttl(self) -> float:
+        """Seconds the server keeps an answer cached; ``0`` disables the cache."""
+        return self._cache_ttl
 
     @property
     def store_options(self) -> dict[str, Any]:

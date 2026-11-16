@@ -18,8 +18,7 @@ export DEMO_STORAGE_KEY="$(python -c 'from cryptography.fernet import Fernet; pr
 ```python
 import os
 from genro_routes import route
-from kajenn import AsgiServer, RoutedApplication
-from kajenn.server_app import ServerApplication
+from kajenn import AsgiServer, AuthApplicationBase, RoutedApplication
 
 
 class Members(RoutedApplication):
@@ -32,15 +31,16 @@ class Members(RoutedApplication):
 
 if __name__ == "__main__":
     server = AsgiServer(
-        applications=[ServerApplication, Members],
+        applications=[AuthApplicationBase, Members],
         storage_key=os.environ["DEMO_STORAGE_KEY"],
-        users={"mount": "site", "prefix": "users"},
-        tokens={"mount": "site", "prefix": "api_keys"},
-        auth={"basic": {"operator": {
-            "password": os.environ["DEMO_ADMIN_PASSWORD"],
-            "tags": "SUPERADMIN,SERVER_ADMIN",
-        }}},
     )
+    store = server.applications["_auth"].store
+    store.save_user({
+        "identity": "operator", "groups": [], "primary_group": None,
+        "tags": ["AUTH_ADMIN", "SERVER_ADMIN"], "status": "confirmed", "system": False,
+        "password_hash": store.hash_password(os.environ["DEMO_ADMIN_PASSWORD"]),
+        "email": None, "external_ids": [],
+    })
     server.serve(host="127.0.0.1", port=8000)
 ```
 

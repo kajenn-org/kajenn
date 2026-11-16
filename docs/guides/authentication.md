@@ -21,15 +21,10 @@ header verified through `/_server/auth/authenticate`, served by the
 Without them, session identity can still be resolved.
 
 ```python
-from kajenn import AsgiServer, RoutedApplication
-from kajenn.server_app import ServerApplication
-from genro_routes import route
+import os
 
-AUTH = {
-    "basic":  {"alice": {"password": "wonderland", "tags": "admin,ops"}},
-    "bearer": {"svc":   {"token": "sk_live_xyz", "tags": "api"}},
-    "jwt":    [{"secret": "topsecret", "algorithm": "HS256"}],
-}
+from kajenn import AsgiServer, AuthApplicationBase, RoutedApplication
+from genro_routes import route
 
 
 class App(RoutedApplication):
@@ -44,7 +39,19 @@ class App(RoutedApplication):
         return {"classified": True}
 
 
-server = AsgiServer(applications=[ServerApplication, App], auth=AUTH)
+server = AsgiServer(
+    applications=[AuthApplicationBase, App],
+    storage_key=os.environ["DEMO_STORAGE_KEY"],
+)
+store = server.applications["_auth"].store
+for identity, password, tags in (("alice", "wonderland", ["admin", "ops"]),
+                                 ("bob", "builder", ["api"])):
+    store.save_user({
+        "identity": identity, "groups": [], "primary_group": None, "tags": tags,
+        "status": "confirmed", "system": False,
+        "password_hash": store.hash_password(password),
+        "email": None, "external_ids": [],
+    })
 server.serve(host="127.0.0.1", port=8000)
 ```
 
@@ -197,17 +204,15 @@ OIDC providers are the app's own `oidc=` kwarg, and the server must know its
 own **public base address** — `external_url`:
 
 ```python
-from kajenn.server_app import ServerApplication
+from kajenn import AuthApplicationBase
 
 PROVIDER = {
     "issuer": "https://accounts.example.com",
     "client_id": "client-123",
     "scopes": "openid email profile",
-    "identity_claim": "email",
-    "tags": [],
 }
 server = AsgiServer(
-    applications=[(ServerApplication, {"oidc": {"google": PROVIDER}}), App],
+    applications=[(AuthApplicationBase, {"oidc": {"google": PROVIDER}}), App],
     external_url="https://shop.example.com",
 )
 ```

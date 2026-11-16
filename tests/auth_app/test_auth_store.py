@@ -21,6 +21,8 @@ a caller of the store sees: return values, raised errors, records read back.
 
 from __future__ import annotations
 
+import json
+
 import time
 
 import pytest
@@ -30,7 +32,6 @@ from genro_storage.exceptions import StorageError
 
 from tests.storage_support import site_storage
 
-from kajenn import FileApiKeyStore, FileUserStore
 from kajenn.auth_app import AuthStore, FileAuthStore
 
 STORE_CLASSES = [FileAuthStore]
@@ -447,17 +448,27 @@ class TestFileAuthStore:
         with pytest.raises(StorageError):
             store.save_user(_user(store))
 
+    def test_records_on_disk_are_ciphertext(self, tmp_path) -> None:
+        key_material = Fernet.generate_key().decode()
+        store = FileAuthStore(site_storage(tmp_path, key_material))
+        store.save_user(_user(store, "dave"))
+        key = store.issue_token("dave", ["OWN"], expires_at=None)
+        for raw in (
+            (tmp_path / "auth" / "users" / "dave.json").read_bytes(),
+            (tmp_path / "auth" / "tokens" / f"{_key_id(key)}.json").read_bytes(),
+        ):
+            assert raw.startswith(b"#GNRE1:")
+            assert b"dave" not in raw
+            assert b"scrypt" not in raw
+            with pytest.raises(json.JSONDecodeError):
+                json.loads(raw)
+            assert Fernet(key_material).decrypt(raw.split(b"\n", 1)[1])
+
     def test_files_of_the_previous_stores_are_not_read(self, storage) -> None:
-        old_users = FileUserStore(storage)
-        old_users.save(
-            {
-                "identity": "alice",
-                "password_hash": old_users.hash_password("secret"),
-                "tags": ["SUPERADMIN"],
-                "enabled": True,
-            }
-        )
-        FileApiKeyStore(storage).issue("ci", ["deploy"])
+        user = {"identity": "alice", "tags": ["ADMIN"], "enabled": True}
+        storage.node("site:users/alice.json").write_text(json.dumps(user), encrypted=True)
+        key = {"key_id": "k1", "label": "ci", "tags": ["deploy"], "enabled": True}
+        storage.node("site:api_keys/k1.json").write_text(json.dumps(key), encrypted=True)
         store = FileAuthStore(storage)
         assert store.user_list == []
         assert store.token_list == []

@@ -40,7 +40,7 @@ from kajenn.application import BaseApplication
 from kajenn.exceptions import Redirect
 from kajenn.streaming import StreamingResponse
 from tests.conftest import start_server
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import add_user, auth_application, issue_token
 
 
 class Orders(RoutedApplication):
@@ -84,7 +84,7 @@ class Silent(BaseApplication):
 
 async def metrics_server(*applications: Any) -> AsgiServer:
     return await start_server(AsgiServer(
-        applications=list(applications), tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), *applications]))
 
 
 async def call(server: AsgiServer, method: str, path: str, body: bytes = b"",
@@ -126,7 +126,8 @@ async def exchange(server: AsgiServer, method: str, path: str, body: bytes = b""
 
 async def read_samples(server: AsgiServer) -> list[Any]:
     """Every sample of ``/_server/metrics``, read with an API key holding only SERVER_METRICS."""
-    key = server.api_key_store.issue("prometheus", ["SERVER_METRICS"])
+    add_user(server, "prometheus", ["SERVER_METRICS"], system=True)
+    key = issue_token(server, "prometheus")
     answer = await call(server, "GET", "/_server/metrics",
                         headers=[(b"authorization", f"Bearer {key}".encode())])
     assert answer["status"] == 200
@@ -202,9 +203,9 @@ async def test_a_switched_off_application_counts_its_refusal() -> None:
 RECIPE = '''
 from genro_routes import route
 
-from kajenn import RoutedApplication
+from kajenn import AuthApplicationBase, RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import MemoryAuthStore
 
 
 class Billing(RoutedApplication):
@@ -219,9 +220,11 @@ class Billing(RoutedApplication):
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
-        cfg.authentication().tokens(store_class=MemoryApiKeyStore)
-        cfg.applications().application(code="billing", app_class=Billing,
-                                       spawner="subprocess", request_timeout=5)
+        apps = cfg.applications()
+        apps.application(code="_auth", app_class=AuthApplicationBase).store(
+            store_class=MemoryAuthStore)
+        apps.application(code="billing", app_class=Billing,
+                         spawner="subprocess", request_timeout=5)
 '''
 
 

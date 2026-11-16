@@ -58,7 +58,7 @@ Tests: `tests/core/test_server_app_always_present.py::TestTheConfigurationRoad::
 `_request` injection comes from the common `RoutedApplication.bind_kwargs`,
 not a private server-app override.
 
-Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`UsersSection`](../../../src/kajenn/server_app/server_sections/users_section.py#UsersSection), [`TokensSection`](../../../src/kajenn/server_app/server_sections/tokens_section.py#TokensSection), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection).
+Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection).
 
 ## `ServerApplicationGrammar`: login, oidc, provider
 
@@ -95,9 +95,6 @@ Tests: `tests/server_app/test_login_flow.py::TestLoginLockout`.
   (`src/kajenn/server_app/server_sections/users_section.py:93-188`).
 - tokens: `list`, `issue`, `revoke`, `delete`, `create_jwt`
   (`src/kajenn/server_app/server_sections/tokens_section.py:83-150`).
-
-Tests: [tests/server_app/test_users_section.py](../../../tests/server_app/test_users_section.py),
-[tests/server_app/test_tokens_section.py](../../../tests/server_app/test_tokens_section.py).
 
 ## Databases section: list, plan, apply
 
@@ -161,6 +158,5 @@ Behavior evidence: [`attach_section`](../../../src/kajenn/server_app/server_app.
 - [tests/core/test_server_app_always_present.py](../../../tests/core/test_server_app_always_present.py)
 - [tests/server_app/test_server_application.py](../../../tests/server_app/test_server_application.py)
 - [tests/server_app/test_server_monitor.py](../../../tests/server_app/test_server_monitor.py)
-- [tests/server_app/test_login_flow.py](../../../tests/server_app/test_login_flow.py)
 - [tests/server_app/test_config_server_app.py](../../../tests/server_app/test_config_server_app.py)
 - [tests/server_app/test_databases_section.py](../../../tests/server_app/test_databases_section.py)

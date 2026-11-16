@@ -19,7 +19,8 @@ grammar, in `auth_app`), its login methods (`auth_method`, and the OIDC
 login `OidcMethod` in `oidc_method`), its management
 sections (`auth_sections`) and the store of users, groups, tags and tokens
 (`AuthStore`, with its file backend `FileAuthStore`, in `auth_store`). It is
-the subpackage ``kajenn.auth_app``: ``import kajenn`` does not load it.
+the subpackage ``kajenn.auth_app``; ``kajenn`` exports `AuthApplicationBase`,
+`AuthStore` and `FileAuthStore`.
 """
 
 from .auth_app import AuthApplicationBase, AuthApplicationGrammar

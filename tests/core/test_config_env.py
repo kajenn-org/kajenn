@@ -39,6 +39,7 @@ from genro_builders.builder import element
 from kajenn import (
     AsgiConfigBuilder,
     AsgiServer,
+    AuthApplicationBase,
     BaseApplication,
     ConfigurationHandler,
 )
@@ -48,7 +49,7 @@ from kajenn.types import Receive, Scope, Send
 HOST_ENV_VAR = "GENRO_TEST_HOST"
 PORT_ENV_VAR = "GENRO_TEST_PORT"
 STORAGE_KEY_ENV_VAR = "GENRO_TEST_STORAGE_KEY"
-BASIC_PW_ENV_VAR = "GENRO_TEST_BASIC_PW"
+SECRET_ENV_VAR = "GENRO_TEST_CLIENT_SECRET"
 DB_PW_ENV_VAR = "GENRO_TEST_DB_PW"
 
 
@@ -197,25 +198,24 @@ class TestStorageKeyFromTheEnvironment:
 class TestSecretsFromTheEnvironment:
     """A secret written as an attribute resolves through the read stack."""
 
-    def test_basic_user_password_attribute_resolves_into_the_auth_entries(
+    def test_a_secret_attribute_resolves_through_the_read_stack(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setenv(BASIC_PW_ENV_VAR, "attr-s3cret")
+        monkeypatch.setenv(SECRET_ENV_VAR, "attr-s3cret")
 
-        class BasicConfig(AsgiConfigBuilder):
+        class ProviderConfig(AsgiConfigBuilder):
             def main(self, root: Any) -> None:
-                cfg = root.configuration()
-                creds = cfg.authentication().credentials()
-                creds.basic_user(
-                    username="admin",
-                    password=EnvResolver(BASIC_PW_ENV_VAR),
-                    tags="admin",
+                apps = root.configuration().applications()
+                auth = apps.application(code="_auth", app_class=AuthApplicationBase)
+                auth.oidc().provider(
+                    code="corp",
+                    issuer="https://idp.example.com",
+                    client_secret=EnvResolver(SECRET_ENV_VAR),
                 )
-                cfg.applications().application(code="shop", mount="", app_class=ShopApp)
 
-        entries = ConfigurationHandler(BasicConfig).auth_entries()
-        assert entries is not None
-        assert entries["basic"]["admin"]["password"] == "attr-s3cret"
+        handler = ConfigurationHandler(ProviderConfig)
+        assert handler("applications._auth.oidc.corp.client_secret") == "attr-s3cret"
+
 
 class TestOpenAttributesFromTheEnvironment:
     """A resolver in an OPEN element's ``**kwargs`` resolves through the bulk read."""

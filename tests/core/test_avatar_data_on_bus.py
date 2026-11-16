@@ -24,8 +24,9 @@ from decimal import Decimal
 from genro_bag import Bag
 from genro_routes import route
 
-from kajenn import RoutedApplication
+from kajenn import AuthApplicationBase, RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
+from tests.storage_support import MemoryAuthStore
 
 
 class Billing(RoutedApplication):
@@ -61,11 +62,15 @@ class Billing(RoutedApplication):
             auth=_request.avatar())
 
 
-class Idp(RoutedApplication):
-    @route()
-    def check(self, credential: str = "", channel: str = ""):
-        assert channel == "api"
-        return {"identity": "idp-user", "tags": ["admin"], "data": IDP_DATA[credential]}
+class Idp(AuthApplicationBase):
+    def verify_credential(self, credential):
+        return {"identity": "idp-user", "group": None, "tags": ["admin"],
+                "data": IDP_DATA[credential], "valid_until": None}
+
+    @route(media_type="application/json", openapi_method="post")
+    def avatar(self, identity: str = "", group: str = ""):
+        return {"identity": identity, "group": None, "tags": ["admin"],
+                "data": {"allowed_repository": ["r1"]}, "valid_until": None}
 
 
 IDP_DATA = {
@@ -80,8 +85,7 @@ class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
         apps = cfg.applications()
         apps.application(code="billing", app_class=Billing, DECLARATION)
-        apps.application(code="idp", app_class=Idp)
-        cfg.channels().channel(name="api", authentication_route="/idp/check")
+        apps.application(code="_auth", app_class=Idp).store(store_class=MemoryAuthStore)
 '''
 
 
@@ -120,10 +124,10 @@ async def test_bearer_preserves_avatar_data(tmp_path, placement):
 
 @pytest.mark.parametrize("placement", PLACEMENTS)
 async def test_session_avatar_data_reaches_handler(tmp_path, placement):
-    avatar = Avatar("svc", ["admin"])
-    avatar.data["allowed_repository"] = ["r1"]
+    # wf:contract: the data of the /_auth/avatar answer for the session's root identity
+    # wf:contract: reaches the handler, in-process and in an external process.
     async with running(write_recipe(tmp_path, placement)) as server:
-        session = server.session_store.create(avatar)
+        session = server.session_store.create(Avatar("svc"))
         status, _, body = await call(
             server, "/billing/avatar_data",
             headers=[(b"cookie", f"session_id={session.id}".encode())])

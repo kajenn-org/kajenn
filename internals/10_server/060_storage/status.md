@@ -85,7 +85,7 @@ Claim anchors: [`StorageMixin`](../../../src/kajenn/storage_mixin.py#StorageMixi
   mount of `tasks(mount=...)` (tasks/store.py:127, 157-165;
   tasks/manager.py:92).
 
-Claim anchors: [`_require_storage`](../../../src/kajenn/auth/mixin.py#AuthMixin._require_storage), [`FileTaskStore`](../../../src/kajenn/tasks/store.py#FileTaskStore).
+Claim anchors: [`FileTaskStore`](../../../src/kajenn/tasks/store.py#FileTaskStore).
 
 ## Existing direct filesystem consumers
 

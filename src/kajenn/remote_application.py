@@ -13,9 +13,10 @@ every ASGI websocket event crosses it as one message, in both directions.
 
 The mount is a transparent wire: the application receives a request as it
 would in this process. Every header travels in the record and the child
-authenticates on its own face, through the parent's authentication route over
-the bus. Only the identity this process holds — a session avatar, an avatar
-stamped on the scope — travels as ``meta["auth"]``; the scope's channel, its
+authenticates on its own face, through the parent's authentication application
+over the bus. Only the identity this process holds — the avatar of a session,
+asked to the authentication application here, an avatar stamped on the scope
+— travels as ``meta["auth"]``; the scope's channel, its
 ``kajenn.kbus`` flag and its ``genro.page_id``/``genro.reply_path`` travel as
 ``meta["channel"]``, ``meta["kbus"]`` and ``meta["genro"]``.
 
@@ -63,18 +64,20 @@ PROXY_OPTIONS = frozenset({"spawner", "request_timeout", "max_calls", "mandatory
 
 
 def avatar_auth(avatar: Avatar) -> dict[str, Any]:
-    """The bus auth record, with the data as TYTX json only when the avatar has any."""
-    auth: dict[str, Any] = {"identity": avatar.identity, "tags": list(avatar.tags)}
+    """The bus auth record ``{identity, group, tags}``, plus the data as TYTX json
+    only when the avatar has any."""
+    auth: dict[str, Any] = {
+        "identity": avatar.identity, "group": avatar.group, "tags": list(avatar.tags)}
     if avatar.data:
         auth["data"] = to_tytx(avatar.data.as_dict(recursive=True), "json")
     return auth
 
 
 def avatar_from_auth(auth: dict[str, Any] | None) -> Avatar | None:
-    """Rebuild the bus caller; a record without data leaves its data Bag empty."""
+    """Rebuild the bus caller with its group; a record without data leaves its data Bag empty."""
     if auth is None:
         return None
-    avatar = Avatar(auth["identity"], auth["tags"])
+    avatar = Avatar(auth["identity"], auth["tags"], group=auth["group"])
     if "data" in auth:
         avatar.data.update(from_tytx(auth["data"], "json"))
     return avatar
@@ -298,7 +301,7 @@ class RemoteApplication(BaseApplication):
                     if not message.get("more_body", False):
                         break
                 meta: dict[str, Any] = {"format": "http"}
-                avatar = self._trusted_avatar(scope)
+                avatar = await self._trusted_avatar(scope)
                 if avatar is not None:
                     meta["auth"] = avatar_auth(avatar)
                 if "kajenn.channel" in scope:
@@ -438,21 +441,20 @@ class RemoteApplication(BaseApplication):
             if client_open and not application_closed:
                 await send({"type": "websocket.close", "code": 1011})
 
-    def _trusted_avatar(self, scope) -> Any:
+    async def _trusted_avatar(self, scope) -> Any:
         """The identity this process vouches for, or ``None``.
 
         An avatar already on the scope (a stamping middleware) or, without an
-        ``Authorization`` header, the root avatar of the session: the session
-        store lives here and the child cannot read it. A header is never
-        verified here: it travels in the record and the child verifies it on
-        its own face.
+        ``Authorization`` header, the avatar of the session's root identity
+        (``server.authenticate``): the session store lives here and the child
+        cannot read it. A header is never verified here: it travels in the
+        record and the child verifies it on its own face.
         """
         if scope.get("auth") is not None:
             return scope["auth"]
         if headers_dict(scope).get("authorization"):
             return None
-        session = self.server.session(scope)
-        return session.avatar() if session is not None else None
+        return await self.server.authenticate(scope)
 
     async def _send_local_response(self, status, text, scope, receive, send) -> None:
         """Write an answer this mount built itself, as a JSON string.

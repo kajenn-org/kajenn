@@ -16,7 +16,7 @@
 
 A server built from kwargs or from a recipe has the management application
 whether or not it was named. ``application(code="_server", ...)`` is the way to
-customise it (login policy, OIDC, a subclass), never a declaration. The role
+customise it (its well-known words, a subclass), never a declaration. The role
 process of an external application mounts none: its ``/_server/...`` calls go
 to the parent.
 """
@@ -37,8 +37,7 @@ from kajenn.exceptions import HTTPUnauthorized
 from kajenn.server_app import ServerApplication
 from kajenn.types import Message, Scope
 from tests.conftest import start_server
-
-BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
+from tests.storage_support import add_user, auth_application, issue_token
 
 
 class Api(RoutedApplication):
@@ -94,19 +93,23 @@ class TestTheKwargsRoad:
     def test_a_declared_one_is_kept_as_declared(self) -> None:
         # wf:contract: a ServerApplication given in applications= is the one mounted, not a
         # wf:contract: second default; a subclass is kept as well.
-        server = AsgiServer(applications=[(CustomServerApp, {"login": {"max_attempts": 3}})])
+        server = AsgiServer(applications=[CustomServerApp])
         app = server.applications["_server"]
         assert type(app) is CustomServerApp
         assert sum(1 for a in server.applications.values() if a.code == "_server") == 1
 
     async def test_header_credentials_are_verified_without_naming_server(self) -> None:
-        # wf:contract: with auth= credentials and no ServerApplication named, a Bearer is
-        # wf:contract: verified through the default /_server/auth/authenticate: the ruled route
-        # wf:contract: answers 200, an invalid Bearer 401.
+        # wf:contract: with _auth mounted and no ServerApplication named, a Bearer is
+        # wf:contract: verified through /_auth/authenticate: the ruled route answers 200, an
+        # wf:contract: invalid Bearer 401.
         server = AsgiServer(
-            applications=[(BaseApplication, {"mount": ""}), (Api, {"code": "api"})], auth=BEARER
+            applications=[auth_application(), (BaseApplication, {"mount": ""}),
+                          (Api, {"code": "api"})],
         )
-        status, data = await drive(server, "/api/secret", [(b"authorization", b"Bearer sk_live_xyz")])
+        await start_server(server)
+        add_user(server, "svc", ["admin"], system=True)
+        token = issue_token(server, "svc")
+        status, data = await drive(server, "/api/secret", [(b"authorization", f"Bearer {token}".encode())])
         assert (status, data) == (200, {"identity": "svc"})
         status, _ = await drive(server, "/api/secret", [(b"authorization", b"Bearer nope")])
         assert status == 401
@@ -130,7 +133,8 @@ class CustomisingRecipe(AsgiConfigBuilder):
         cfg.server(host="127.0.0.1", port=0)
         apps = cfg.applications(default="api")
         apps.application(code="api", app_class=Api)
-        apps.application(code="_server").login(max_attempts=3, backoff=7)
+        apps.application(code="_server").security_txt(
+            contact="mailto:ops@example.com", expires="2099-01-01T00:00:00Z")
 
 
 class SubclassRecipe(AsgiConfigBuilder):
@@ -159,12 +163,11 @@ class TestTheConfigurationRoad:
 
     def test_the_recipe_customises_without_app_class(self) -> None:
         # wf:contract: application(code="_server") without app_class means ServerApplication,
-        # wf:contract: and its login/oidc words reach the instance.
+        # wf:contract: and its words reach the instance.
         server = AsgiServer(config=CustomisingRecipe)
         app = server.applications["_server"]
         assert type(app) is ServerApplication
-        assert app.login_policy["max_attempts"] == 3
-        assert app.login_policy["backoff"] == 7
+        assert app.config("security_txt.contact") == "mailto:ops@example.com"
 
     def test_the_recipe_may_hand_a_subclass(self) -> None:
         # wf:contract: app_class on code "_server" is accepted when it subclasses ServerApplication.
@@ -215,14 +218,14 @@ class TestTheRoleProcess:
 
 
 class TestTheMissingRouteCase:
-    async def test_a_channel_route_pointing_at_nothing_is_401(self) -> None:
-        # wf:contract: the 404 branch of authenticate_credential survives for a configured
-        # wf:contract: channel route nobody serves: 401 with the challenge, not 500.
+    async def test_an_entry_point_nobody_serves_is_401(self) -> None:
+        # wf:contract: the 404 branch of authenticate_credential: an application of code
+        # wf:contract: _auth that serves no /_auth/authenticate gives 401 with the challenge,
+        # wf:contract: not 500.
         server = AsgiServer(
-            applications=[(BaseApplication, {"code": "site"})],
-            auth=BEARER,
-            channels={"mcp": {"authentication_route": "/idp/check"}},
+            applications=[(BaseApplication, {"code": "site"}), (RoutedApplication, {"code": "_auth"})],
         )
+        await start_server(server)
         with pytest.raises(HTTPUnauthorized) as refused:
-            await server.authenticate_credential("Bearer sk_live_xyz", "mcp")
+            await server.authenticate_credential("Bearer anything", "mcp")
         assert (b"www-authenticate", b"Bearer") in refused.value.headers

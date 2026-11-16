@@ -84,7 +84,7 @@ The `authentication` section declares the `users`/`tokens` store descriptors
 `credentials` children; it carries no bootstrap password, because the server
 creates no user.
 
-Claim anchors: [`configuration`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.configuration), [`site`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.site), [`server`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.server), [`websocket`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.websocket), [`kbus`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.kbus), [`authentication`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.authentication), [`channels`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.channels), [`channel`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.channel), [`site_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.site_kwargs), [`server_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.server_kwargs), [`identity_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.identity_kwargs), [`channels()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.channels), [`applications()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.applications), [`databases()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.databases), [`orchestration_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.orchestration_kwargs), [`_server` default class](../../../src/kajenn/config/builder.py#AsgiConfigBuilder.__getattr__), [`RemoteApplication` built](../../../src/kajenn/asgi_server.py#AsgiServer._configured_kwargs).
+Claim anchors: [`configuration`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.configuration), [`site`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.site), [`server`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.server), [`websocket`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.websocket), [`kbus`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.kbus), [`site_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.site_kwargs), [`server_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.server_kwargs), [`applications()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.applications), [`databases()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.databases), [`orchestration_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.orchestration_kwargs), [`_server` default class](../../../src/kajenn/config/builder.py#AsgiConfigBuilder.__getattr__), [`RemoteApplication` built](../../../src/kajenn/asgi_server.py#AsgiServer._configured_kwargs).
 
 Behavior evidence: `tests/core/test_config.py::test_a_second_channels_element_is_rejected_by_the_grammar`, `tests/core/test_server_app_always_present.py::test_the_recipe_customises_without_app_class`, `test_a_class_that_is_not_a_server_application_is_refused`, `tests/core/test_external_application_streaming.py::test_an_answer_larger_than_one_frame_streams_through`.
 
@@ -103,10 +103,6 @@ Claim anchors: [`ConfigurationHandler`](../../../src/kajenn/config/handler.py#Co
 
 ## Remaining design distance
 
-- **Bootstrap administrator password.** design.md §1 describes a bootstrap
-  administrator password declared in a way that rejects a literal. No such
-  word exists: the `authentication` element and `identity_kwargs` state that
-  there is no bootstrap password ([elements.py](../../../src/kajenn/config/elements.py#AsgiServerGrammar.authentication), [handler.py](../../../src/kajenn/config/handler.py#ConfigurationHandler.identity_kwargs)).
 - **Survivable application failure.** design.md §5 describes an application
   that declares a failure of its own survivable, so that the server starts
   without it. `BaseApplication` has no such declaration

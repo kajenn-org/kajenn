@@ -16,9 +16,9 @@
 
 Every test drives a real ``AsgiServer`` at the ASGI level, with the
 application mounted over an encrypted ``site:`` mount in a temporary
-directory. The ``api`` channel names ``/_auth/authenticate`` as its
-authentication route, so an ``Authorization`` header on an HTTP request is
-verified by the application through the bus. Users, groups and tags are seeded
+directory. The server asks the application mounted at ``/_auth``, so an
+``Authorization`` header on an HTTP request is verified by the application
+through the bus. Users, groups and tags are seeded
 through the application's public ``store``; the tests read only what a caller
 sees: HTTP status and JSON answers, bus answers and errors, the session's
 avatar.
@@ -39,11 +39,9 @@ from tests.conftest import start_server
 from tests.storage_support import site_mounts
 
 from kajenn import AsgiConfigBuilder, AsgiServer, Avatar, BaseApplication
-from kajenn.auth_app import AuthApplicationBase, AuthStore, FileAuthStore
+from kajenn.auth_app import AuthApplicationBase, AuthStore, FileAuthStore, PasswordMethod
 from kajenn.exceptions import HTTPUnauthorized, KBusCallError
 from kajenn.types import Message, Scope
-
-CHANNELS = {"api": {"authentication_route": "/_auth/authenticate"}}
 
 
 def make_server(
@@ -51,12 +49,11 @@ def make_server(
     app_class: type = AuthApplicationBase,
     **app_kwargs: Any,
 ) -> AsgiServer:
-    """A server with ``app_class`` mounted at ``/_auth`` and the ``api`` channel routed to it."""
+    """A server with ``app_class`` mounted at ``/_auth``, the application the server asks."""
     return AsgiServer(
         applications=[(app_class, app_kwargs), (BaseApplication, {"mount": ""})],
         storage=site_mounts(tmp_path),
         storage_key=Fernet.generate_key().decode(),
-        channels=CHANNELS,
     )
 
 
@@ -153,6 +150,19 @@ def status(sent: list[Message]) -> int:
 def payload(sent: list[Message]) -> Any:
     body = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
     return json.loads(body)
+
+
+def response_headers(sent: list[Message]) -> list[tuple[bytes, bytes]]:
+    start = next(m for m in sent if m["type"] == "http.response.start")
+    headers: list[tuple[bytes, bytes]] = start["headers"]
+    return headers
+
+
+def set_cookie_value(sent: list[Message]) -> str | None:
+    for name, value in response_headers(sent):
+        if name == b"set-cookie":
+            return value.decode()
+    return None
 
 
 def basic(identity: str, password: str) -> str:
@@ -294,6 +304,75 @@ class TestLogin:
         assert payload(sent) == {"status": "ok"}
         assert server.session_store.get(answer["session_id"]) is None
 
+    async def test_logout_without_a_session_id_still_answers_ok(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        sent = await drive(server, "/_auth/logout", "POST", body={})
+        assert payload(sent) == {"status": "ok"}
+
+    async def test_login_accepts_the_pages_form_encoded_post(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        anonymous = server.session_store.create()
+        scope: Scope = {
+            "type": "http",
+            "method": "POST",
+            "path": "/_auth/login",
+            "query_string": b"",
+            "headers": [
+                (b"content-type", b"application/x-www-form-urlencoded"),
+                (b"cookie", f"session_id={anonymous.id}".encode()),
+            ],
+        }
+        sent: list[Message] = []
+
+        async def receive() -> Message:
+            return {
+                "type": "http.request",
+                "body": b"identity=alice&password=wonder",
+                "more_body": False,
+            }
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        await server(scope, receive, send)
+        answer = payload(sent)
+        assert answer["identity"] == "alice"
+        assert answer["session_id"] == anonymous.id
+        assert set_cookie_value(sent) is None
+        assert server.session_store.get(anonymous.id).avatar().identity == "alice"
+
+    async def test_login_on_first_contact_rides_the_new_session_cookie(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        sent = await drive(
+            server, "/_auth/login", "POST", body={"identity": "alice", "password": "wonder"}
+        )
+        answer = payload(sent)
+        cookie = set_cookie_value(sent)
+        assert cookie is not None
+        assert cookie.split(";")[0].split("=", 1)[1] == answer["session_id"]
+        assert server.session_store.get(answer["session_id"]).avatar().identity == "alice"
+
+    async def test_get_with_credentials_is_405_and_attaches_no_avatar(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        anonymous = server.session_store.create()
+        sent = await drive(
+            server,
+            "/_auth/login?identity=alice&password=wonder",
+            "GET",
+            cookie=f"session_id={anonymous.id}",
+        )
+        assert status(sent) == 405
+        assert (b"allow", b"POST") in response_headers(sent)
+        assert server.session_store.get(anonymous.id).avatar() is None
+
+    def test_a_second_method_with_the_same_id_is_refused(self, tmp_path: Path) -> None:
+        server = make_server(tmp_path)
+        application = server.applications["_auth"]
+        with pytest.raises(ValueError, match="already registered"):
+            application.register_auth_method(PasswordMethod(application, "password"))
+
     async def test_login_methods_lists_the_password_form(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
         sent = await drive(server, "/_auth/login_methods")
@@ -355,6 +434,22 @@ class TestLockout:
         assert await login(server, "alice", "nope") == {"error": "Too many failed attempts"}
         assert await login(server, "alice", "wonder") == {"error": "Too many failed attempts"}
         clock.advance(5)
+        assert (await login(server, "alice", "wonder"))["identity"] == "alice"
+
+    async def test_each_failure_after_the_lock_doubles_the_window(
+        self, tmp_path: Path, clock: Clock
+    ) -> None:
+        server = await started(tmp_path, login={"max_attempts": 2, "backoff": 10})
+        await login(server, "alice", "nope")
+        await login(server, "alice", "nope")
+        clock.advance(11)
+        assert await login(server, "alice", "nope") == {
+            "error": "Invalid credentials",
+            "remaining_attempts": 0,
+        }
+        clock.advance(11)
+        assert await login(server, "alice", "wonder") == {"error": "Too many failed attempts"}
+        clock.advance(10)
         assert (await login(server, "alice", "wonder"))["identity"] == "alice"
 
     async def test_a_basic_success_resets_the_counter(self, tmp_path: Path, clock: Clock) -> None:
@@ -662,6 +757,34 @@ class TestUsersSection:
             await drive(server, "/_auth/users/get?identity=bob", cookie=cookie)
         )
 
+    async def test_an_existing_identity_is_not_created_again(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        sent = await drive(
+            server,
+            "/_auth/users/create_user?identity=alice",
+            "POST",
+            body={"password": "other", "password_confirm": "other"},
+            cookie=cookie,
+        )
+        assert "error" in payload(sent)
+        assert (await login(server, "alice", "wonder"))["identity"] == "alice"
+        assert "error" in await login(server, "alice", "other")
+
+    async def test_save_drops_a_password_hash_sent_by_the_caller(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        forged = auth_store(server).hash_password("attacker")
+        await drive(
+            server,
+            "/_auth/users/save?identity=alice",
+            "POST",
+            body={"password_hash": forged, "tags": ["X"]},
+            cookie=cookie,
+        )
+        assert "error" in await login(server, "alice", "attacker")
+        assert (await login(server, "alice", "wonder"))["tags"] == ["X", "STAFF_READ"]
+
     async def test_records_never_show_the_password_hash(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
         cookie = await admin(server)
@@ -729,6 +852,65 @@ class TestUsersSection:
         sent = await drive(server, "/_auth/users/delete?identity=alice", "POST", cookie=cookie)
         assert payload(sent) == {"identity": "alice", "deleted": True}
         assert "error" in await login(server, "alice", "wonder")
+
+    async def test_get_missing_user_reports_no_such_user(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        sent = await drive(server, "/_auth/users/get?identity=ghost", cookie=cookie)
+        assert status(sent) == 200
+        assert payload(sent) == {"error": "No such user: ghost"}
+
+    async def test_save_on_a_missing_user_is_an_error(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        sent = await drive(
+            server, "/_auth/users/save?identity=ghost", "POST", body={"tags": []}, cookie=cookie
+        )
+        assert status(sent) == 200
+        assert payload(sent) == {"error": "No such user: ghost"}
+        assert "error" in payload(
+            await drive(server, "/_auth/users/get?identity=ghost", cookie=cookie)
+        )
+
+    async def test_set_password_rejects_a_mismatch(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        sent = await drive(
+            server,
+            "/_auth/users/set_password?identity=alice",
+            "POST",
+            body={"password": "a", "password_confirm": "b"},
+            cookie=cookie,
+        )
+        assert "error" in payload(sent)
+        assert (await login(server, "alice", "wonder"))["identity"] == "alice"
+        assert "error" in await login(server, "alice", "a")
+
+    async def test_set_password_on_a_missing_user_is_an_error(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        sent = await drive(
+            server,
+            "/_auth/users/set_password?identity=ghost",
+            "POST",
+            body={"password": "pw", "password_confirm": "pw"},
+            cookie=cookie,
+        )
+        assert status(sent) == 200
+        assert payload(sent) == {"error": "No such user: ghost"}
+
+    async def test_create_user_without_identity_is_rejected(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        sent = await drive(
+            server,
+            "/_auth/users/create_user",
+            "POST",
+            body={"password": "pw", "password_confirm": "pw"},
+            cookie=cookie,
+        )
+        assert status(sent) == 200
+        assert payload(sent) == {"error": "Identity is required"}
 
 
 class TestGroupsAndTagsSections:

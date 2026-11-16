@@ -429,7 +429,7 @@ the earlier examples, which declare alternative recipe classes. The storage
 directory and environment prerequisites are described below.
 
 ```python
-from kajenn import AsgiServer, RoutedApplication
+from kajenn import AsgiServer, AuthApplicationBase, RoutedApplication
 from kajenn.application import ApplicationGrammar
 from kajenn.config import AsgiConfigBuilder
 from genro_bag.resolvers import EnvResolver
@@ -457,7 +457,6 @@ class ServerConfiguration(AsgiConfigBuilder):
         cfg = root.configuration()
         self.server_section(cfg)
         cfg.middleware(cors=True, logging=True)
-        self.authentication_section(cfg)
         self.storage_section(cfg)
         self.applications_section(cfg)
 
@@ -476,17 +475,18 @@ class ServerConfiguration(AsgiConfigBuilder):
             storage_key=EnvResolver("SHOP_STORAGE_KEY"),
         ).local(name="site", base_path="/srv/shop")
 
-    def authentication_section(self, cfg):
-        """The identity store: where the records live, and who keeps them."""
-        cfg.authentication().users(mount="site", prefix="users")
-
     def applications_section(self, cfg):
-        """One app on the site root, declaring its own catalog block."""
-        app = cfg.applications(default="shop").application(
-            code="shop", mount="", app_class=Shop
-        )
+        """One app on the site root, declaring its own catalog block, and _auth."""
+        apps = cfg.applications(default="shop")
+        app = apps.application(code="shop", mount="", app_class=Shop)
         app.parameters(currency="EUR")
         app.catalog(title="Outlet")
+        self.auth_section(apps)
+
+    def auth_section(self, apps):
+        """The authentication application: where its records live, and who keeps them."""
+        auth = apps.application(code="_auth", app_class=AuthApplicationBase)
+        auth.store(mount="site", prefix="auth")
 ```
 
 ## How to verify it

@@ -15,9 +15,8 @@
 """The quality-check corrections of the 0.4.0 execution point, pinned.
 
 A presented credential is verified before the session is read; a verification
-that ends after a revocation is not cached; the authentication route's
-failures map to 401 with the challenge or to 503; the two ``_server`` auth
-routes serve the bus only; MCP gates run before authentication; a handler
+that ends after a revocation is not cached; the failures of
+``/_auth/authenticate`` map to 401 with the challenge or to 503; MCP gates run before authentication; a handler
 raising ``HTTPNotFound`` is not reported as a missing tool; the MCP binding
 rule follows ``mcp_channel``; ``run_on_loop`` refuses to run before the loop
 is known; a wire value named ``_request`` never replaces the injected one.
@@ -34,15 +33,15 @@ import pytest
 
 from genro_routes import RoutingClass, route
 
-from kajenn import AsgiServer, Avatar, BaseApplication, RoutedApplication
+from kajenn import AsgiServer, AuthApplicationBase, Avatar, BaseApplication, RoutedApplication
 from kajenn.exceptions import HTTPException, HTTPForbidden, HTTPNotFound
 from kajenn.mcp.engine import McpEngine
 from kajenn.mcp.jsonrpc import McpError
 from kajenn.types import Message, Scope
-from kajenn.server_app import ServerApplication
 from tests.conftest import start_server
+from tests.storage_support import MemoryAuthStore, add_user, auth_application, issue_token
 
-BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
+MEMORY_STORE = {"store": {"store_class": MemoryAuthStore}}
 
 
 class Api(RoutedApplication):
@@ -64,26 +63,33 @@ class Api(RoutedApplication):
         return {"is_request": type(_request).__name__ == "Request"}
 
 
-class SlowIdp(RoutedApplication):
-    """An authentication route that waits until the test lets it answer."""
+class SlowIdp(AuthApplicationBase):
+    """A verification that waits, in its pool thread, until the test lets it answer."""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.gate = asyncio.Event()
+        self.gate = threading.Event()
         self.calls = 0
 
-    @route()
-    async def check(self, credential: str = "", channel: str = "") -> dict[str, Any]:
+    def verify_credential(self, credential: str) -> dict[str, Any]:
         self.calls += 1
-        await self.gate.wait()
-        return {"identity": "ann", "tags": ["dev"], "data": {}}
+        assert self.gate.wait(timeout=10), "the test never opened the gate"
+        return {"identity": "ann", "group": None, "tags": ["dev"], "data": {},
+                "valid_until": None}
 
 
 def api_server(**extra: Any) -> AsgiServer:
-    apps = extra.pop("applications", [ServerApplication, (BaseApplication, {"mount": ""})])
+    apps = extra.pop("applications", [auth_application(), (BaseApplication, {"mount": ""})])
     return AsgiServer(
-        applications=[*apps, (Api, {"code": "api"})], auth=BEARER, plugins={"openapi": True}, **extra
+        applications=[*apps, (Api, {"code": "api"})], plugins={"openapi": True}, **extra
     )
+
+
+async def svc_token(server: AsgiServer) -> str:
+    """Start ``server``, write the user svc (tag admin) in ``_auth`` and return a token of it."""
+    await start_server(server)
+    add_user(server, "svc", ["admin"], system=True)
+    return issue_token(server, "svc")
 
 
 async def drive(
@@ -143,14 +149,15 @@ class TestTheHeaderComesFirst:
 
     async def test_a_valid_header_wins_over_a_weaker_session(self) -> None:
         server = api_server()
-        headers = [*session_cookie(server, Avatar("sess", [])), *bearer("sk_live_xyz")]
+        token = await svc_token(server)
+        add_user(server, "sess", [])
+        headers = [*session_cookie(server, Avatar("sess", [])), *bearer(token)]
         status, _, data = await drive(server, "/api/secret", headers=headers)
         assert (status, data) == (200, {"identity": "svc"})
 
     async def test_a_scope_without_channel_is_read_as_rest(self) -> None:
         server = api_server()
-        scope: Scope = {"type": "http", "headers": bearer("sk_live_xyz")}
-        await start_server(server)
+        scope: Scope = {"type": "http", "headers": bearer(await svc_token(server))}
         avatar = await server.authenticate(scope)
         assert avatar.identity == "svc"
 
@@ -158,13 +165,13 @@ class TestTheHeaderComesFirst:
 class TestTheCacheAndTheRoute:
     async def test_a_verification_ending_after_a_revocation_is_not_cached(self) -> None:
         server = api_server(
-            applications=[ServerApplication, (BaseApplication, {"mount": ""}), (SlowIdp, {"code": "idp"})],
-            channels={"mcp": {"authentication_route": "/idp/check"}},
+            applications=[(SlowIdp, MEMORY_STORE), (BaseApplication, {"mount": ""})],
         )
-        idp = server.applications["idp"]
+        idp = server.applications["_auth"]
         await start_server(server)
         first = asyncio.create_task(server.authenticate_credential("Bearer good", "mcp"))
-        await asyncio.sleep(0)
+        while idp.calls == 0:
+            await asyncio.sleep(0.01)
         server.forget_all_credentials()
         idp.gate.set()
         assert (await first).identity == "ann"
@@ -174,8 +181,8 @@ class TestTheCacheAndTheRoute:
     async def test_forget_credential_tolerates_a_concurrent_write(self) -> None:
         """Insert one unrelated entry while revocation is removing a cached credential."""
         server = api_server()
-        await start_server(server)
-        await server.authenticate_credential("Bearer sk_live_xyz", "api")
+        token = await svc_token(server)
+        await server.authenticate_credential(f"Bearer {token}", "api")
         revoking = threading.Event()
         written = threading.Event()
 
@@ -190,7 +197,7 @@ class TestTheCacheAndTheRoute:
         assert len(cache) == 1
         revoked_key = next(iter(cache))
         server._credential_cache = cache
-        other_key = ("other", "api")
+        other_key = ("credential", "other", "api")
         other_entry = (float("inf"), Avatar("x"))
 
         def writer() -> None:
@@ -201,7 +208,7 @@ class TestTheCacheAndTheRoute:
         thread = threading.Thread(target=writer)
         thread.start()
         try:
-            server.forget_credential("Bearer sk_live_xyz")
+            server.forget_credential(f"Bearer {token}")
         finally:
             revoking.set()
             thread.join(timeout=5)
@@ -211,45 +218,27 @@ class TestTheCacheAndTheRoute:
         assert cache[other_key] == other_entry
 
     async def test_a_failing_route_is_503(self) -> None:
-        class Broken(RoutedApplication):
-            @route()
-            def check(self, credential: str = "", channel: str = "") -> dict[str, Any]:
+        class Broken(AuthApplicationBase):
+            def verify_credential(self, credential: str) -> dict[str, Any]:
                 raise RuntimeError("db down")
 
         server = api_server(
-            applications=[ServerApplication, (BaseApplication, {"mount": ""}), (Broken, {"code": "idp"})],
-            channels={"mcp": {"authentication_route": "/idp/check"}},
+            applications=[(Broken, MEMORY_STORE), (BaseApplication, {"mount": ""})],
         )
         with pytest.raises(HTTPException) as failed:
             await start_server(server)
             await server.authenticate_credential("Bearer x", "mcp")
         assert failed.value.status == 503
 
-    async def test_the_server_auth_routes_serve_the_bus_only(self) -> None:
-        server = api_server()
-        body = json.dumps({"credential": "Bearer sk_live_xyz", "channel": "api"}).encode()
-        status, _, _ = await drive(server, "/_server/auth/authenticate", method="POST", body=body)
-        assert status == 403
-        status, _, _ = await drive(
-            server, "/_server/auth/forget_credential", method="POST", body=json.dumps({"credential": "x"}).encode()
-        )
-        assert status == 403
-        await start_server(server)
-        answer = await server.kbus_call(
-            "/_server/auth/authenticate", {"credential": "Bearer sk_live_xyz", "channel": "api"}
-        )
-        assert answer["identity"] == "svc"
-
 
 class TestMcp:
     async def test_the_origin_gate_runs_before_authentication(self) -> None:
         server = AsgiServer(
             applications=[
-                ServerApplication,
+                auth_application(),
                 (BaseApplication, {"mount": ""}),
                 (Api, {"code": "api", "allowed_origins": ["https://ok.example"]}),
             ],
-            auth=BEARER,
             plugins={"openapi": True},
         )
         headers = [(b"origin", b"https://evil.example"), *bearer("nope")]
@@ -351,14 +340,12 @@ class TestCoverageOfTheCorrections:
         assert failed.value.status == 503
 
     async def test_another_refusal_status_of_the_route_propagates(self) -> None:
-        class Picky(RoutedApplication):
-            @route()
-            def check(self, credential: str = "", channel: str = "") -> dict[str, Any]:
+        class Picky(AuthApplicationBase):
+            def verify_credential(self, credential: str) -> dict[str, Any]:
                 raise HTTPForbidden("not from here")
 
         server = api_server(
-            applications=[ServerApplication, (BaseApplication, {"mount": ""}), (Picky, {"code": "idp"})],
-            channels={"mcp": {"authentication_route": "/idp/check"}},
+            applications=[(Picky, MEMORY_STORE), (BaseApplication, {"mount": ""})],
         )
         with pytest.raises(HTTPException) as refused:
             await start_server(server)

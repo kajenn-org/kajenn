@@ -33,19 +33,26 @@ import pytest
 
 from genro_routes import RoutingClass, route
 
-from kajenn import AsgiServer, BaseApplication, McpEngine, RoutedApplication
+from kajenn import AsgiServer, AuthApplicationBase, BaseApplication, McpEngine
+from kajenn import RoutedApplication
 from kajenn.types import Message, Scope
-from kajenn.server_app import ServerApplication
 from tests.conftest import start_server
+from tests.storage_support import MemoryAuthStore
 
 ROUTES = {"public", "admin_only", "user_only"}
 
-AUTH = {
-    "bearer": {
-        "boss": {"token": "tk_admin", "tags": "admin"},
-        "clerk": {"token": "tk_user", "tags": "user"},
-    }
-}
+#: The fixed bearers ``Tokens`` verifies: identity and tag of each.
+BEARERS = {"Bearer tk_admin": ("boss", "admin"), "Bearer tk_user": ("clerk", "user")}
+
+
+class Tokens(AuthApplicationBase):
+    """An authentication application verifying the two fixed bearers of ``BEARERS``."""
+
+    def verify_credential(self, credential: str) -> dict[str, Any]:
+        if credential not in BEARERS:
+            return super().verify_credential(credential)
+        identity, tag = BEARERS[credential]
+        return {"identity": identity, "group": None, "tags": [tag], "data": {}, "valid_until": None}
 
 
 class Api(RoutedApplication):
@@ -64,8 +71,11 @@ class Api(RoutedApplication):
 
 def api_server() -> AsgiServer:
     return AsgiServer(
-        applications=[ServerApplication, (BaseApplication, {"mount": ""}), (Api, {"code": "api"})],
-        auth=AUTH,
+        applications=[
+            (Tokens, {"store": {"store_class": MemoryAuthStore}}),
+            (BaseApplication, {"mount": ""}),
+            (Api, {"code": "api"}),
+        ],
         plugins={"openapi": True},
     )
 

@@ -12,157 +12,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Auth tests (Macro 2 Phases 5+9): AuthCore verification + §5.5 identity precedence.
+"""Auth tests: header verification and §5.5 identity precedence, asked to ``_auth``.
 
-Header verification (basic/bearer/jwt, wrong credentials → 401) is driven at
-the ASGI level through an ``AsgiServer`` that declares ``_server``: the
-execution point verifies the header through ``/_server/auth/authenticate``.
-The precedence — the session's avatar first, then the header, an invalid
-header a 401 — is exercised both by awaiting ``server.authenticate(scope)``
-and END-TO-END through the session middleware and the execution point.
+Header verification (Basic and ``gak_`` Bearer, wrong credentials → 401) is
+driven at the ASGI level through an ``AsgiServer`` that mounts
+``AuthApplicationBase`` at ``/_auth``: the execution point verifies the header
+through ``/_auth/authenticate``. The precedence — the header first, an invalid
+header a 401, then the session's root identity asked to ``/_auth/avatar`` — is
+exercised both by awaiting ``server.authenticate(scope)`` and END-TO-END
+through the session middleware and the execution point.
 """
 
 from __future__ import annotations
 
 import base64
-from pathlib import Path
 
-import jwt
 import pytest
-from cryptography.fernet import Fernet
 from genro_routes import route
 
-from tests.storage_support import MemoryApiKeyStore, site_mounts
+from tests.storage_support import add_user, auth_application, issue_token
 
 from kajenn import (
     AsgiServer,
-    AuthCore,
-    AuthMixin,
     Avatar,
     BaseApplication,
     BaseServer,
-    FileApiKeyStore,
-    FileUserStore,
     RoutedApplication,
     Session,
     SessionMixin,
-    UserStore,
 )
 from kajenn.exceptions import HTTPUnauthorized
 from kajenn.middleware import MiddlewareMixin
 from kajenn.types import Message, Scope
-from kajenn.server_app import ServerApplication
 from tests.conftest import start_server
-
-
-class MemoryUserStore(UserStore):
-    """In-memory ``UserStore`` backend used as a ready store instance in tests."""
-
-    __slots__ = ("_records",)
-
-    def __init__(self, storage: object = None) -> None:
-        self._records: dict[str, dict] = {}
-
-    def load_all(self) -> list[dict]:
-        return list(self._records.values())
-
-    def get(self, identity: str) -> dict | None:
-        return self._records.get(identity)
-
-    def save(self, record: dict) -> None:
-        self._records[record["identity"]] = record
-
-    def delete(self, identity: str) -> bool:
-        return self._records.pop(identity, None) is not None
 
 
 def basic_header(username: str, password: str) -> str:
     """The value of a Basic ``Authorization`` header for these credentials."""
     raw = base64.b64encode(f"{username}:{password}".encode()).decode()
     return f"Basic {raw}"
-
-
-AUTH_CONFIG = {
-    "basic": {"alice": {"password": "wonderland", "tags": "admin,ops"}},
-    "bearer": {"svc": {"token": "sk_live_xyz", "tags": "api"}},
-    "jwt": [{"secret": "topsecret", "algorithm": "HS256"}],
-}
-
-
-# --- AuthCore unit ---
-
-
-class TestAuthCore:
-    def test_no_header_returns_none(self) -> None:
-        core = AuthCore(**AUTH_CONFIG)
-        assert core.authenticate({"headers": []}) is None
-
-    def test_basic_ok_returns_avatar(self) -> None:
-        core = AuthCore(**AUTH_CONFIG)
-        scope: Scope = {"headers": [(b"authorization", basic_header("alice", "wonderland").encode())]}
-        avatar = core.authenticate(scope)
-        assert avatar is not None
-        assert avatar.identity == "alice"
-        assert avatar.tags == ["admin", "ops"]
-
-    def test_bearer_ok_returns_avatar(self) -> None:
-        core = AuthCore(**AUTH_CONFIG)
-        scope: Scope = {"headers": [(b"authorization", b"Bearer sk_live_xyz")]}
-        avatar = core.authenticate(scope)
-        assert avatar is not None and avatar.identity == "svc"
-
-    def test_jwt_ok_returns_avatar(self) -> None:
-        core = AuthCore(**AUTH_CONFIG)
-        token = jwt.encode({"sub": "carol", "tags": ["reader"]}, "topsecret", algorithm="HS256")
-        scope: Scope = {"headers": [(b"authorization", f"Bearer {token}".encode())]}
-        avatar = core.authenticate(scope)
-        assert avatar is not None
-        assert avatar.identity == "carol"
-        assert avatar.tags == ["reader"]
-
-    def test_signing_config_is_the_symmetric_secret(self) -> None:
-        core = AuthCore(**AUTH_CONFIG)
-        signing = core.signing_jwt_config
-        assert signing is not None
-        assert signing["secret"] == "topsecret"
-
-    def test_public_key_never_becomes_the_signing_config(self) -> None:
-        # A verifier configured with public_key only (algorithm defaulted):
-        # it can verify, but public key material must never mint tokens.
-        core = AuthCore(jwt=[{"public_key": "not-a-secret"}])
-        assert core.signing_jwt_config is None
-
-    def test_wrong_password_raises_401(self) -> None:
-        core = AuthCore(**AUTH_CONFIG)
-        scope: Scope = {"headers": [(b"authorization", basic_header("alice", "nope").encode())]}
-        with pytest.raises(HTTPUnauthorized) as excinfo:
-            core.authenticate(scope)
-        assert excinfo.value.status == 401
-        assert (b"www-authenticate", b"Bearer") in excinfo.value.headers
-
-    def test_malformed_header_raises_401_with_challenge(self) -> None:
-        core = AuthCore(**AUTH_CONFIG)
-        scope: Scope = {"headers": [(b"authorization", b"Basicabc123")]}
-        with pytest.raises(HTTPUnauthorized) as excinfo:
-            core.authenticate(scope)
-        assert (b"www-authenticate", b"Bearer") in excinfo.value.headers
-
-    def test_unknown_scheme_raises_401(self) -> None:
-        core = AuthCore(**AUTH_CONFIG)
-        scope: Scope = {"headers": [(b"authorization", b"Weird abc")]}
-        with pytest.raises(HTTPUnauthorized):
-            core.authenticate(scope)
-
-    def test_missing_basic_password_config_raises(self) -> None:
-        with pytest.raises(ValueError, match="missing 'password'"):
-            AuthCore(basic={"bob": {"tags": "user"}})
-
-    def test_missing_bearer_token_config_raises(self) -> None:
-        with pytest.raises(ValueError, match="missing 'token'"):
-            AuthCore(bearer={"svc": {"tags": "api"}})
-
-
-# --- header authentication through the execution point ---
 
 
 class EchoAuthApp(RoutedApplication):
@@ -174,11 +62,18 @@ class EchoAuthApp(RoutedApplication):
         return avatar.identity if avatar is not None else "anonymous"
 
 
-def auth_server(**kwargs) -> AsgiServer:
-    """The shipped composition: ``_server`` verifies the header, sessions armed."""
-    return AsgiServer(
-        applications=[ServerApplication, (EchoAuthApp, {"code": "echo"})], auth=AUTH_CONFIG, **kwargs
-    )
+async def auth_server() -> AsgiServer:
+    """A started server: ``_auth`` verifies the header, sessions armed.
+
+    The store holds alice (password ``wonderland``, tags admin and ops), the
+    service user svc (tag api) and sessionuser (tag member).
+    """
+    server = AsgiServer(applications=[auth_application(), (EchoAuthApp, {"code": "echo"})])
+    await start_server(server)
+    add_user(server, "alice", ["admin", "ops"], password="wonderland")
+    add_user(server, "svc", ["api"], system=True)
+    add_user(server, "sessionuser", ["member"])
+    return server
 
 
 async def http_get(
@@ -231,35 +126,31 @@ def header_value(sent: list[Message], header: bytes) -> bytes | None:
 
 class TestHeaderAuthFlow:
     async def test_basic_ok(self) -> None:
-        _, sent = await http_get(auth_server(), basic_header("alice", "wonderland"))
+        _, sent = await http_get(await auth_server(), basic_header("alice", "wonderland"))
         assert response_status(sent) == 200
         assert response_body(sent) == b"alice"
 
     async def test_bearer_ok(self) -> None:
-        _, sent = await http_get(auth_server(), "Bearer sk_live_xyz")
+        server = await auth_server()
+        _, sent = await http_get(server, f"Bearer {issue_token(server, 'svc')}")
         assert response_body(sent) == b"svc"
 
-    async def test_jwt_ok(self) -> None:
-        token = jwt.encode({"sub": "carol"}, "topsecret", algorithm="HS256")
-        _, sent = await http_get(auth_server(), f"Bearer {token}")
-        assert response_body(sent) == b"carol"
-
     async def test_wrong_password_yields_401(self) -> None:
-        _, sent = await http_get(auth_server(), basic_header("alice", "nope"))
+        _, sent = await http_get(await auth_server(), basic_header("alice", "nope"))
         assert response_status(sent) == 401
 
     async def test_invalid_credentials_401_carries_www_authenticate(self) -> None:
-        _, sent = await http_get(auth_server(), basic_header("alice", "nope"))
+        _, sent = await http_get(await auth_server(), basic_header("alice", "nope"))
         assert response_status(sent) == 401
         assert header_value(sent, b"www-authenticate") == b"Bearer"
 
     async def test_malformed_credentials_401_carries_www_authenticate(self) -> None:
-        _, sent = await http_get(auth_server(), "Basicabc123")
+        _, sent = await http_get(await auth_server(), "Basicabc123")
         assert response_status(sent) == 401
         assert header_value(sent, b"www-authenticate") == b"Bearer"
 
     async def test_no_header_is_anonymous(self) -> None:
-        _, sent = await http_get(auth_server())
+        _, sent = await http_get(await auth_server())
         assert response_body(sent) == b"anonymous"
 
 
@@ -281,40 +172,40 @@ class TestIdentityPrecedence:
     async def test_header_wins_over_session(self) -> None:
         session = Session("sid", avatar=Avatar("sessionuser"), ttl=3600)
         scope = scope_with(session, basic_header("alice", "wonderland"))
-        avatar = await auth_server().authenticate(scope)
+        avatar = await (await auth_server()).authenticate(scope)
         assert avatar.identity == "alice"
 
     async def test_invalid_header_is_401_even_with_a_logged_in_session(self) -> None:
         session = Session("sid", avatar=Avatar("sessionuser"), ttl=3600)
         scope = scope_with(session, basic_header("alice", "nope"))
         with pytest.raises(HTTPUnauthorized):
-            await auth_server().authenticate(scope)
+            await (await auth_server()).authenticate(scope)
 
     async def test_invalid_header_on_an_anonymous_session_is_401(self) -> None:
         session = Session("sid", avatar=None, ttl=3600)
         scope = scope_with(session, basic_header("alice", "nope"))
         with pytest.raises(HTTPUnauthorized):
-            await auth_server().authenticate(scope)
+            await (await auth_server()).authenticate(scope)
 
     async def test_header_on_an_anonymous_session(self) -> None:
         session = Session("sid", avatar=None, ttl=3600)
-        avatar = await auth_server().authenticate(
+        avatar = await (await auth_server()).authenticate(
             scope_with(session, basic_header("alice", "wonderland"))
         )
         assert avatar.identity == "alice"
 
     async def test_no_header_falls_back_to_session(self) -> None:
         session = Session("sid", avatar=Avatar("sessionuser", ["member"]), ttl=3600)
-        avatar = await auth_server().authenticate(scope_with(session, None))
+        avatar = await (await auth_server()).authenticate(scope_with(session, None))
         assert avatar.identity == "sessionuser"
         assert avatar.tags == ["member"]
 
     async def test_no_header_anonymous_session_is_none(self) -> None:
         session = Session("sid", avatar=None, ttl=3600)
-        assert await auth_server().authenticate(scope_with(session, None)) is None
+        assert await (await auth_server()).authenticate(scope_with(session, None)) is None
 
     async def test_no_header_no_session_is_none(self) -> None:
-        assert await auth_server().authenticate(scope_with(None, None)) is None
+        assert await (await auth_server()).authenticate(scope_with(None, None)) is None
 
 
 # --- end-to-end through the chain and the execution point ---
@@ -323,35 +214,29 @@ class TestIdentityPrecedence:
 class TestCombinedChainFlow:
     async def test_header_auth_without_cookie_gets_anonymous_session(self) -> None:
         # B1: header identity resolved, anonymous session, Set-Cookie, no 500.
-        _, sent = await http_get(auth_server(), basic_header("alice", "wonderland"))
+        _, sent = await http_get(await auth_server(), basic_header("alice", "wonderland"))
         assert response_status(sent) == 200
         assert response_body(sent) == b"alice"
         assert set_cookie_value(sent) is not None
 
     async def test_session_identity_flows_through_the_chain(self) -> None:
         # B2: cookie only — the session identity reaches the handler.
-        server = auth_server()
+        server = await auth_server()
         session = server.session_store.create(avatar=Avatar("sessionuser", ["member"]))
         _, sent = await http_get(server, cookie=f"session_id={session.id}")
         assert response_status(sent) == 200
         assert response_body(sent) == b"sessionuser"
 
     async def test_header_wins_over_session_through_the_chain(self) -> None:
-        server = auth_server()
+        server = await auth_server()
         session = server.session_store.create(avatar=Avatar("sessionuser"))
         _, sent = await http_get(
             server, basic_header("alice", "wonderland"), cookie=f"session_id={session.id}"
         )
         assert response_body(sent) == b"alice"
 
-    async def test_jwt_null_tags_claim_yields_empty_tags(self) -> None:
-        # B3: a validly signed token with "tags": null normalizes to empty tags.
-        token = jwt.encode({"sub": "carol", "tags": None}, "topsecret", algorithm="HS256")
-        avatar = await auth_server().authenticate(scope_with(None, f"Bearer {token}"))
-        assert avatar.tags == []
-
     async def test_malformed_header_is_401(self) -> None:
-        _, sent = await http_get(auth_server(), "Basicabc123")
+        _, sent = await http_get(await auth_server(), "Basicabc123")
         assert response_status(sent) == 401
 
 
@@ -371,149 +256,12 @@ class TestWithoutAuthMixin:
         assert await server.authenticate({"headers": []}) is None
 
 
-def encrypted_server(tmp_path, **kwargs) -> AsgiServer:
-    """An ``AsgiServer`` whose site storage carries key material, for store wiring."""
-    return AsgiServer(
-        applications=[(BaseApplication, {"mount": ""})],
-        storage=site_mounts(tmp_path),
-        storage_key=Fernet.generate_key().decode(),
-        **kwargs,
-    )
 
 
-class TestStoreWiring:
-    def test_stores_are_none_when_unconfigured(self) -> None:
-        server = AsgiServer(applications=[(BaseApplication, {"mount": ""})])
-        assert server.user_store is None
-        assert server.api_key_store is None
+class TestTheServerHoldsNoAuthentication:
+    """The server takes no store, no credential and no user: ``_auth`` owns them."""
 
-    def test_users_config_dict_builds_a_file_store(self, tmp_path: Path) -> None:
-        server = encrypted_server(tmp_path, users={})
-        assert isinstance(server.user_store, FileUserStore)
-        assert server.api_key_store is None
-
-    def test_tokens_config_dict_builds_a_file_store(self, tmp_path: Path) -> None:
-        server = encrypted_server(tmp_path, tokens={})
-        assert isinstance(server.api_key_store, FileApiKeyStore)
-
-    def test_config_dict_honours_mount_and_prefix(self, tmp_path: Path) -> None:
-        server = encrypted_server(tmp_path, users={"prefix": "people"})
-        server.user_store.save(
-            {"identity": "bob", "password_hash": "x", "tags": [], "enabled": True}
-        )
-        node = server.storage.node("site:people/bob.json")
-        assert node.exists()
-
-    def test_the_declared_class_is_the_store_the_server_builds(self) -> None:
-        """#91: the configuration names the CLASS; the server builds it."""
-        server = AsgiServer(
-            applications=[(BaseApplication, {"mount": ""})],
-            users={"store_class": MemoryUserStore},
-        )
-        assert isinstance(server.user_store, MemoryUserStore)
-
-    def test_config_dict_without_storage_is_a_boot_error(self) -> None:
-        class NoStorageServer(AuthMixin, MiddlewareMixin, BaseServer):
-            pass
-
-        with pytest.raises(RuntimeError, match="storage"):
-            NoStorageServer(applications=[BaseApplication(mount="")], users={})
-
-
-class TestTheServerCreatesNoUser:
-    """#91: the server seeds no identity — the declared store carries the records."""
-
-    def test_a_fresh_store_is_empty(self) -> None:
-        server = AsgiServer(
-            applications=[(BaseApplication, {"mount": ""})],
-            users={"store_class": MemoryUserStore},
-        )
-        assert server.user_store.load_all() == []
-
-    def test_the_declared_store_class_is_what_carries_an_identity(self) -> None:
-        class AdminStore(MemoryUserStore):
-            """The store the configuration names, born with its administrator."""
-
-            def __init__(self, storage: object = None) -> None:
-                super().__init__(storage)
-                self.save(
-                    {
-                        "identity": "admin",
-                        "password_hash": self.hash_password("pw"),
-                        "tags": ["SUPERADMIN", "SERVER_ADMIN"],
-                        "enabled": True,
-                    }
-                )
-
-        server = AsgiServer(
-            applications=[(BaseApplication, {"mount": ""})],
-            users={"store_class": AdminStore},
-        )
-        assert server.user_store.verify("admin", "pw") is not None
-        assert server.user_store.get("admin")["tags"] == ["SUPERADMIN", "SERVER_ADMIN"]
-
-    def test_the_bootstrap_password_is_no_longer_a_kwarg(self) -> None:
-        with pytest.raises(TypeError, match="admin_password"):
-            AsgiServer(
-                applications=[(BaseApplication, {"mount": ""})],
-                users={"store_class": MemoryUserStore},
-                admin_password="pw",
-            )
-
-
-def bearer_scope(token: str) -> Scope:
-    """A scope carrying ``Authorization: Bearer <token>``."""
-    return {"headers": [(b"authorization", f"Bearer {token}".encode())]}
-
-
-class TestApiKeyBearer:
-    def _core_with_key(self, tags: list[str]) -> tuple[AuthCore, str, MemoryApiKeyStore]:
-        store = MemoryApiKeyStore()
-        key = store.issue("ci-bot", tags)
-        return AuthCore(api_key_store=store), key, store
-
-    def test_valid_gak_key_authenticates_with_label_identity(self) -> None:
-        core, key, _ = self._core_with_key(["ci", "deploy"])
-        avatar = core.authenticate(bearer_scope(key))
-        assert avatar is not None
-        assert avatar.identity == "ci-bot"  # identity is the key label
-        assert avatar.tags == ["ci", "deploy"]
-
-    def test_revoked_key_is_unauthorized_not_a_jwt_fallthrough(self) -> None:
-        core, key, store = self._core_with_key(["ci"])
-        key_id = key[len("gak_") :].partition("_")[0]
-        store.revoke(key_id)
-        with pytest.raises(HTTPUnauthorized):
-            core.authenticate(bearer_scope(key))
-
-    def test_unknown_gak_key_is_unauthorized(self) -> None:
-        core, _, _ = self._core_with_key(["ci"])
-        with pytest.raises(HTTPUnauthorized):
-            core.authenticate(bearer_scope("gak_deadbeef_nonexistentsecret"))
-
-    def test_gak_key_with_no_store_is_unauthorized(self) -> None:
-        core = AuthCore()  # no api_key_store wired
-        with pytest.raises(HTTPUnauthorized):
-            core.authenticate(bearer_scope("gak_deadbeef_secret"))
-
-    def test_non_gak_bearer_still_uses_the_static_chain(self) -> None:
-        store = MemoryApiKeyStore()
-        core = AuthCore(
-            bearer={"svc": {"token": "sk_live_xyz", "tags": "service"}},
-            api_key_store=store,
-        )
-        avatar = core.authenticate(bearer_scope("sk_live_xyz"))
-        assert avatar is not None
-        assert avatar.identity == "svc"
-        assert avatar.tags == ["service"]
-
-    def test_end_to_end_gak_key_authenticates_through_the_server(self) -> None:
-        server = AsgiServer(
-            applications=[(BaseApplication, {"mount": ""})],
-            tokens={"store_class": MemoryApiKeyStore},
-        )
-        key = server.api_key_store.issue("robot", ["worker"])
-        avatar = server.auth_core.authenticate(bearer_scope(key))
-        assert avatar is not None
-        assert avatar.identity == "robot"
-        assert avatar.tags == ["worker"]
+    @pytest.mark.parametrize("kwarg", ["auth", "users", "tokens", "channels", "admin_password"])
+    def test_an_authentication_kwarg_is_refused(self, kwarg: str) -> None:
+        with pytest.raises(TypeError, match=kwarg):
+            AsgiServer(applications=[(BaseApplication, {"mount": ""})], **{kwarg: {}})

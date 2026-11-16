@@ -22,6 +22,7 @@ from genro_routes import RoutingClass, route
 
 from kajenn import AsgiServer, BaseApplication
 from kajenn.server_app import ServerApplication
+from tests.storage_support import auth_application
 
 
 class DemoSection(RoutingClass):
@@ -73,7 +74,7 @@ class TestServerEndpoints:
         assert response_status(sent) == 200
         data = json.loads(response_body(sent))
         assert data["sections"] == [
-            "applications", "auth", "databases", "k8s", "metrics", "monitor", "tasks", "tokens", "users"]
+            "applications", "databases", "k8s", "metrics", "monitor", "tasks"]
 
     async def test_meta_schema_json_is_exposed(
         self, http_request, response_status, response_body
@@ -90,15 +91,16 @@ class TestServerEndpoints:
     ) -> None:
         # REVIEW #6: the injected ``_request`` must NOT surface in the public
         # request body, and the route is POST by declaration (openapi_method).
-        server = AsgiServer(applications=[ServerApplication, (BaseApplication, {"mount": ""})])
-        sent = await http_request(server, "/_server/_meta/api/schema_json")
+        # The login route lives in the authentication application.
+        server = AsgiServer(applications=[auth_application(), (BaseApplication, {"mount": ""})])
+        sent = await http_request(server, "/_auth/_meta/api/schema_json")
         doc = json.loads(response_body(sent))
         login = doc["paths"]["/login"]
         assert set(login) == {"post"}
         props = login["post"]["requestBody"]["content"]["application/json"]["schema"][
             "properties"
         ]
-        assert set(props) == {"identity", "password"}
+        assert set(props) == {"identity", "password", "group"}
         assert "_request" not in props and "request" not in props
 
 
@@ -124,5 +126,5 @@ class TestSections:
         sent = await http_request(server, "/_server/")
         data = json.loads(response_body(sent))
         assert data["sections"] == [
-            "applications", "auth", "databases", "demo", "k8s", "metrics", "monitor", "tasks", "tokens", "users"
+            "applications", "databases", "demo", "k8s", "metrics", "monitor", "tasks"
         ]

@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The channel travels in the scope; ``server.channels()`` is configured.
+"""The channel travels in the scope.
 
 Every face writes ``scope["kajenn.channel"]`` — ``api`` for an HTTP request,
 ``mcp`` for a tool call, ``wsx`` for a websocket message, whatever the frame
 said for the bus — and ``RoutedApplication.auth_filters`` resolves the route on
-it. The configuration declares, per channel, the route that authenticates.
+it.
 """
 
 from __future__ import annotations
@@ -26,12 +26,10 @@ import asyncio
 import json
 from typing import Any
 
-import pytest
 
 from genro_routes import route
 
 from kajenn import AsgiServer, BaseApplication, RoutedApplication
-from kajenn.config import AsgiConfigBuilder
 from kajenn.types import Message, Scope
 from kajenn.wsx import WsxConnection, WsxEnvelope
 from tests.conftest import start_server
@@ -210,45 +208,3 @@ class TestResolutionReadsTheScope:
         }
         answer = await drive(server, "/m/_meta/mcp", method="POST", body=json.dumps(envelope).encode())
         assert answer["result"]["structuredContent"] == {"hidden": True}
-
-
-class ChannelsRecipe(AsgiConfigBuilder):
-    """A recipe declaring which route authenticates the ``mcp`` channel."""
-
-    def main(self, root: Any) -> None:
-        cfg = root.configuration()
-        cfg.server(host="127.0.0.1", port=0)
-        channels = cfg.channels()
-        channels.channel(name="mcp", authentication_route="/idp/check")
-        apps = cfg.applications(default="plain")
-        apps.application(code="plain", mount="", app_class=Plain)
-
-
-class RouteLessRecipe(AsgiConfigBuilder):
-    """A recipe declaring a channel without its authentication route."""
-
-    def main(self, root: Any) -> None:
-        cfg = root.configuration()
-        cfg.server(host="127.0.0.1", port=0)
-        cfg.channels().channel(name="telegram")
-        apps = cfg.applications(default="plain")
-        apps.application(code="plain", mount="", app_class=Plain)
-
-
-class TestTheConfiguration:
-    def test_channels_reach_the_server(self) -> None:
-        # wf:contract: configuration.channels().channel(name, authentication_route) is
-        # wf:contract: lifted to the server kwarg `channels` and exposed as server.channels.
-        server = AsgiServer(config=ChannelsRecipe)
-        assert server.channels == {"mcp": {"authentication_route": "/idp/check"}}
-
-    def test_no_channels_means_an_empty_mapping(self) -> None:
-        # wf:contract: without the element server.channels is {}.
-        server = faces_server()
-        assert server.channels == {}
-
-    def test_a_channel_without_route_is_a_configuration_error(self) -> None:
-        # wf:contract: a channel declared without authentication_route is refused when
-        # wf:contract: the server is built, with an error naming the channel.
-        with pytest.raises(ValueError, match="telegram"):
-            AsgiServer(config=RouteLessRecipe)

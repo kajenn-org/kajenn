@@ -19,7 +19,8 @@ Every test drives a real ``AsgiServer`` at the ASGI level, with
 in a temporary directory, and one provider declared under code ``google``.
 The provider is fake and lives in the process: discovery and the token
 endpoint replace ``httpx.AsyncClient``, the JWKS client replaces
-``jwt.PyJWKClient``, and a module RSA key signs the ``id_token``. Users and
+``jwt.PyJWKClient`` (it records the thread that resolves a key), and a
+module RSA key signs the ``id_token``. Users and
 groups are seeded through the application's public ``store``. The tests read
 what a caller sees: HTTP status, ``Location``, JSON answers, the session's
 avatar, the records of the store.
@@ -27,8 +28,12 @@ avatar, the records of the store.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
+import secrets
+import threading
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -88,11 +93,13 @@ class FakePyJWKClient:
     """Stand-in for ``jwt.PyJWKClient``: every token resolves to the module key."""
 
     instances = 0
+    resolving_threads: list[int] = []
 
     def __init__(self, uri: str) -> None:
         type(self).instances += 1
 
     def get_signing_key_from_jwt(self, token: str) -> FakeSigningKey:
+        type(self).resolving_threads.append(threading.get_ident())
         return FakeSigningKey(SIGNING_KEY.public_key())
 
 
@@ -113,12 +120,14 @@ class FakeAsyncClient:
     """Stand-in for ``httpx.AsyncClient``: GET answers discovery, POST the token set.
 
     ``id_token`` is what the token endpoint answers next; ``token_response``
-    replaces the whole answer when set. ``posted`` keeps every exchange form.
+    replaces the whole answer when set. ``posted`` keeps every exchange form,
+    ``fetched`` every url asked with GET.
     """
 
     id_token = ""
     token_response: dict[str, Any] = {}
     posted: list[dict[str, Any]] = []
+    fetched: list[str] = []
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         pass
@@ -130,6 +139,7 @@ class FakeAsyncClient:
         pass
 
     async def get(self, url: str) -> FakeResponse:
+        type(self).fetched.append(url)
         return FakeResponse(DISCOVERY_DOC)
 
     async def post(self, url: str, data: dict[str, Any] | None = None) -> FakeResponse:
@@ -143,7 +153,9 @@ def fake_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(FakeAsyncClient, "id_token", "")
     monkeypatch.setattr(FakeAsyncClient, "token_response", {})
     monkeypatch.setattr(FakeAsyncClient, "posted", [])
+    monkeypatch.setattr(FakeAsyncClient, "fetched", [])
     monkeypatch.setattr(FakePyJWKClient, "instances", 0)
+    monkeypatch.setattr(FakePyJWKClient, "resolving_threads", [])
     monkeypatch.setattr(httpx, "AsyncClient", FakeAsyncClient)
     monkeypatch.setattr(jwt, "PyJWKClient", FakePyJWKClient)
 
@@ -270,6 +282,17 @@ async def oidc_login(server: AsgiServer, **claims: Any) -> tuple[str, list[Messa
     return cookie, sent
 
 
+def session_data(server: AsgiServer, cookie: str) -> Any:
+    """The data of the session named by ``cookie``."""
+    return server.session_store.get(cookie.removeprefix("session_id=")).data
+
+
+def s256(verifier: str) -> str:
+    """The S256 PKCE challenge of ``verifier``, computed as RFC 7636 4.2 writes it."""
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+
 def avatar_of(server: AsgiServer, cookie: str) -> Any:
     """The avatar of the session named by ``cookie`` (None when nothing is attached)."""
     session = server.session_store.get(cookie.removeprefix("session_id="))
@@ -320,6 +343,62 @@ class TestStart:
         exchanged = FakeAsyncClient.posted[-1]
         assert exchanged["redirect_uri"] == f"{EXTERNAL_URL}{CALLBACK}"
         assert exchanged["client_secret"] == "s3cret"
+
+    async def test_the_code_verifier_of_the_exchange_matches_the_challenge_of_start(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        session = server.session_store.create()
+        cookie = f"session_id={session.id}"
+        sent = await drive(server, START, cookie=cookie)
+        query = location_query(sent)
+        await drive(server, f"{CALLBACK}?state={query['state'][0]}&code=c", cookie=cookie)
+        verifier = FakeAsyncClient.posted[-1]["code_verifier"]
+        assert query["code_challenge"] == [s256(verifier)]
+
+    async def test_the_pkce_challenge_matches_the_rfc_7636_vector(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # RFC 7636 Appendix B: a fixed verifier and its challenge, so an
+        # implementation that is wrong but self-consistent cannot pass.
+        verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+        server = await started(tmp_path)
+        session = server.session_store.create()
+        cookie = f"session_id={session.id}"
+        with monkeypatch.context() as fixed:
+            fixed.setattr(secrets, "token_urlsafe", lambda nbytes=None: verifier)
+            sent = await drive(server, START, cookie=cookie)
+        query = location_query(sent)
+        assert query["code_challenge"] == ["E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"]
+        await drive(server, f"{CALLBACK}?state={query['state'][0]}&code=c", cookie=cookie)
+        assert FakeAsyncClient.posted[-1]["code_verifier"] == verifier
+
+    async def test_start_keeps_state_verifier_and_next_in_the_session(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        session = server.session_store.create()
+        cookie = f"session_id={session.id}"
+        sent = await drive(server, f"{START}?next=/app/page", cookie=cookie)
+        data = session_data(server, cookie)
+        assert data["oidc.oidc:google.state"] == location_query(sent)["state"][0]
+        assert data["oidc.oidc:google.verifier"]
+        assert data["oidc.oidc:google.next"] == "/app/page"
+
+    async def test_the_callback_clears_the_one_shot_flow_keys(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, sent = await oidc_login(server)
+        assert status(sent) == 302
+        data = session_data(server, cookie)
+        for suffix in ("state", "verifier", "next"):
+            assert f"oidc.oidc:google.{suffix}" not in data
+
+    async def test_an_external_url_trailing_slash_does_not_double_the_separator(
+        self, tmp_path: Path
+    ) -> None:
+        server = make_server(tmp_path, external_url=f"{EXTERNAL_URL}/")
+        await start_server(server)
+        session = server.session_store.create()
+        sent = await drive(server, START, cookie=f"session_id={session.id}")
+        assert location_query(sent)["redirect_uri"] == [f"{EXTERNAL_URL}{CALLBACK}"]
 
     async def test_an_unsafe_next_lands_on_the_root(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
@@ -556,6 +635,18 @@ class TestFlowErrors:
         assert status(sent) == 400
         assert avatar_of(server, cookie) is None
 
+    async def test_an_id_token_for_another_audience_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, sent = await oidc_login(server, aud="someone-else")
+        assert status(sent) == 400
+        assert avatar_of(server, cookie) is None
+
+    async def test_an_id_token_from_another_issuer_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, sent = await oidc_login(server, iss="https://evil.example")
+        assert status(sent) == 400
+        assert avatar_of(server, cookie) is None
+
     async def test_an_id_token_without_sub_answers_400(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
         cookie, sent = await oidc_login(server, sub=None)
@@ -569,11 +660,33 @@ class TestFlowErrors:
             assert status(sent) == 302
         assert FakePyJWKClient.instances == 1
 
+    async def test_the_signing_key_is_resolved_off_the_event_loop(self, tmp_path: Path) -> None:
+        # The real client fetches the key set with a blocking stdlib call.
+        server = await started(tmp_path)
+        _, sent = await oidc_login(server)
+        assert status(sent) == 302
+        assert FakePyJWKClient.resolving_threads
+        assert threading.get_ident() not in FakePyJWKClient.resolving_threads
+
 
 class TestConfiguration:
     def test_a_provider_without_external_url_refuses_the_boot(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="external_url"):
             make_server(tmp_path, external_url=None)
+
+    async def test_the_boot_does_not_fetch_the_discovery(self, tmp_path: Path) -> None:
+        # An unreachable issuer does not stop the boot: the metadata is fetched
+        # at the first start, not when the server is built or started.
+        server = make_server(
+            tmp_path, oidc={"google": {"issuer": "https://unreachable.invalid", "client_id": "x"}}
+        )
+        await start_server(server)
+        assert FakeAsyncClient.fetched == []
+        session = server.session_store.create()
+        await drive(server, START, cookie=f"session_id={session.id}")
+        assert FakeAsyncClient.fetched == [
+            "https://unreachable.invalid/.well-known/openid-configuration"
+        ]
 
     def test_a_site_without_providers_needs_no_external_url(self, tmp_path: Path) -> None:
         server = make_server(tmp_path, external_url=None, oidc={})

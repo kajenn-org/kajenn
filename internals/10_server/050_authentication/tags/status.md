@@ -24,7 +24,7 @@ shipped recipe option.
 
 Claim anchors: [`RoutedApplication`](../../../../src/kajenn/routed_application.py#RoutedApplication), [`auth_filters`](../../../../src/kajenn/routed_application.py#RoutedApplication.auth_filters), [`Avatar`](../../../../src/kajenn/session/avatar.py#Avatar), [`tags`](../../../../src/kajenn/session/avatar.py#Avatar.tags).
 
-Behavior evidence: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`UsersSection`](../../../../src/kajenn/server_app/server_sections/users_section.py#UsersSection), [`TokensSection`](../../../../src/kajenn/server_app/server_sections/tokens_section.py#TokensSection), [`TasksSection`](../../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection), [`DatabasesSection`](../../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection), [`auth_tags`](../../../../src/kajenn/request.py#Request.auth_tags).
+Behavior evidence: [`MonitorSection`](../../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`TasksSection`](../../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection), [`DatabasesSection`](../../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection), [`auth_tags`](../../../../src/kajenn/request.py#Request.auth_tags).
 
 ## Source and test evidence
 
