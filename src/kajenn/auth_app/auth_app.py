@@ -178,10 +178,41 @@ from kajenn.session import Avatar
 from .auth_method import AuthMethod, AuthMethodRegistry, PasswordMethod
 from .auth_sections import GroupsSection, TagsSection, TokensSection, UsersSection
 from .auth_sections.tags_section import ADMIN_TAG, NEW_TAG_DEFAULTS
-from .auth_store import AUTHENTICATING_STATUS, USER_STATUSES, AuthStore, FileAuthStore
+from .auth_store import AUTHENTICATING_STATUS, TOKEN_PREFIX, USER_STATUSES, AuthStore, FileAuthStore
 from .oidc_method import OidcMethod
 
 __all__ = ["AuthApplicationBase", "AuthApplicationGrammar"]
+
+#: The ``scheme`` labels a credential check takes from its header word.
+HEADER_SCHEMES = frozenset({"basic", "bearer"})
+
+OTHER_SCHEME = "other"
+API_KEY_SCHEME = "api_key"
+JWT_SCHEME = "jwt"
+JWT_PARTS = 3
+
+
+def credential_scheme(credential: str) -> str:
+    """The ``scheme`` label of a credential checked by ``_auth.verify_credential``.
+
+    Both outcomes use the form of the ``Authorization`` value.
+
+    A bearer token starting with ``gak_`` is ``api_key``; a bearer token of
+    three dot-separated parts is ``jwt``; otherwise the header word
+    lowercased when it is ``basic`` or ``bearer``; anything else — a value
+    with no space included — is ``other``.
+    """
+    word, separator, token = credential.partition(" ")
+    if not separator:
+        return OTHER_SCHEME
+    scheme = word.lower()
+    if scheme == "bearer":
+        if token.startswith(TOKEN_PREFIX):
+            return API_KEY_SCHEME
+        if len(token.split(".")) == JWT_PARTS:
+            return JWT_SCHEME
+    return scheme if scheme in HEADER_SCHEMES else OTHER_SCHEME
+
 
 #: The identity of the temporary administrator of a site without an administrator.
 TEMPORARY_ADMIN = "_temporary_admin"
@@ -748,11 +779,21 @@ class AuthApplicationBase(RoutedApplication):
     ) -> dict[str, Any]:
         """Verify ``credential`` with ``verify_credential``. Bus only.
 
+        Each verification is counted in ``server.event_metrics`` by credential
+        scheme, ``accepted`` or ``refused``; a caller refused by the bus gate is not.
+
         Note:
             Route: POST /_auth/authenticate
         """
         self._bus_only(_request)
-        return self.verify_credential(credential)
+        metrics = self.server.event_metrics
+        try:
+            answer = self.verify_credential(credential)
+        except HTTPUnauthorized:
+            metrics.record_credential_check(credential_scheme(credential), "refused")
+            raise
+        metrics.record_credential_check(credential_scheme(credential), "accepted")
+        return answer
 
     @route(media_type="application/json", openapi_method="post")
     async def forget_credential(self, credential: str = "", _request=None) -> dict[str, Any]:
@@ -783,9 +824,21 @@ class AuthApplicationBase(RoutedApplication):
     ) -> dict[str, Any]:
         """Verify the password and attach the avatar to the request's session.
 
+        Every answer is counted in ``server.event_metrics`` as scheme ``password``:
+        ``refused`` when it has an ``error`` key, otherwise ``accepted``.
+
         Note:
             Route: POST /_auth/login
         """
+        answer = self._login(identity, password, group, _request)
+        outcome = "refused" if "error" in answer else "accepted"
+        self.server.event_metrics.record_credential_check("password", outcome)
+        return answer
+
+    def _login(
+        self, identity: str, password: str, group: str, request: Any
+    ) -> dict[str, Any]:
+        """Verify the password and attach the avatar, returning the login answer."""
         if not identity or not password:
             return {"error": "Identity and password are required"}
         user, refusal = self._verify_login(identity, password)
@@ -799,7 +852,7 @@ class AuthApplicationBase(RoutedApplication):
         if active_group is None:
             active_group = user.get("primary_group")
         avatar = Avatar(identity, tags, group=active_group)
-        session = _request.session
+        session = request.session
         session.attach_avatar(avatar)
         return {
             "session_id": session.id,

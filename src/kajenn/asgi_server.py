@@ -84,6 +84,7 @@ from typing import Any
 from genro_builders.builder import BuilderBase
 
 from .auth import AuthMixin
+from .auth.mixin import AUTHENTICATION_CODE
 from .kbus_mixin import KBusMixin
 from .config.elements import AsgiServerGrammar
 from .config.default_config import DefaultConfig
@@ -410,6 +411,10 @@ class AsgiServer(
     def is_management(self, app: Any) -> bool:
         """``_server`` is the management application."""
         return bool(app.code == MANAGEMENT_CODE)
+
+    def answers_when_public_closed(self, app: Any) -> bool:
+        """``_server`` and ``_auth``: ``_server`` verifies every credential with ``_auth``."""
+        return bool(app.code in (MANAGEMENT_CODE, AUTHENTICATION_CODE))
 
     async def application_ready(self, app: Any) -> None:
         """Send ``ready`` for ``app`` to ``_server`` over the KajennBus.

@@ -57,6 +57,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import time
 from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
@@ -114,16 +115,19 @@ class Lifespan:
         """Drive the ASGI lifespan protocol: startup then shutdown, both acked.
 
         A ``FatalBootError`` out of the startup is the one unacked road: the
-        answer is ``lifespan.startup.failed`` and the protocol ends there.
+        answer is ``lifespan.startup.failed`` and the protocol ends there. A
+        startup that completes sets its duration in ``server.process_metrics``.
         """
         while True:
             message = await receive()
             if message["type"] == "lifespan.startup":
+                began = time.perf_counter()
                 try:
                     await self.startup()
                 except FatalBootError as fatal:
                     await send({"type": "lifespan.startup.failed", "message": str(fatal)})
                     return
+                self.server.process_metrics.record_startup(time.perf_counter() - began)
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
                 await self.shutdown()
@@ -137,7 +141,8 @@ class Lifespan:
         server's ``abort_on_fatal_boot_error`` (the default) the startup stops
         there and the handlers already opened are closed before the error
         reaches ``__call__``; without it the error is logged, the server closes
-        its public part and the startup goes on.
+        its public part and the startup goes on, and the error is counted in
+        ``server.event_metrics``.
 
         Every application then receives ``plugin_configuration`` through
         ``applications_broadcast``, before any ``on_startup``: no request is
@@ -165,6 +170,7 @@ class Lifespan:
                 await self._close_handlers(opened)
                 raise
             self._logger.exception("Fatal boot error: the server stays up for management only")
+            self.server.event_metrics.record_fatal_boot_error()
             self.server.close_public()
         await self.server.applications_broadcast(
             "plugin_configuration", on_error=self._plugin_configuration_failed)

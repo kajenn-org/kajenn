@@ -91,6 +91,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from genro_builders.builder import Regex, element
 
+from ._exposition import families_text
 from .well_known import WELL_KNOWN_PATTERN
 
 if TYPE_CHECKING:
@@ -517,8 +518,17 @@ class BaseApplication:
         It never uses the module-level ``REGISTRY``: it creates its metric
         objects with ``registry=None`` or registers them on a
         ``CollectorRegistry`` of its own. Override as sync or async.
+
+        In the dedicated process of a ``spawner`` application
+        (``server.kbus_role`` set) the base returns the families of that
+        process (``server.process_metrics``: build, process, ``WorkPool``,
+        tasks, scheduler, startup), with the names the server process uses; an
+        override keeps them through ``super().prometheus_metrics()``. In the
+        server process it returns ``""``: ``ServerApplication`` writes them.
         """
-        return ""
+        if self.server.kbus_role is None:
+            return ""
+        return families_text(self.server.process_metrics.collect())
 
     def on_remove(self) -> None:
         """Lifecycle hook run when the server removes this application.

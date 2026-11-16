@@ -204,6 +204,9 @@ class OidcMethod(AuthMethod):
     async def callback(self, state: str = "", code: str = "", _request=None) -> str:
         """Close the flow: check state, exchange, verify, find the user, attach, redirect.
 
+        The callback is counted in ``server.event_metrics`` as scheme ``oidc``:
+        ``accepted`` on redirect, ``refused`` on HTTPBadRequest or HTTPForbidden.
+
         Raises:
             HTTPBadRequest: A flow error (state, token exchange, id_token).
             HTTPForbidden: A refused login; nothing is attached.
@@ -212,7 +215,17 @@ class OidcMethod(AuthMethod):
         Note:
             Route: GET /_auth/oidc:<code>/callback
         """
-        session = _request.session
+        metrics = self.application.server.event_metrics
+        try:
+            next_target = await self._attach_identity(state, code, _request.session)
+        except (HTTPBadRequest, HTTPForbidden):
+            metrics.record_credential_check("oidc", "refused")
+            raise
+        metrics.record_credential_check("oidc", "accepted")
+        raise Redirect(self.get_safe_next_path(next_target))
+
+    async def _attach_identity(self, state: str, code: str, session: Any) -> str:
+        """Check the flow and attach the avatar; return the stored next path."""
         expected = session.data[f"oidc.{self.method_id}.state"]
         if not state or state != expected:
             raise HTTPBadRequest("OIDC state mismatch")
@@ -227,7 +240,7 @@ class OidcMethod(AuthMethod):
         for suffix in FLOW_KEYS:
             session.data.pop(f"oidc.{self.method_id}.{suffix}", None)
         session.mark_dirty()
-        raise Redirect(self.get_safe_next_path(next_target))
+        return next_target
 
     # ── the user in the AuthStore ──────────────────────────────────────
 

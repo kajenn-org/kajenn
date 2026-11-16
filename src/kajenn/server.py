@@ -81,7 +81,9 @@ import uvicorn
 from .application import BaseApplication
 from .db import DbHandlerBase
 from .exceptions import HTTPException
+from ._event_metrics import EventMetrics
 from ._http_metrics import ROUTE_SCOPE_KEY, CountedExchange, HttpMetrics
+from ._process_metrics import ProcessMetrics
 from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
 from .request_registry import RegisteredRequest, RequestRegistry
@@ -210,6 +212,8 @@ class BaseServer:
         self._lifespan = Lifespan(self)
         self._registry = RequestRegistry(self)
         self._http_metrics = HttpMetrics()
+        self._event_metrics = EventMetrics()
+        self._process_metrics = ProcessMetrics(self)
         self._websockets = WebSocketRegistry()
         self._websocket_origins: list[str] = list(websocket.get("origins") or [])
         self._websocket_max_concurrent: int = int(
@@ -461,8 +465,12 @@ class BaseServer:
         """Whether only the management application answers (a fatal boot kept the server up)."""
         return self._public_closed
 
+    def answers_when_public_closed(self, app: BaseApplication) -> bool:
+        """Whether ``app`` keeps answering with the public part closed: the management application."""
+        return self.is_management(app)
+
     def close_public(self) -> None:
-        """Answer 503 for every application except the management one."""
+        """Answer 503 for every application but those of ``answers_when_public_closed``."""
         self._public_closed = True
 
     def refusal(self, app: BaseApplication) -> Response | None:
@@ -470,10 +478,10 @@ class BaseServer:
 
         An application being mounted answers 503 with ``Retry-After``; one
         switched off or being removed answers 503 without it. With the public
-        part closed every application but the management one answers 503
-        without it.
+        part closed every application but those of
+        ``answers_when_public_closed`` answers 503 without it.
         """
-        if self._public_closed and not self.is_management(app):
+        if self._public_closed and not self.answers_when_public_closed(app):
             return Response(content="Service Unavailable", status_code=503,
                             media_type="text/plain")
         if app.code not in self._enabled:
@@ -634,6 +642,16 @@ class BaseServer:
         """The HTTP request families, counted by ``_serve_http``."""
         return self._http_metrics
 
+    @property
+    def event_metrics(self) -> EventMetrics:
+        """The credential check, WSX message and websocket connection families."""
+        return self._event_metrics
+
+    @property
+    def process_metrics(self) -> ProcessMetrics:
+        """The families of this process: build, process, pool, tasks, scheduler, startup."""
+        return self._process_metrics
+
     async def run_sync(self, fn: Callable[..., Any], *args: Any) -> Any:
         """Dispatch blocking ``fn`` onto the pool (the app-side sync protocol).
 
@@ -777,8 +795,10 @@ class BaseServer:
         Every request that reaches the demux is counted: an application's
         answer, its 503 refusal, a 404 of the demux, the ``default``
         redirect. The duration runs from before the demux until the answer
-        returns. ``application`` is the code of the application the demux
-        chose, ``""`` when it chose none; ``route`` is what the application
+        returns. The dispatch goes through ``demux``, so a subclass that
+        overrides it changes where a request goes. ``application`` is the
+        ``code`` of what ``demux`` returned when it is a ``BaseApplication``,
+        ``""`` otherwise (a refusal, a 404, a redirect); ``route`` is what the application
         wrote under ``"kajenn.route"`` in the scope it received, ``""`` when
         nothing was written. An exception raised before the answer started
         sets the status: an ``HTTPException`` its own, any other 500; after
@@ -789,8 +809,8 @@ class BaseServer:
         """
         started = time.monotonic()
         exchange = CountedExchange(receive, send)
-        served, app, target = self._demux_application(scope)
-        code = served.code if served is not None else ""
+        app, target = self.demux(scope)
+        code = app.code if isinstance(app, BaseApplication) else ""
         try:
             await app(target, exchange.receive, exchange.send)
         except HTTPException as answer:
@@ -807,17 +827,7 @@ class BaseServer:
                                      exchange, time.monotonic() - started)
 
     def demux(self, scope: Scope) -> tuple[ASGIApp, Scope]:
-        """What answers an http ``scope`` and the scope it receives.
-
-        ``_demux_application`` without the application it chose.
-        """
-        _, app, target = self._demux_application(scope)
-        return app, target
-
-    def _demux_application(
-        self, scope: Scope
-    ) -> tuple[BaseApplication | None, ASGIApp, Scope]:
-        """D3 demux: pick the application, what answers an http scope, and its scope.
+        """D3 demux: pick what answers an http scope, and the scope it receives.
 
         One rule, four branches: the first path segment matching a mount → that
         app, with the segment stripped from ``path`` (the forwarded path is
@@ -835,35 +845,29 @@ class BaseServer:
         middleware, no switch. Any other path is ordinary, the conventional
         probes that are not well-known included (``/sitemap.xml``,
         ``/apple-touch-icon.png``).
-
-        The first item is the application chosen, also when it answers with
-        its 503 refusal; ``None`` for a 404 and for the ``default`` redirect.
         """
         path = scope["path"]
         rest = path.lstrip("/")
         if WELL_KNOWN_PATTERN.match("/" + rest):
-            declared = self._declared_well_known("/" + rest)
-            answer, target = self.demux_well_known("/" + rest, scope)
-            return (declared[0] if declared is not None else None), answer, target
+            return self.demux_well_known("/" + rest, scope)
         segment, _, remainder = rest.partition("/")
         if segment.startswith(HIDDEN_SEGMENT_PREFIX):
-            return None, Response(content="Not Found", status_code=404,
-                                  media_type="text/plain"), scope
+            return Response(content="Not Found", status_code=404, media_type="text/plain"), scope
         app = self.application_at(segment)
         if app is not None:
             refused = self.refusal(app)
             if refused is not None:
-                return app, refused, scope
+                return refused, scope
             sub_scope = dict(scope)
             sub_scope["path"] = "/" + remainder
-            return app, app, sub_scope
+            return app, sub_scope
         root = self.root_application
         if root is not None:
-            return root, self.refusal(root) or root, scope
+            return self.refusal(root) or root, scope
         default = self.default_application if not rest else None
         if default is not None:
-            return None, self.redirect_to_default(default, scope), scope
-        return None, Response(content="Not Found", status_code=404, media_type="text/plain"), scope
+            return self.redirect_to_default(default, scope), scope
+        return Response(content="Not Found", status_code=404, media_type="text/plain"), scope
 
     def demux_well_known(self, path: str, scope: Scope) -> tuple[ASGIApp, Scope]:
         """What serves a well-known ``path``: its declaring application, else **404**.
@@ -876,7 +880,7 @@ class BaseServer:
         "unimplemented well-known URL" and no application is reached, the root
         application included.
         """
-        declared = self._declared_well_known(path)
+        declared = self.well_known_routes.get(path) or self.default_well_known_routes.get(path)
         if declared is None:
             return Response(
                 content="unimplemented well-known URL", status_code=404, media_type="text/plain"
@@ -888,13 +892,6 @@ class BaseServer:
         sub_scope = dict(scope)
         sub_scope["path"] = "/" + route
         return app, sub_scope
-
-    def _declared_well_known(self, path: str) -> tuple[BaseApplication, str] | None:
-        """The application and route declaring the well-known ``path``, ``None`` if nobody does.
-
-        A path in ``well_known_routes`` wins over one in ``default_well_known_routes``.
-        """
-        return self.well_known_routes.get(path) or self.default_well_known_routes.get(path)
 
     def redirect_to_default(self, app: BaseApplication, scope: Scope) -> Response:
         """A 307 to ``app``'s mount, preserving the query string.
@@ -933,16 +930,29 @@ class BaseServer:
         a connection it does not hold. It is the admitted mode of the design,
         the one a hosted framework with a websocket protocol of its own reaches
         the server by.
+
+        Every connection handed over is counted in ``event_metrics`` with the
+        ``code`` of what ``demux`` returned when it is a ``BaseApplication``
+        (``""`` otherwise) and its kind, ``raw`` for ``serve_websocket``, ``wsx`` for ``WsxConnection``:
+        one more opened and one more live when the handover starts, one less
+        live when it returns. A connection refused above the demux is not
+        counted.
         """
         if self.state != RUNNING:
             await WebSocket(scope, receive, send).refuse(1013, "server restarting")
             return
         app, target = self.demux(scope)
+        code = app.code if isinstance(app, BaseApplication) else ""
         raw_seam = getattr(app, "serve_websocket", None)
-        if raw_seam is not None:
-            await raw_seam(target, receive, send)
-            return
-        await WsxConnection(self, scope, receive, send).serve()
+        kind = "raw" if raw_seam is not None else "wsx"
+        self.event_metrics.record_websocket_opened(code, kind)
+        try:
+            if raw_seam is not None:
+                await raw_seam(target, receive, send)
+            else:
+                await WsxConnection(self, scope, receive, send).serve()
+        finally:
+            self.event_metrics.record_websocket_closed(code, kind)
 
     @property
     def state(self) -> str:
