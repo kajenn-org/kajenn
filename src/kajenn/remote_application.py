@@ -231,14 +231,19 @@ class RemoteApplication(BaseApplication):
             The result of the method in the spawned process.
 
         Raises:
-            TimeoutError: no answer within ``request_timeout``.
+            TimeoutError: no answer within ``request_timeout``; counted in
+                ``server.event_metrics`` as a ``remote_call`` timeout.
             kbus.Error: the process is not reachable, or the method raised
                 there (``kbus.RemoteError``).
         """
         payload = to_tytx({"args": list(args), "kwargs": kwargs}, "json").encode()
-        async with asyncio.timeout(self.request_timeout):
-            reply = await self.server.kbus_member.call(
-                f"{self.code}.remote_call", kbus.Message({"method": method_name}, payload))
+        try:
+            async with asyncio.timeout(self.request_timeout):
+                reply = await self.server.kbus_member.call(
+                    f"{self.code}.remote_call", kbus.Message({"method": method_name}, payload))
+        except TimeoutError:
+            self.server.event_metrics.record_kbus_timeout(self.code, "remote_call")
+            raise
         return from_tytx(reply.payload.decode(), "json")
 
     async def __call__(self, scope, receive, send) -> None:
@@ -247,7 +252,8 @@ class RemoteApplication(BaseApplication):
         A body over the policy ceiling or the kbus frame limit answers 413, an
         error reply answers 502, a process that has not joined, a lost link, a
         process that dies before its first message or a first message slower
-        than ``request_timeout`` answers 503. Once the
+        than ``request_timeout`` answers 503; that timeout is also counted in
+        ``server.event_metrics`` as an ``http_forward`` timeout. Once the
         answer started, a failure ends it without its terminal body.
         A client that disconnects while the body is being read ends the call
         silently. An exception the application raised before its answer
@@ -265,7 +271,10 @@ class RemoteApplication(BaseApplication):
             return
         except (kbus.FrameTooLarge, HttpBodyTooLarge):
             status, text = 413, "Request too large"
-        except (kbus.NoSuchMember, kbus.LinkLost, TimeoutError):
+        except (kbus.NoSuchMember, kbus.LinkLost):
+            status, text = 503, "Remote application unavailable"
+        except TimeoutError:
+            self.server.event_metrics.record_kbus_timeout(self.code, "http_forward")
             status, text = 503, "Remote application unavailable"
         except kbus.Error:
             status, text = 502, "Remote application failed"

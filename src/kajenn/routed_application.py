@@ -225,16 +225,19 @@ class RoutedApplication(BaseApplication, RoutingClass):
         return self.mcp_transport.engine
 
     def prometheus_metrics(self) -> str:
-        """This application's own families, as exposition text: the MCP ones.
+        """This application's own families, as exposition text: the MCP ones,
+        then the base's.
 
         The calls answered on ``_meta/mcp`` by method, tool and outcome, and
-        the ``tools/call`` duration, counted by ``mcp_transport.metrics``. A
-        spawned application's text reaches ``_server/metrics`` through the
-        forwarded hook. An application that overrides the hook includes
-        ``super().prometheus_metrics()`` in its text, or these families leave
-        ``_server/metrics``.
+        the ``tools/call`` duration, counted by ``mcp_transport.metrics``,
+        followed by ``BaseApplication.prometheus_metrics`` (the families of a
+        dedicated process). A spawned application's text reaches
+        ``_server/metrics`` through the forwarded hook. An application that
+        overrides the hook includes ``super().prometheus_metrics()`` in its
+        text, or these families leave ``_server/metrics``.
         """
-        return families_text(self.mcp_transport.metrics.collect())
+        return (families_text(self.mcp_transport.metrics.collect())
+                + super().prometheus_metrics())
 
     def meta_url(self, path: str) -> str:
         """The public URL of ``_meta/<path>`` of this application."""

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The server families of credential checks, WSX messages and websocket connections.
+"""The server families of events: credentials, WSX, websockets, sessions, processes, boot.
 
 Private to ``kajenn``: the server reaches it through ``server.event_metrics``.
 
@@ -32,6 +32,18 @@ Who counts what:
 - websocket connections: ``BaseServer.on_websocket`` for every connection it
   hands to an application's ``serve_websocket`` (``raw``) or to a
   ``WsxConnection`` (``wsx``).
+- sessions created: ``SessionMiddleware``, where it creates a session for a
+  request that carries none the store knows.
+- restarts of spawned processes: ``KBusMixin`` where it asks a spawner for a
+  relaunch, by cause — ``exited`` (the process ended without being stopped),
+  ``lost`` (its kbus member disconnected), ``unresponsive`` (it did not
+  confirm ``forget_credentials`` in time). A process that ended before it
+  joined is also a start failure.
+- kbus timeouts: ``RemoteApplication.remote_call`` (``remote_call``),
+  ``RemoteApplication.__call__`` (``http_forward``, answered 503) and
+  ``KBusMixin.forget_credentials_everywhere`` (``forget_credentials``).
+- fatal boot errors: ``Lifespan.startup``, only when the server stays up
+  (``abort_on_fatal_boot_error=False``).
 """
 
 from __future__ import annotations
@@ -86,7 +98,8 @@ def refused_scheme(credential: str) -> str:
 
 
 class EventMetrics:
-    """The credential, WSX and websocket families of one server."""
+    """The event families of one server: credentials, WSX, websockets, sessions,
+    spawned processes, kbus timeouts, fatal boot errors."""
 
     def __init__(self) -> None:
         self._credential_checks = Counter(
@@ -110,6 +123,26 @@ class EventMetrics:
             "Websocket connections an application holds right now, per application and kind.",
             ["application", "kind"], registry=None)
 
+        self._sessions_created = Counter(
+            "kajenn_sessions_created", "Sessions created for a request.", registry=None)
+        self._restarts = Counter(
+            "kajenn_spawned_process_restarts",
+            "Relaunches of the process of a spawned application, per application and cause.",
+            ["application", "cause"], registry=None)
+        self._start_failures = Counter(
+            "kajenn_spawned_process_start_failures",
+            "Processes of a spawned application that ended before they joined.",
+            ["application"], registry=None)
+        self._kbus_timeouts = Counter(
+            "kajenn_kbus_timeouts",
+            "kbus calls to a spawned application without an answer in time, "
+            "per application and operation.",
+            ["application", "operation"], registry=None)
+        self._fatal_boot_errors = Counter(
+            "kajenn_fatal_boot_errors",
+            "FatalBootError of the startup with the server kept up for management.",
+            registry=None)
+
     def record_credential_check(self, scheme: str, outcome: str) -> None:
         """Count one verification of ``scheme`` that ended ``accepted`` or ``refused``."""
         self._credential_checks.labels(scheme, outcome).inc()
@@ -129,10 +162,32 @@ class EventMetrics:
         """One live connection of ``application`` less."""
         self._websockets_live.labels(application, kind).dec()
 
+    def record_session_created(self) -> None:
+        """Count one session created."""
+        self._sessions_created.inc()
+
+    def record_restart(self, application: str, cause: str) -> None:
+        """Count one relaunch of ``application``'s process for ``cause``."""
+        self._restarts.labels(application, cause).inc()
+
+    def record_start_failure(self, application: str) -> None:
+        """Count one process of ``application`` that ended before it joined."""
+        self._start_failures.labels(application).inc()
+
+    def record_kbus_timeout(self, application: str, operation: str) -> None:
+        """Count one ``operation`` towards ``application`` that timed out."""
+        self._kbus_timeouts.labels(application, operation).inc()
+
+    def record_fatal_boot_error(self) -> None:
+        """Count one ``FatalBootError`` the server stayed up after."""
+        self._fatal_boot_errors.inc()
+
     def collect(self) -> list[Metric]:
-        """The families of the five metrics, with their current values."""
+        """The families of the event metrics, with their current values."""
         return [family
                 for metric in (self._credential_checks, self._wsx_messages,
                                self._wsx_duration, self._websockets_opened,
-                               self._websockets_live)
+                               self._websockets_live, self._sessions_created,
+                               self._restarts, self._start_failures,
+                               self._kbus_timeouts, self._fatal_boot_errors)
                 for family in metric.collect()]

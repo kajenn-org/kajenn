@@ -206,7 +206,12 @@ class TaskScheduler:
 
         Store I/O (``sync_defaults`` writes, ``due_rows`` reads every record)
         runs on the server pool via ``run_sync``, never on the loop.
+
+        Every pass is counted in ``server.process_metrics``, and every
+        schedule it launches with its delay: the launch time minus the
+        record's ``next_run_ts``.
         """
+        self.server.process_metrics.record_scheduler_tick()
         now = time.time()
         registry = self.scan()
         await self.server.run_sync(lambda: self.sync_defaults(registry, now))
@@ -222,6 +227,8 @@ class TaskScheduler:
             if info is None:
                 continue  # orphan: never runs it (a UI concern)
             self._running.add(code)
+            self.server.process_metrics.record_scheduler_delay(
+                row["task_name"], time.time() - row["next_run_ts"])
             loop.create_task(self._execute(row, info["callable"]))
 
     async def _start(self, row: dict[str, Any], task_callable: Any) -> None:
@@ -232,7 +239,8 @@ class TaskScheduler:
         """Run one schedule and settle its outcome (record + JSONL log).
 
         A sync task body runs through ``server.run_sync`` (the D2 pool — same
-        rule as the executor); the store writes go there too.
+        rule as the executor); the store writes go there too. The run is
+        counted in ``server.process_metrics`` by task and outcome.
         """
         code, task_name = row["code"], row["task_name"]
         kwargs = row.get("kwargs") or {}
@@ -254,6 +262,7 @@ class TaskScheduler:
         except ValueError as exc:
             next_ts = None
             outcome, error = "error", error or f"invalid schedule: {exc}"
+        self.server.process_metrics.record_scheduler_launch(task_name, outcome)
         await self.server.run_sync(
             lambda: self.store.update_run(
                 code,

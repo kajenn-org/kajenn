@@ -130,7 +130,8 @@ class SessionMiddleware(BaseMiddleware):
         issued is when the store had no session for the incoming token (none
         arrived, expired, or unknown) and a fresh anonymous one was created
         here. In either path the session is written back at request end when
-        dirty (``_write_back``).
+        dirty (``_write_back``). A session created here is counted in
+        ``server.event_metrics``.
         """
         store = self.server.session_store
         session = self.get_session(scope)
@@ -140,6 +141,7 @@ class SessionMiddleware(BaseMiddleware):
             self._write_back(session)
             return
         session = store.create()
+        self.server.event_metrics.record_session_created()
         scope["session"] = session
 
         async def send_with_cookie(message: MutableMapping[str, Any]) -> None:
