@@ -14,10 +14,10 @@
 
 """Write metric families as Prometheus exposition text.
 
-Private to ``kajenn.server_app``: ``ServerApplication.prometheus_metrics`` and
-the ``metrics`` section write their text with ``families_text``, on a
-``CollectorRegistry`` created for each call, never the module-level
-``REGISTRY``.
+Private to ``kajenn``: ``RoutedApplication.prometheus_metrics``,
+``ServerApplication.prometheus_metrics`` and the ``metrics`` section write
+their text with ``families_text``, on a ``CollectorRegistry`` created for each
+call, never the module-level ``REGISTRY``.
 
 The ``_created`` series ``prometheus_client`` adds to counters, histograms
 and summaries are left out of the text: inside a family as samples named

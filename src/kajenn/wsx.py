@@ -69,10 +69,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 from genro_tytx import to_tytx
 
+from ._http_metrics import ROUTE_SCOPE_KEY
 from .application import BaseApplication
 from .exceptions import ExternalFailure, HTTPException, WebSocketDisconnect, failure_text
 from .wsx_payload import SerializedWsxPayload, WsxResponseEncoder
@@ -381,30 +383,56 @@ class WsxConnection:
         The one message this connection looks at twice is ``openchannel``: the
         application decides whether that page may speak here, and only if it
         answered 200 is the page bound to this socket.
+
+        Every message is counted in the server's ``event_metrics``: the code
+        of the application the demux returned (``""`` when it returned an
+        answer of its own, a refusal or a 404), the route name the application
+        wrote under ``"kajenn.route"`` in the scope it received (``""`` when
+        none), the status returned, and the time from the demux until the
+        answer is read.
         """
+        started = time.monotonic()
+        app, target, status, data = await self._application_answer(envelope, scope)
+        self.server.event_metrics.record_wsx_message(
+            app.code if isinstance(app, BaseApplication) else "",
+            target.get(ROUTE_SCOPE_KEY, ""), status, time.monotonic() - started)
+        return status, data
+
+    async def _application_answer(
+        self, envelope: WsxEnvelope, scope: Scope
+    ) -> tuple[Any, Scope, int, Any]:
+        """Demux one message and run what answers it.
+
+        Returns:
+            What the demux returned (``app``, ``target``) and the status and
+            data of the answer; ``app`` is ``None`` and ``target`` is ``scope``
+            when the demux raised.
+        """
+        app: Any = None
+        target = scope
         collected: list[Any] = []
         try:
             app, target = self.server.demux(scope)
             await app(target, self._request_body(envelope), self._collector(collected))
         except HTTPException as refused:
-            return refused.status, refused.detail
+            return app, target, refused.status, refused.detail
         except Exception as failure:
             if not isinstance(failure, ExternalFailure):
                 self._logger.exception("Websocket: message %s failed", envelope.path)
-            return 500, failure_text(failure)
+            return app, target, 500, failure_text(failure)
         try:
             status, data = self._answer_of(
                 collected, endpoint=not getattr(app, "forwards_payloads", False)
             )
         except (TypeError, ValueError) as failure:
             self._logger.exception("Websocket: invalid application reply")
-            return 500, f"invalid application reply: {failure}"
+            return app, target, 500, f"invalid application reply: {failure}"
         if status == 200 and target.get("path") == OPENCHANNEL_PATH and envelope.page_id:
             # The application said yes: now the page speaks on THIS socket.
             # Bound only after the answer, so a page that was refused — not
             # this connection's, or never born — is never bound at all.
             self.server.websockets.bind_page(envelope.page_id, self.socket)
-        return status, data
+        return app, target, status, data
 
     def _request_scope(self, envelope: WsxEnvelope) -> Scope:
         """The synthetic HTTP scope of one message.

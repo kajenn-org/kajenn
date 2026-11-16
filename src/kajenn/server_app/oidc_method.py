@@ -236,10 +236,27 @@ class OidcMethod(AuthMethod):
                 exchange, or an invalid id_token.
             Redirect: 302 to the stored safe ``next`` on success.
 
+        Every callback that ends in the redirect or in an ``HTTPBadRequest`` is
+        counted in ``server.event_metrics`` as a check of scheme ``oidc``,
+        ``accepted`` or ``refused``.
+
         Note:
             Route: GET /_server/auth/<method_id>/callback
         """
-        session = _request.session
+        metrics = self.server.event_metrics
+        try:
+            next_target = await self._attach_identity(state, code, _request.session)
+        except HTTPBadRequest:
+            metrics.record_credential_check("oidc", "refused")
+            raise
+        metrics.record_credential_check("oidc", "accepted")
+        raise Redirect(safe_next_path(next_target))
+
+    async def _attach_identity(self, state: str, code: str, session: Any) -> str:
+        """Check the state, exchange, verify, attach the avatar; the stored ``next``.
+
+        The work of ``callback`` up to the redirect; the same refusals.
+        """
         expected = session.data[f"oidc.{self.method_id}.state"]
         if not state or state != expected:
             raise HTTPBadRequest("OIDC state mismatch")
@@ -255,7 +272,7 @@ class OidcMethod(AuthMethod):
         for suffix in ("state", "verifier", "next"):
             session.data.pop(f"oidc.{self.method_id}.{suffix}", None)
         session.mark_dirty()
-        raise Redirect(safe_next_path(next_target))
+        return next_target
 
     async def _exchange_code(self, code: str, verifier: str) -> str:
         """Exchange the authorization ``code`` for tokens; return the ``id_token``.

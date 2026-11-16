@@ -186,6 +186,17 @@ class AuthCore:
         api key, ``None`` when the credential carries no expiry (basic, static
         bearer, a JWT without ``exp``).
         """
+        avatar, valid_until, _ = self.verify_with_backend(credential)
+        return avatar, valid_until
+
+    def verify_with_backend(self, credential: str) -> tuple[Avatar, float | None, str]:
+        """Verify like ``verify_with_validity``; also return the backend that accepted it.
+
+        Returns ``(avatar, valid_until, backend)``. ``backend`` names the entry
+        that accepted the credential: ``basic``, ``bearer``, ``api_key``,
+        ``jwt`` or ``jwt:<name>`` for a named JWT verifier. A malformed or
+        invalid credential raises ``HTTPUnauthorized`` like ``verify``.
+        """
         challenge = [(b"www-authenticate", b"Bearer")]
         if " " not in credential:
             raise HTTPUnauthorized("Malformed Authorization header", headers=challenge)
@@ -194,7 +205,8 @@ class AuthCore:
         result = verify(credentials)
         if result is None:
             raise HTTPUnauthorized("Invalid or expired credentials", headers=challenge)
-        return Avatar(result["identity"], result["tags"]), result.get("valid_until")
+        return (Avatar(result["identity"], result["tags"]), result.get("valid_until"),
+                result["backend"])
 
     def _auth_basic(self, credentials: str) -> dict[str, Any] | None:
         """Look up Basic credentials by their raw base64 header value."""

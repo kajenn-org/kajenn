@@ -54,12 +54,14 @@ from __future__ import annotations
 import contextvars
 import json
 import secrets
+import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
 from ..exceptions import HTTPBadRequest, HTTPException, HTTPForbidden
 from genro_routes import RoutingClass, route
 
+from .._mcp_metrics import McpMetrics
 from ..mcp import JSONRPC_INTERNAL_ERROR, McpEngine, McpError
 from ..request import Request
 from ..sse import SseStream
@@ -99,10 +101,19 @@ class McpTransport:
         # The MCP POST request a tools/call belongs to, per task: the engine's
         # invoke protocol carries no request, the tool's Request is built on it.
         self.mcp_request: contextvars.ContextVar[Request] = contextvars.ContextVar("mcp_request")
+        # The name of the tool a tools/call resolved, per task: written by the
+        # invoke callback, read by ``handle`` for the ``tool`` label.
+        self._called_tool: contextvars.ContextVar[str] = contextvars.ContextVar("called_tool")
+        self._metrics = McpMetrics()
         self._name = name
         self._version = version
         self._tool_separator = tool_separator
         self._engine: McpEngine | None = None
+
+    @property
+    def metrics(self) -> McpMetrics:
+        """The MCP families of this application, counted by ``handle``."""
+        return self._metrics
 
     @property
     def engine(self) -> McpEngine | None:
@@ -144,9 +155,12 @@ class McpTransport:
         JSON body is ``arguments`` — the equivalent of a REST body, spread over
         the handler's parameters by ``bind_kwargs`` — carrying the original
         headers and the identity the POST came with (``scope["auth"]``).
-        ``auth_tags`` is not read: the identity is on the scope.
+        ``auth_tags`` is not read: the identity is on the scope. The engine
+        calls it only for a tool that resolved: its name is written for the
+        ``tool`` label ``handle`` counts with.
         """
         app = self.application
+        self._called_tool.set(path.replace("/", self._tool_separator))
         mcp_scope = self.mcp_request.get().scope
         tool_path = "/" + path
         headers = [
@@ -203,6 +217,10 @@ class McpTransport:
         push stream, POST dispatches the JSON-RPC message through the engine
         and answers with the JSON-RPC envelope (a notification — no ``id`` —
         answers HTTP 202 with an empty body), anything else answers 405.
+
+        Every POST answered with a JSON-RPC envelope is counted in ``metrics``
+        by its method, the tool a ``tools/call`` resolved and its outcome; the
+        duration runs over the dispatch. A notification is not counted.
         """
         app = self.application
         scope["kajenn.channel"] = self.channel
@@ -233,14 +251,22 @@ class McpTransport:
         jsonrpc_id = envelope.get("id") if isinstance(envelope, dict) else None
         assert self._engine is not None  # built at construction
         self.mcp_request.set(request)
+        self._called_tool.set("")
+        started = time.monotonic()
         try:
             result = await self._engine.dispatch(envelope, request.auth_tags)
         except McpError as exc:
             payload = self._jsonrpc_error(exc.code, exc.message, jsonrpc_id)
+            outcome = "protocol_error"
         except Exception as exc:  # noqa: BLE001 — any handler failure becomes a JSON-RPC error
             payload = self._jsonrpc_error(JSONRPC_INTERNAL_ERROR, str(exc), jsonrpc_id)
+            outcome = "protocol_error"
         else:
             payload = {"jsonrpc": "2.0", "id": jsonrpc_id, "result": result}
+            outcome = "tool_error" if result.get("isError") else "result"
+        self.metrics.record_call(
+            envelope.get("method") if isinstance(envelope, dict) else None,
+            self._called_tool.get(), outcome, time.monotonic() - started)
         response.set_result(payload)
         await response(scope, receive, send)
 
