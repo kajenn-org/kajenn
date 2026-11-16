@@ -136,16 +136,18 @@ See [Sessions](guides/sessions.md).
 
 ### How do I add authentication?
 
-Pass `auth={...}` to configure the header backends (`basic`, `bearer`, `jwt`),
-declare the identity stores with `users=` / `tokens=`, and mark the protected
-routes with `@route(auth_rule="…")`. Protection is default-deny: an anonymous
-caller gets 401, an identified one whose tags do not match gets 403. The server
-creates no user at boot — a deployment that needs a first identity declares the
-store class that carries it.
+Mount the authentication application —
+`application(code="_auth", app_class=AuthApplicationBase)` in a recipe, or
+`AuthApplicationBase` in `applications=` — and mark the protected routes with
+`@route(auth_rule="…")`. Protection is default-deny: an anonymous caller gets
+401, an identified one whose tags do not match gets 403. A server without
+`_auth` authenticates nobody: a presented credential gets 401.
 
-For a session login flow over JSON, use the `_server` application
-(`ServerApplication` from `kajenn.server_app`), present in every server; its `POST /_server/login` verifies against the user store
-and attaches the avatar to the existing session.
+`_auth` holds the users, groups, tags and tokens. Its `POST /_auth/login`
+verifies a password and attaches the avatar to the existing session; a `Basic`
+header and a `gak_` token are verified on the same store. On a site with no
+administrator, the server log carries the password of a temporary
+administrator, `_temporary_admin`, the way in to create the first real one.
 
 See [Authentication](guides/authentication.md).
 
@@ -164,11 +166,14 @@ See [Authentication](guides/authentication.md).
 
 Under `/_server/…`, in every server. `ServerApplication` lives in
 `kajenn.server_app` and the server mounts it itself with the code `_server`;
-the configuration only customises it with `application(code="_server", ...)`. It serves JSON — login, users, tokens, tasks and monitor —
+the configuration only customises it with `application(code="_server", ...)`. It serves JSON — tasks, monitor, databases, applications, metrics —
 and no HTML pages: the management pages belong to a front-end of your choosing.
+Login, users and tokens live under `/_auth/…`, in the authentication
+application, when the site mounts it.
 
-`kajenn` does not export `ServerApplication`, `AuthSection`, `AuthMethod`,
-`PasswordMethod` or `OidcMethod`; import them from `kajenn.server_app`.
+`kajenn` does not export `ServerApplication`; import it from
+`kajenn.server_app`. `AuthMethod`, `PasswordMethod` and `OidcMethod` import
+from `kajenn.auth_app`.
 
 See the [Server application](api/server-app.rst) API page.
 

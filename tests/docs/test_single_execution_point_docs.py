@@ -36,18 +36,21 @@ def test_the_specification_ratifies_the_execution_point() -> None:
 
 
 def test_the_authentication_guide_documents_the_flow() -> None:
-    # wf:contract: docs/guides/authentication.md documents server.channels(), the two
-    # wf:contract: _server routes, cache_ttl and the async server.authenticate.
+    # wf:contract: docs/guides/authentication.md documents the _auth application: the three
+    # wf:contract: bus-only routes, cache_ttl and the async server.authenticate; it names no
+    # wf:contract: per-channel authentication route and no /_server/auth route.
     guide = read("docs/guides/authentication.md")
     for word in (
-        "channels()",
-        "/_server/auth/authenticate",
-        "/_server/auth/forget_credential",
+        'code="_auth"',
+        "/_auth/authenticate",
+        "/_auth/avatar",
+        "/_auth/forget_credential",
         "cache_ttl",
         "async",
     ):
         assert word in guide
-    assert "AuthMiddleware" not in guide
+    for word in ("AuthMiddleware", "channels()", "authentication_route", "/_server/auth"):
+        assert word not in guide
 
 
 def test_the_bus_protocol_says_who_reads_auth() -> None:

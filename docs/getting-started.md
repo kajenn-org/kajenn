@@ -209,17 +209,19 @@ a layer that wraps request handling, for example to handle errors or attach a se
 
 ## The `_server` app
 
-The management surface — login, users, tokens, task management, monitor — is
-`ServerApplication`, and it is mounted for you: `AsgiServer` appends it when no
+The management surface — task management, monitor, databases, applications —
+is `ServerApplication`, and it is mounted for you: `AsgiServer` appends it when no
 declared application has the code `_server`. The hello-world above already has
 it. An application declared with the code `_server` (a subclass, or the same
 class with options) takes its place.
 
 Its endpoints live under `/_server/…` and never leak into your own app's
 route tree. Its routes answer JSON; `/_server/_meta/api/docs` is a Swagger HTML
-page over them. See the
-[authentication](guides/authentication.md) and [tasks](guides/tasks.md) guides
-for what lives under it.
+page over them. See the [tasks](guides/tasks.md) and
+[management](guides/management.md) guides for what lives under it. Login,
+users and tokens belong to the authentication application `_auth`, which a site
+mounts when it authenticates: see the [authentication](guides/authentication.md)
+guide.
 
 ## Next steps
 

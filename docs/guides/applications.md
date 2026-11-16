@@ -87,8 +87,8 @@ the same status, headers and body. An exception the application raises before
 answering is raised again in the server, whose middleware answers it. The mount
 forwards every request header, the `Authorization` header included, and never
 verifies a credential; the channel the request carries travels with it. The
-process verifies the credential through the server's authentication route for
-that channel, reached over the bus. A session lives in the server: the proxy
+process verifies the credential through `/_auth/authenticate` in the server's
+process, reached over the bus. A session lives in the server: the proxy
 forwards its identity, and only when the request carries no `Authorization`
 header. In the process `scope["session"]` is `None`: a handler reads the
 identity, not the session object.

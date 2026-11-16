@@ -159,7 +159,7 @@ flowchart TD
 
 | Credentials supplied | Identity used |
 | --- | --- |
-| Valid Authorization header | Identity returned by the authentication backend |
+| Valid Authorization header | Identity returned by the authentication application |
 | Invalid Authorization header | Reject with 401; do not fall back to the session |
 | No Authorization header | Session identity, or no identity |
 
@@ -167,9 +167,11 @@ The session middleware sets a cookie when it creates the session. Server-side
 expiry slides with activity; the cookie's lifetime is fixed when issued and is
 24 times the session TTL.
 
-The authentication capability builds configured user and API-key stores over
-server storage. It creates no user automatically. Routes apply their own access
-rules; denied access produces 401 or 403 as appropriate.
+The authentication capability asks the authentication application, mounted
+with code `_auth`, for the identity of a credential and of a session, and caches
+the answers. The application keeps users, groups, tags and tokens in one store
+over server storage. A server without it authenticates nobody. Routes apply
+their own access rules; denied access produces 401 or 403 as appropriate.
 
 See [sessions](../guides/sessions.md) and
 [authentication](../guides/authentication.md) for setup and policy.
@@ -300,13 +302,14 @@ corresponding capabilities.
 
 ## The management application
 
-The server application exposes login, users, tokens, tasks and
-monitoring under `/_server/`. Its OpenAPI schema lives at
+The server application exposes tasks, monitoring, databases, applications and
+metrics under `/_server/`. Login, users, groups, tags and tokens are under
+`/_auth/`, in the authentication application. Its OpenAPI schema lives at
 `/_server/_meta/api/schema_json`.
 
 It is always present: the server mounts it with code `_server` when the
 configuration names none, and the configuration may only customise it
-(`login`, `oidc`, a subclass). The dedicated process of an application mounted
+(a subclass, its well-known documents). The dedicated process of an application mounted
 with `spawner="subprocess"` mounts none and sends `/_server/` calls to its
 parent.
 
@@ -322,7 +325,7 @@ and file paths are kept here so the explanations above can focus on behaviour.
 | Requests and responses | [RoutedApplication](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/routed_application.py), [Request](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/request.py), [Response](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/response.py), [streaming](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/streaming.py) |
 | Lifecycle | [Lifespan](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/lifespan.py), [thread pool](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/pool.py) |
 | Configuration | [Recipe builder](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/builder.py), [layering](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/default_config.py), [handler](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/handler.py), [templates](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/config/templates.py) |
-| Sessions and identity | [Session capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/mixin.py), [session store](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/store.py), [authentication](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth/mixin.py) |
+| Sessions and identity | [Session capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/mixin.py), [session store](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/session/store.py), [authentication](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth/mixin.py), [authentication application](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth_app/auth_app.py), [authentication store](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/auth_app/auth_store.py) |
 | WebSocket | [WSX connection](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx.py), [transport](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/websocket.py), [payload](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/wsx_payload.py) |
 | Applications in other processes | [KajennBus](https://github.com/kajenn-org/kajenn-kbus), [KBusMixin](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/kbus_mixin.py), [spawner](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/spawner.py), [HTTP record](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/http_record.py) |
 | Tasks | [Capability](https://github.com/kajenn-org/kajenn/blob/main/src/kajenn/tasks/mixin.py), [manager and collaborators](https://github.com/kajenn-org/kajenn/tree/main/src/kajenn/tasks) |
