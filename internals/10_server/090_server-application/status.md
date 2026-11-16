@@ -4,6 +4,7 @@
 
 Verified against source revision `63fb326` (develop baseline). Test references
 below identify the executable contracts; they are not a new coverage percentage.
+Authentication passages updated against `dfc3941`.
 
 ## The management application in every server
 
@@ -18,13 +19,11 @@ only when `role` is `None`. The ratification is "D-SA-10 superseded" of
 `ServerApplication` extends `RoutedApplication`, so it carries the `_meta`
 branch and the MCP face: `/_server/_meta/api/schema_json`,
 `/_server/_meta/api/docs` and MCP JSON-RPC on `/_server/_meta/mcp`. Its
-constructor attaches the auth, users, tokens, tasks, monitor, databases, k8s
-and applications sections
-([`ServerApplication.__init__`](../../../src/kajenn/server_app/server_app.py#ServerApplication.__init__)):
-eight sections. The auth section arrives through `register_auth_method`, the
-other seven through `attach_section`.
-Its public descriptor `index` lists the attached names. The password method and
-the OIDC providers are registered under the auth section.
+constructor attaches six sections through `attach_section`: tasks, monitor,
+databases, k8s, applications and metrics. Its public `index` descriptor lists
+the attached names. Login and identity management belong to `_auth`.
+
+Claim anchor: [`ServerApplication.__init__`](../../../src/kajenn/server_app/server_app.py#ServerApplication.__init__).
 
 Tests: `tests/core/test_server_app_always_present.py::TestTheKwargsRoad::test_a_bare_server_has_the_management_application`,
 `::TestTheKwargsRoad::test_a_declared_one_is_kept_as_declared`,
@@ -49,52 +48,33 @@ Tests: `tests/core/test_server_app_always_present.py::TestTheConfigurationRoad::
 
 ## Route gates
 
-- Public, no `auth_rule`: `index`, `login`, `logout`, `login_methods`.
-- `SUPERADMIN`: every route of users, tokens and tasks.
-- `SERVER_ADMIN`: every route of monitor (`MONITOR_RULE`) and databases (`DATABASES_RULE`).
-- Bus only: `auth/authenticate` and `auth/forget_credential` answer 403 to an
-  HTTP caller (`src/kajenn/server_app/server_sections/auth_section.py:115-116`).
+- Public: `index` and the k8s probes.
+- `SERVER_ADMIN`: tasks, monitor, databases and applications.
+- `SERVER_METRICS`: metrics.
 
-`_request` injection comes from the common `RoutedApplication.bind_kwargs`,
-not a private server-app override.
+`_request` injection comes from `RoutedApplication.bind_kwargs`.
+The authenticate, avatar and forget-credential bus-only routes belong to
+`_auth`; its identity management sections ask for `AUTH_ADMIN`.
 
-Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection).
+## Application grammar and authentication
 
-## `ServerApplicationGrammar`: login, oidc, provider
+`ServerApplicationGrammar` declares `security_txt`, `robots` and `agent`.
+The separately mounted `AuthApplicationBase` owns the `store`, `login`,
+`oidc`/`provider` and `self_registration` words, and the `cache_ttl` attribute.
+Its login checks passwords with a store-backed lockout and attaches the avatar
+to the existing session. Users, groups, tags and tokens are managed under
+`/_auth/`, not under this application.
 
-`ServerApplicationGrammar` (`src/kajenn/server_app/server_app.py:121-204`)
-declares the words written under the `_server` application element:
+Claim anchors: [`ServerApplicationGrammar`](../../../src/kajenn/server_app/server_app.py#ServerApplicationGrammar), [`AuthApplicationGrammar`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationGrammar).
 
-- `login(max_attempts, backoff)`: the lockout policy;
-- `oidc()`: the collection of providers, keyed by `code`;
-- `provider(code, issuer, client_id, client_secret, scopes, identity_claim, tags)`;
-- `security_txt(...)`, `robots(sitemaps)` and `agent(user_agent, allow, disallow)`:
-  see "Well-known documents" below.
+## Fatal boot with the public applications closed
 
-`read_declared_login_surface` reads `login` and `oidc` when the server is
-attached (`src/kajenn/server_app/server_app.py:252-298`). Each provider becomes
-an `OidcMethod` registered as `oidc:<code>` under `auth`. A hand-built server
-passes the same values as the `login=` and `oidc=` constructor kwargs.
+With `abort_on_fatal_boot_error=False`, a fatal startup closes the public
+applications. `BaseServer.answers_when_public_closed` allows management;
+`AsgiServer` overrides it to allow both `_server` and `_auth`, so management
+can still authenticate. The ordinary application-enabled check still applies.
 
-Tests: `tests/server_app/test_config_server_app.py::TestLoginSurface`.
-
-## Login lockout
-
-`login` counts failures on the user's `UserStore` record (`failed_attempts`,
-`last_failed_at`) (`src/kajenn/server_app/server_app.py:459-532`). After
-`max_attempts` failures (default `LOCKOUT_MAX_ATTEMPTS = 5`) the identity is
-refused for `backoff * 2**(failed_attempts - max_attempts)` seconds (default
-`LOCKOUT_BACKOFF_SECONDS = 30.0`). A refused attempt does not touch the
-counter. A success resets it. An unknown identity has no counter.
-
-Tests: `tests/server_app/test_login_flow.py::TestLoginLockout`.
-
-## Users and tokens routes
-
-- users: `list`, `get`, `create_user`, `save`, `set_password`, `delete`
-  (`src/kajenn/server_app/server_sections/users_section.py:93-188`).
-- tokens: `list`, `issue`, `revoke`, `delete`, `create_jwt`
-  (`src/kajenn/server_app/server_sections/tokens_section.py:83-150`).
+Claim anchors: [`BaseServer.answers_when_public_closed`](../../../src/kajenn/server.py#BaseServer.answers_when_public_closed), [`AsgiServer.answers_when_public_closed`](../../../src/kajenn/asgi_server.py#AsgiServer.answers_when_public_closed).
 
 ## Databases section: list, plan, apply
 
@@ -135,8 +115,8 @@ Tests: [tests/server_app/test_well_known_documents.py](../../../tests/server_app
 ## Attached sections and unfinished administration
 
 `attach_section` links a `RoutingClass` under `/_server/<name>` and lists it in
-`sections`. Five of the six shipped sections arrive through that call in
-`__init__`; `auth` arrives through `ensure_auth_section`, which calls it too. An
+`sections`. All six shipped sections arrive through that call in
+`__init__`. An
 application outside the core attaches its diagnostic surface the same way;
 that surface has no route auth rule, so its mounting gate differs from the
 monitor's `SERVER_ADMIN` protection.

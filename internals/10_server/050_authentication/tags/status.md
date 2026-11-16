@@ -4,6 +4,7 @@
 
 Verified against source revision `63fb326` (develop baseline). Test references
 below identify the executable contracts; they are not a new coverage percentage.
+Authentication passages updated against `dfc3941`.
 
 ## Authorization vocabulary
 
@@ -15,8 +16,8 @@ to 403. No universal hardcoded list of user roles is created by the core.
 `Request.auth_tags` returns the tags of the root avatar as a list, empty when
 anonymous (request.py:420-424).
 
-The monitor and the databases section use `SERVER_ADMIN`; users, tokens and
-task administration use `SUPERADMIN`.
+The monitor, databases and tasks sections use `SERVER_ADMIN`. Users, groups,
+tags and tokens on `_auth` use `AUTH_ADMIN`.
 A section attached to `_server` by an application outside the core carries no
 `auth_rule` of its own, so it must not be listed among the automatically
 protected sections. Per-section tag configuration remains backlog, not a

@@ -4,6 +4,7 @@
 
 Verified against source revision `63fb326` (develop baseline). Test references
 below identify the executable contracts; they are not a new coverage percentage.
+Authentication passages updated against `dfc3941`.
 
 ## Server-owned task manager
 
@@ -118,8 +119,8 @@ Tests: `tests/core/test_mcp_push.py::TestExecutorBridge::test_lifecycle_events_s
 
 ## `/_server/tasks` routes
 
-`TasksSection` declares 12 routes, all `auth_rule="SUPERADMIN"`
-(`src/kajenn/server_app/server_sections/tasks_section.py:82-253`):
+`TasksSection` declares 12 routes, all gated by `TASKS_RULE = "SERVER_ADMIN"`
+([`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection)):
 
 - schedules: `list`, `create`, `update`, `enable`, `disable`, `run_now`, `delete`, `logs`;
 - spool: `spool_list`, `progress`, `cancel`, `result`.

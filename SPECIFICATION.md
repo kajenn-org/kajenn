@@ -255,8 +255,8 @@ knowing it — if the chains don't hold this, they fail in phase 0, not phase 2.
 **D18 — Slots policy.** `__slots__` only on high-cardinality objects
 (requests, register items, events/frames, config nodes); NEVER on servers,
 managers, commanders, apps — single/low-count complex objects where slots are
-only an obstacle (the old repo has it backwards: a 21-slot singleton server,
-and the AuthCore `__slots__=()` fragility).
+only an obstacle. The historical counterexamples were a 21-slot singleton
+server and `AuthCore` with `__slots__=()`; `AuthCore` was removed in favour of `_auth`.
 
 **POSTPONED 2026-07-19 — group runtime spec (was ◆D10b).** The group runtime
 spec (`python=`/`code=`/`env=`, backends venv/path/pyz/OCI) concerns only the
@@ -489,10 +489,10 @@ controls always apply.
 
 **D27 — The OIDC login contract: authorization-code + PKCE, one method per
 provider.** OIDC is a `redirect` `AuthMethod` (`OidcMethod`), one instance per
-configured provider, registered on the `ServerApplication` from the `oidc()`
-config elements (after `PasswordMethod`) and, unlike password, OWNING routes —
-so it enters the routing tree (Invariant 10) under `/_server/auth/oidc:<code>/`
-with a `start` and a `callback` route. The contract, ratified points:
+configured provider. The original server registration was removed in favour
+of `AuthApplicationBase`: providers are registered after `PasswordMethod`
+from the application's `oidc` configuration, with `start` and `callback`
+routes under `/_auth/oidc:<code>/`. The retained contract:
 
 - **PKCE always on (S256), the client_secret optional.** Every authorization
   request carries an S256 code challenge; a public client (no secret) works. The
@@ -511,13 +511,16 @@ with a `start` and a `callback` route. The contract, ratified points:
   against the provider JWKS (`jwt.PyJWKClient`, no new dependency — pyjwt +
   cryptography are runtime deps), audience = the client_id, issuer = the
   configured issuer. Any verification failure → 400.
-- **Identity and tags are per-provider config.** The avatar identity is the
-  `identity_claim` claim (default `email`), the tags the provider's configured
-  `tags` (default `[]`). Success converges on the SAME outcome every method shares
-  (D24): `session.attach_avatar` in place, session id UNCHANGED, one-shot
-  `oidc.*` keys cleared, 302 to the stored safe `next`. Errors answer
-  `HTTPBadRequest` (400) — coherent with the browser-driven flow, not a JSON body
-  a browser would render as text.
+- **Identity and tags come from the authentication store.** The original
+  provider-configured identity and tags were removed. `OidcMethod.link_user`
+  finds the user by verified `iss` and `sub`, else by verified email, else
+  through `self_registration`. `authenticate_claims` refuses users that are
+  not confirmed or are system users. The avatar uses the user's identity,
+  primary group and store tags. Success attaches it to the existing session,
+  clears the one-shot flow keys and redirects to the stored safe `next`.
+  Flow errors answer 400; refused logins answer 403.
+
+Claim anchors: [`link_user`](src/kajenn/auth_app/oidc_method.py#L263), [`authenticate_claims`](src/kajenn/auth_app/oidc_method.py#L247).
 
 **D28 — Server-side login lockout: a store-backed counter with exponential
 backoff (REVIEW #9).** The password login enforces a lockout whose failure
@@ -832,17 +835,17 @@ one config describes the whole site — stands unchanged.)
   values; nothing builds a server from a config. D15's per-role projection is
   superseded — one process reads its own configuration — and the D15 sketch's
   `app_class="pkg:Class"` strings become imported classes.
-- **The `auth` section and the separate `_server` config-class dissolve into one
-  `authentication` section**: `admin_password` (a resolver — a literal string is
-  a boot error), `users`/`tokens`, `login`, `oidc` as a keyed collection of
-  `provider(code=…)`, and `credentials` (`basic_user`/`bearer_token`/`jwt`)
-  folded by the handler into the exact dicts `AuthCore` already consumes.
-  `AuthCore` itself is not touched: only how its values travel changes.
+- **Historical authentication configuration.** The consolidation into a
+  server authentication section was superseded. `AuthCore` was removed in favour of `_auth`, as were the `basic_user` and `bearer_token` configuration words.
+  A site declares `application(code="_auth", app_class=AuthApplicationBase)`.
+  Its grammar owns `store`, `login`, `oidc`/`provider` and `self_registration`;
+  `cache_ttl` is an application attribute. `_auth` builds the store and
+  manages the temporary administrator. There is no bootstrap password word.
+- `_server` remains automatic in the main server process. Its recipe entry
+  customises the application, but no longer receives login configuration.
 
-> Note 2026-10-14: superseded — `admin_password` is removed: the `authentication` element has no bootstrap password word and the server creates no user (src/kajenn/config/elements.py:278-290).
+Claim anchor: [`AuthApplicationGrammar`](src/kajenn/auth_app/auth_app.py#L235).
 
-- The `_server` app remains **automatic, not configured** (D4): the
-  `authentication` login surface reaches it as forwarded kwargs at mount time.
 - Pins: `genro-builders>=0.22.0`, `genro-bag>=0.20.0`.
 
 ### Ratified 2026-07-30 (the `kajenn` command)
@@ -1005,17 +1008,23 @@ on the same pool thread.
 on (`rest`, `mcp`, `wsx`, ...), carried as `scope["kajenn.channel"]`. The
 transport is how the bytes travel (HTTP, WebSocket, uds, kbus).
 
-**D33 amended.** "Which application authenticates for which path" is answered
-by `server.channels().channel(name, authentication_route)`; a channel not
-configured uses `/_server/auth/authenticate`. A credential presented is always
-verified and an invalid one is always 401; absence is not an error.
-`AuthMiddleware` is retired. `AuthCore` stays as the server's base
-authentication behind the `_server` route. A verified credential is cached by
-TTL (`authentication(cache_ttl=...)`, `0` disables it) and is evicted by
-`forget_credential`; revoking or deleting an api key empties the cache.
-`server.authenticate(scope)` is `async`.
+**D33 amended.** The per-channel authentication route and server verifier
+were removed in favour of `_auth`. `AuthMixin.authenticate_credential` asks
+`/_auth/authenticate` with the credential and channel; session identity and
+group are rechecked through `/_auth/avatar`. A presented invalid credential
+is always 401; absence is not an error. Without `_auth`, a credential is
+refused and a session provides no identity.
 
-> Note 2026-10-14: superseded — `channels` is a child of `configuration`, not of `server`: a recipe writes `cfg.channels().channel(name=..., authentication_route=...)` (src/kajenn/config/elements.py:395).
+The server caches answers for the application's `cache_ttl` (default 300
+seconds, 0 disables caching), capped by `valid_until`. `forget_credential`
+evicts that credential and session answers; token revocation or deletion
+clears the cache in every joined process. `server.authenticate(scope)` is
+async. `AuthMiddleware` remains retired.
+
+The 2026-10-14 placement correction for channel configuration is superseded:
+the `channels` configuration collection was removed.
+
+Claim anchors: [`authenticate_credential`](src/kajenn/auth/mixin.py#L120), [`authenticate`](src/kajenn/auth/mixin.py#L203).
 
 **What stays open.** For 0.5.0: the session at first write, the login mixin and
 the enrichment per branch. For klink: `info.credential` stays reserved and
@@ -1025,10 +1034,10 @@ unread by the bus.
 
 **D33 amended.** `_server` is no longer "declared, not automatic": it exists in
 every server. The configuration customises it with
-`application(code="_server", ...)` — `login`, `oidc`, a subclass of
-`ServerApplication` — and never declares it; `app_class` may be omitted for
-that code. The rest of D33 holds: the core asks for no user and password, and
-the login words stay under `application`. The package is `kajenn.server_app`,
+`application(code="_server", ...)`, optionally with a subclass of
+`ServerApplication`; `app_class` may be omitted for that code. The original
+login configuration on `_server` was removed. Login words now belong to the
+separately declared `_auth` application. The package is `kajenn.server_app`,
 inside the core; the former top-level package has no alias.
 
 **D-SA-10 superseded.** The management application is no longer "never

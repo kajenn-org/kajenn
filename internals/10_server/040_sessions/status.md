@@ -4,6 +4,7 @@
 
 Verified against source revision `63fb326` (develop baseline). Test references
 below identify the executable contracts; they are not a new coverage percentage.
+Authentication passages updated against `dfc3941`.
 
 ## Store, identity and write-back
 
@@ -24,19 +25,23 @@ purge is checked on create after `PURGE_INTERVAL` (300 seconds), without a
 background purge task. `SessionMiddleware` only saves dirty sessions and only
 issues a cookie on creation; its cookie lifetime is server TTL multiplied by 24.
 
-`POST /_server/logout` is the only route that deletes a session: it calls
-`session_store.delete(session_id)` and answers `{"status": "ok"}` for an unknown
-or missing id (server_app.py:535-551). The route declares no `auth_rule`. The
-test `test_logout_deletes_the_session` deletes a session without presenting a
-credential.
+`/_auth/logout` deletes the supplied session id and answers
+`{"status": "ok"}` even when the id is missing or unknown. It declares no
+`auth_rule`. Session deletion also occurs when `AuthMixin.authenticate`
+receives a refusal from `/_auth/avatar`: the session's stored identity and
+group no longer authenticate.
+
+Claim anchors: [`logout`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationBase.logout), [`authenticate`](../../../src/kajenn/auth/mixin.py#AuthMixin.authenticate).
 
 Claim anchors: [`MemorySessionStore`](../../../src/kajenn/session/store.py#MemorySessionStore), [`SessionStore`](../../../src/kajenn/session/store.py#SessionStore), [`Session`](../../../src/kajenn/session/session.py#Session), [`avatar`](../../../src/kajenn/session/session.py#Session.avatar), [`attach_avatar`](../../../src/kajenn/session/session.py#Session.attach_avatar), [`mark_dirty`](../../../src/kajenn/session/session.py#Session.mark_dirty), [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#SessionMiddleware), [`avatars`](../../../src/kajenn/session/session.py#Session.avatars), [`is_expired`](../../../src/kajenn/session/session.py#Session.is_expired), [`logout`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationBase.logout).
 
 ## Two persistence formats
 
-`dump`/`restore` preserve metadata and keyed avatar identities/tags, excluding
-the session data Bag. `save_snapshot`/`load_snapshot` instead pickle complete
-live sessions, including the Bag. `SessionMixin(save_session=...)` loads before
+`dump`/`restore` preserve metadata and keyed avatar identities/groups, excluding
+tags and the session data Bag. Restored avatars have no tags; authentication
+asks `_auth` for the root identity and group through the credential cache.
+`save_snapshot`/`load_snapshot` instead pickle complete live sessions, including
+the Bag. `SessionMixin(save_session=...)` loads before
 lifespan and saves on exit; named CLI instances wire that snapshot path.
 `SessionStore` declares both snapshot methods with default bodies that do nothing
 and return `0`. A custom store that subclasses `SessionStore` inherits them; one
