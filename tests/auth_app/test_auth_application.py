@@ -681,7 +681,7 @@ class TestManagementGate:
         "path, body",
         [
             ("/_auth/users/create_user?identity=bob", {"password": "x", "password_confirm": "x"}),
-            ("/_auth/groups/create_group?code=dev", {"tags": ["DEV"]}),
+            ("/_auth/groups/create_group?code=dev", {"tags": ["AUTH_ADMIN"]}),
             ("/_auth/tags/create_tag?code=DEV", {"description": "Developers"}),
             ("/_auth/tokens/issue", {"user": "alice", "tags": "*"}),
         ],
@@ -775,6 +775,7 @@ class TestUsersSection:
         server = await started(tmp_path)
         cookie = await admin(server)
         forged = auth_store(server).hash_password("attacker")
+        auth_store(server).save_tag({"code": "X"})
         await drive(
             server,
             "/_auth/users/save?identity=alice",
@@ -828,6 +829,7 @@ class TestUsersSection:
     ) -> None:
         server = await started(tmp_path)
         cookie = await admin(server)
+        auth_store(server).save_tag({"code": "NEW"})
         await drive(
             server,
             "/_auth/users/save?identity=alice",
@@ -917,6 +919,7 @@ class TestGroupsAndTagsSections:
     async def test_a_created_group_gives_its_tags_at_login(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
         cookie = await admin(server)
+        auth_store(server).save_tag({"code": "DEV"})
         created = payload(
             await drive(
                 server,
@@ -965,7 +968,7 @@ class TestGroupsAndTagsSections:
             "parent": "STAFF",
         }
         tags = payload(await drive(server, "/_auth/tags/list", cookie=cookie))["tags"]
-        assert [t["code"] for t in tags] == ["DEV"]
+        assert [t["code"] for t in tags if not t["owner"]] == ["DEV"]
         sent = await drive(server, "/_auth/tags/delete?code=DEV", "POST", cookie=cookie)
         assert payload(sent) == {"code": "DEV", "deleted": True}
 

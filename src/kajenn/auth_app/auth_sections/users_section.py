@@ -35,7 +35,9 @@ Every route asks ``auth_rule="AUTH_ADMIN"``. Routes, under ``/_auth/users/``:
 never sets it. A password enters only as plaintext through ``create_user`` and
 ``set_password`` and is hashed by ``AuthStore.hash_password``.
 
-Errors answer ``{"error": message}`` with status 200. A record the store
+Errors answer ``{"error": message}`` with status 200. ``create_user`` and
+``save`` refuse a ``tags`` field naming a tag that has no record, and nothing is
+written. A record the store
 refuses (``ValueError`` from ``save_user``: an unknown ``status``, a
 ``primary_group`` outside ``groups``) is such an error, and nothing is written.
 """
@@ -131,6 +133,9 @@ class UsersSection(RoutingClass):
         if self.store.get_user(identity) is not None:
             return {"error": f"User already exists: {identity}"}
         body = body_data or {}
+        refusal = self.application.get_tags_refusal(body)
+        if refusal:
+            return refusal
         record = {**NEW_USER_DEFAULTS, **self.metadata_of(body)}
         record["identity"] = identity
         record["password_hash"] = None
@@ -147,6 +152,9 @@ class UsersSection(RoutingClass):
         record = self.store.get_user(identity)
         if record is None:
             return {"error": f"No such user: {identity}"}
+        refusal = self.application.get_tags_refusal(body_data or {})
+        if refusal:
+            return refusal
         record.update(self.metadata_of(body_data or {}))
         return self.save_record(record)
 

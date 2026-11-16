@@ -37,7 +37,7 @@ adds:
 Authentication is not here: login, users and tokens belong to the application
 mounted at ``/_auth`` (``kajenn.auth_app``). Every section asks
 ``SERVER_ADMIN``, the metrics excepted (``SERVER_METRICS``) and the health
-probes (public).
+probes (public). ``declared_tags`` declares both tags.
 
 Handlers stay PURE: they return values and never touch cookies or an ambient
 request/response. A handler that needs the live request DECLARES an
@@ -79,6 +79,8 @@ from .server_sections import (
     MonitorSection,
     TasksSection,
 )
+from .server_sections.applications_section import SERVER_ADMIN_TAG
+from .server_sections.metrics_section import METRICS_RULE
 
 __all__ = ["ServerApplication", "ServerApplicationGrammar"]
 
@@ -266,6 +268,14 @@ class ServerApplication(RoutedApplication):
             return None
         path = home.static / "favicon.ico"
         return path if path.is_file() else None
+
+    @property
+    def declared_tags(self) -> list[dict[str, Any]]:
+        """``SERVER_ADMIN`` and ``SERVER_METRICS``, the tags the sections ask for."""
+        return [
+            {"code": SERVER_ADMIN_TAG, "description": "Management of the server"},
+            {"code": METRICS_RULE, "description": "Prometheus metrics of the server"},
+        ]
 
     @property
     def sections(self) -> dict[str, RoutingClass]:

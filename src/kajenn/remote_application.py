@@ -27,7 +27,9 @@ by the mount to the spawned process with ``remote_call``: the server's
 mount answers with a call to ``remote_call``. The
 methods this class defines itself stay local: ``on_startup`` waits for
 ``joined``, ``on_shutdown`` and ``plugin_configuration`` do nothing, because
-the spawned process runs all three in its own lifespan.
+the spawned process runs all three in its own lifespan. ``declared_tags`` and
+``system_users`` are those the spawned process presented at its last
+``joined``, empty before it joins.
 
 The kwargs of the declaration are split in two: ``PROXY_OPTIONS`` belong to
 this mount, every other kwarg belongs to the real application, built in the
@@ -184,11 +186,27 @@ class RemoteApplication(BaseApplication):
         self.max_calls = max_calls
         self._slots = asyncio.Semaphore(max_calls)
         self._joined = asyncio.Event()
+        self._declared_tags: list[dict[str, Any]] = []
+        self._system_users: list[dict[str, Any]] = []
         if hasattr(app_class, "serve_websocket"):
             self.serve_websocket = self._forward_websocket
 
-    def mark_joined(self) -> None:
-        """Record that the spawned process sent ``joined``."""
+    @property
+    def declared_tags(self) -> list[dict[str, Any]]:
+        """The ``declared_tags`` the spawned process presented at its last ``joined``."""
+        return self._declared_tags
+
+    @property
+    def system_users(self) -> list[dict[str, Any]]:
+        """The ``system_users`` the spawned process presented at its last ``joined``."""
+        return self._system_users
+
+    def mark_joined(
+        self, declared_tags: list[dict[str, Any]], system_users: list[dict[str, Any]]
+    ) -> None:
+        """Record that the spawned process sent ``joined``, with its declarations."""
+        self._declared_tags = declared_tags
+        self._system_users = system_users
         self._joined.set()
 
     async def on_startup(self) -> None:

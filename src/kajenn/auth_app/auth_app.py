@@ -100,7 +100,20 @@ Routes called by a client:
 
 Management, every route asking ``AUTH_ADMIN``: ``/_auth/users/...``,
 ``/_auth/groups/...``, ``/_auth/tags/...``, ``/_auth/tokens/...`` (see
-``auth_sections``).
+``auth_sections``). Assigning a tag that has no record is refused.
+
+Declared records: at startup the application reads ``declared_tags`` and
+``system_users`` of every application of the server, itself included
+(``AUTH_ADMIN``), and creates the records that do not exist
+(``create_declared_records``). It does the same for an application written in
+the live configuration later, and the server asks it for an application with
+a ``spawner`` when its process joins. A tag record has the code as declared
+and ``owner`` the application code; a system user has ``system`` true and no
+token. An existing record is left as it is; a record
+whose declaration disappears stays. A declaration comes from an application,
+for one with a ``spawner`` across the ``joined`` call: an entry with a wrong
+type, or a tag code an auth rule cannot hold, is not written and a warning is
+logged.
 
 ``group`` in every answer is the active group: the one asked for, else the
 user's primary group, ``None`` when the user has none. The tags are the
@@ -120,15 +133,18 @@ parameter, injected per dispatch.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import logging
+import re
 import time
 from typing import Any, ClassVar
 
 from genro_bag import BagResolver
 from genro_builders.builder import element
 from genro_routes import RoutingClass, route
+from genro_storage.exceptions import StorageError
 
 from kajenn.application import ApplicationGrammar
 from kajenn.auth.mixin import AUTHENTICATION_CODE, DEFAULT_CREDENTIAL_CACHE_TTL
@@ -138,6 +154,7 @@ from kajenn.session import Avatar
 
 from .auth_method import AuthMethod, AuthMethodRegistry, PasswordMethod
 from .auth_sections import GroupsSection, TagsSection, TokensSection, UsersSection
+from .auth_sections.tags_section import ADMIN_TAG, NEW_TAG_DEFAULTS
 from .auth_store import AUTHENTICATING_STATUS, USER_STATUSES, AuthStore, FileAuthStore
 from .oidc_method import OidcMethod
 
@@ -146,6 +163,13 @@ __all__ = ["AuthApplicationBase", "AuthApplicationGrammar"]
 LOCKOUT_MAX_ATTEMPTS = 5
 LOCKOUT_BACKOFF_SECONDS = 30.0
 CHALLENGE = [(b"www-authenticate", b"Bearer")]
+
+#: A name inside an auth rule: the tag names of ``tags_match``.
+RULE_NAME = re.compile(r"[A-Za-z_]\w*")
+
+#: The operators of ``tags_match`` (any case): a tag code that is one of them
+#: cannot be named in a rule.
+RULE_KEYWORDS = frozenset({"and", "or", "not"})
 
 
 class AuthApplicationGrammar(ApplicationGrammar):
@@ -460,6 +484,144 @@ class AuthApplicationBase(RoutedApplication):
         window = backoff * 2 ** (failed - max_attempts)
         remaining: float = max(0.0, record.get("last_failed_at", 0.0) + window - time.time())
         return remaining
+
+    # ── declared tags and system users ─────────────────────────────────
+
+    @property
+    def declared_tags(self) -> list[dict[str, Any]]:
+        """``AUTH_ADMIN``, the tag the management sections ask for."""
+        return [{"code": ADMIN_TAG, "description": "Management of users, groups, tags and tokens"}]
+
+    def on_startup(self) -> None:
+        """Create the declared records of every application, then watch for added ones.
+
+        Every application the server holds is read with
+        ``create_declared_records``. An application written later in the
+        ``applications`` branch of the live configuration is read once the
+        server has registered it.
+        """
+        for app in list(self.server.applications.values()):
+            self.create_declared_records(app)
+        self.server.application_nodes.subscribe(self.code, insert=self._application_written)
+
+    def on_remove(self) -> None:
+        """Stop watching the ``applications`` branch of the live configuration."""
+        self.server.application_nodes.unsubscribe(self.code, any=True)
+
+    def _application_written(self, node: Any, pathlist: Any = (), **_: Any) -> None:
+        """Read the application of a node written at runtime, after the server registered it.
+
+        A node written inside an application (``pathlist`` not empty) is none.
+        """
+        if pathlist:
+            return
+        code = node.attr.get("code") or node.label
+        asyncio.get_running_loop().call_soon(self._read_added_application, code)
+
+    def _read_added_application(self, code: str) -> None:
+        """``create_declared_records`` on the application ``code``, when the server holds it."""
+        app = self.server.applications.get(code)
+        if app is not None:
+            self.create_declared_records(app)
+
+    def create_declared_records(self, app: Any) -> None:
+        """Write the missing records of the tags and system users ``app`` declares.
+
+        A tag is written as ``{code, description, owner, reserved, parent}``:
+        ``code`` and ``parent`` as declared, ``owner`` the code of ``app``,
+        missing fields from ``NEW_TAG_DEFAULTS``. A system user is written as
+        declared, with ``system`` true and no token. A record that already
+        exists is left as it is; a tag record that exists with another
+        ``owner`` is also reported with a warning, since two applications then
+        share one tag.
+
+        Nothing stops the boot or the ``joined`` call: an entry whose
+        ``code``, ``parent``, ``identity`` or ``tags`` has the wrong type, a
+        tag whose ``code`` is not a name an auth rule can hold (an operator, or
+        a character outside letters, digits and ``_``), and a user record the
+        store refuses, are not written and a warning is logged; a store that
+        cannot be built or written (``RuntimeError``, ``StorageError``) writes
+        nothing for ``app`` and a warning is logged, and the first request
+        that uses the store gets the error.
+        """
+        try:
+            self._write_declared_records(app)
+        except (RuntimeError, StorageError) as failure:
+            self._warn_declaration(app, "declared records not written", failure)
+
+    def _warn_declaration(self, app: Any, what: str, reason: Any) -> None:
+        """Log a warning about a declaration of ``app`` that was not written."""
+        logging.getLogger(__name__).warning(
+            "application %s: %s of %r: %s", self.code, what, app.code, reason
+        )
+
+    def _write_declared_records(self, app: Any) -> None:
+        """The writes of ``create_declared_records``; a store failure propagates."""
+        store = self.store
+        for tag in app.declared_tags:
+            parent = tag.get("parent", NEW_TAG_DEFAULTS["parent"])
+            if not isinstance(tag.get("code"), str) or not isinstance(parent, (str, type(None))):
+                self._warn_declaration(app, "tag not written", f"bad code or parent in {tag!r}")
+                continue
+            if not RULE_NAME.fullmatch(tag["code"]) or tag["code"].lower() in RULE_KEYWORDS:
+                self._warn_declaration(
+                    app, "tag not written", f"a rule cannot hold the code {tag['code']!r}"
+                )
+                continue
+            code = tag["code"]
+            existing = store.get_tag(code)
+            if existing is not None:
+                if existing.get("owner") != app.code:
+                    self._warn_declaration(
+                        app,
+                        "tag not written",
+                        f"{code!r} already exists with owner {existing.get('owner')!r}",
+                    )
+                continue
+            store.save_tag(
+                {
+                    **NEW_TAG_DEFAULTS,
+                    "description": tag.get("description", NEW_TAG_DEFAULTS["description"]),
+                    "reserved": tag.get("reserved", NEW_TAG_DEFAULTS["reserved"]),
+                    "code": code,
+                    "owner": app.code,
+                    "parent": parent,
+                }
+            )
+        for user in app.system_users:
+            tags = user.get("tags", [])
+            if not isinstance(user.get("identity"), str) or not (
+                isinstance(tags, list) and all(isinstance(tag, str) for tag in tags)
+            ):
+                self._warn_declaration(
+                    app, "system user not written", f"bad identity or tags in {user!r}"
+                )
+                continue
+            if store.get_user(user["identity"]) is not None:
+                continue
+            record = {**user, "tags": tags, "system": True}
+            try:
+                store.save_user(record)
+            except ValueError as refused:
+                self._warn_declaration(
+                    app, f"system user {user['identity']!r} not written", refused
+                )
+
+    def get_tags_refusal(self, body: dict[str, Any]) -> dict[str, Any]:
+        """The ``{"error": ...}`` answer for a ``tags`` field the management refuses.
+
+        Refused: a ``tags`` value that is not a list of strings, and a name
+        that is not the code of a tag record. Empty when ``body`` has no
+        ``tags`` field or every name is the code of a tag record.
+        """
+        tags = body.get("tags", [])
+        if not (isinstance(tags, list) and all(isinstance(tag, str) for tag in tags)):
+            return {"error": "tags must be a list of tag codes"}
+        known = {record["code"] for record in self.store.tag_list}
+        unknown = [tag for tag in tags if tag not in known]
+        if not unknown:
+            return {}
+        return {"error": f"Unknown tags: {', '.join(unknown)}"}
 
     def _bus_only(self, request: Any) -> None:
         """Refuse a caller that did not come through the KajennBus (403)."""

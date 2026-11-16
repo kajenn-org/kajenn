@@ -29,9 +29,9 @@ Every route asks ``auth_rule="AUTH_ADMIN"``. Routes, under ``/_auth/tokens/``:
 every joined process, so the token is refused at once.
 
 ``secret_hash`` never crosses the wire. Errors answer ``{"error": message}``
-with status 200; a tag list the store refuses (``ValueError`` from
-``issue_token``: empty, or neither a list nor ``"*"``) is such an error, and no
-record is written.
+with status 200; a list naming a tag that has no record is such an error
+(``"*"`` names none), and so is a tag list the store refuses (``ValueError`` from
+``issue_token``: empty, or neither a list nor ``"*"``). No record is written.
 """
 
 from __future__ import annotations
@@ -84,6 +84,10 @@ class TokensSection(RoutingClass):
             return {"error": "User is required"}
         if self.store.get_user(user) is None:
             return {"error": f"No such user: {user}"}
+        if body.get("tags") != "*":
+            refusal = self.application.get_tags_refusal(body)
+            if refusal:
+                return refusal
         try:
             key = self.store.issue_token(user, body.get("tags", []), body.get("expires_at"))
         except ValueError as refused:

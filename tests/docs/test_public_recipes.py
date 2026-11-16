@@ -333,6 +333,9 @@ def test_management_login_tokens_and_permissions(recipes, serve_recipe, monkeypa
     with serve_recipe(recipes.get_code("guides/management.md", "class Members")) as server:
         assert server.get_response("/_server/monitor/snapshot")[0] == 401
         assert server.get_response("/_server/monitor/snapshot", headers=operator)[0] == 200
+        status, body = server.get_response("/_auth/tags/create_tag?code=member", b"{}",
+                                          {**operator, "Content-Type": "application/json"})
+        assert status == 200 and json.loads(body)["code"] == "member", body
         payload = json.dumps({"password": "demo-password", "password_confirm": "demo-password", "tags": ["member"]}).encode()
         status, body = server.get_response("/_auth/users/create_user?identity=alice", payload,
                                           {**operator, "Content-Type": "application/json"})

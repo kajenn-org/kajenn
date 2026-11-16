@@ -76,6 +76,12 @@ method along the MRO, so an override stays subscribed. ``on_shutdown``,
 An app READS that subtree back through ``self.config(path)``, which prefixes
 ``applications.<code>.`` and delegates to the server's own read door: the app
 never holds a slice of the tree, only an address in it.
+
+An application declares the tags it owns in ``declared_tags`` and the system
+users it needs in ``system_users``; both are empty on the base. The
+authentication application creates the missing records. A tag is written by
+its full name everywhere, as the author chose it: in ``declared_tags``, in
+``auth_rule`` and in the tags of a system user.
 """
 
 from __future__ import annotations
@@ -451,6 +457,25 @@ class BaseApplication:
         the module URL the shell imports to learn that renderer.
         """
         return {"panel": "generic"}
+
+    @property
+    def declared_tags(self) -> list[dict[str, Any]]:
+        """The tags this application owns: one dict per tag.
+
+        Each dict has ``code``, the full tag name the author also writes in
+        ``auth_rule``, and optionally ``description``, ``reserved`` and
+        ``parent`` (the full name of another tag). The base declares none.
+        """
+        return []
+
+    @property
+    def system_users(self) -> list[dict[str, Any]]:
+        """The system users this application needs: one complete user record each.
+
+        A record carries ``identity``, ``status``, ``tags`` and ``groups``;
+        every tag is written by its full name. The base declares none.
+        """
+        return []
 
     def _broadcast_callable(self, name: str) -> Callable[..., Any] | None:
         """The callable ``applications_broadcast`` runs for the hook ``name``, or ``None``.

@@ -24,7 +24,9 @@ Every route asks ``auth_rule="AUTH_ADMIN"``. Routes, under ``/_auth/groups/``:
   An absent code is an error;
 - ``delete(code)`` — ``{"code", "deleted"}``.
 
-Errors answer ``{"error": message}`` with status 200. A group that still has
+Errors answer ``{"error": message}`` with status 200. ``create_group`` and
+``save`` refuse a ``tags`` field naming a tag that has no record, and nothing is
+written. A group that still has
 members is refused by ``delete_group`` with ``ValueError``: that refusal is
 such an error, and the record stays.
 """
@@ -85,6 +87,9 @@ class GroupsSection(RoutingClass):
             return {"error": "Code is required"}
         if self.store.get_group(code) is not None:
             return {"error": f"Group already exists: {code}"}
+        refusal = self.application.get_tags_refusal(body_data or {})
+        if refusal:
+            return refusal
         record = {"tags": [], **self.fields_of(body_data or {}), "code": code}
         self.store.save_group(record)
         return record
@@ -95,6 +100,9 @@ class GroupsSection(RoutingClass):
         record = self.store.get_group(code)
         if record is None:
             return {"error": f"No such group: {code}"}
+        refusal = self.application.get_tags_refusal(body_data or {})
+        if refusal:
+            return refusal
         record.update(self.fields_of(body_data or {}))
         self.store.save_group(record)
         return record
