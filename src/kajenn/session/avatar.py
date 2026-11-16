@@ -14,11 +14,13 @@
 
 """Avatar — the ONE authenticated identity type across the package.
 
-An ``Avatar`` is a plain slotted value object: an identity string, its
-authorization tags, and an extensible ``Bag`` of per-user data. ``AuthCore``
-returns it and sessions carry it — "nobody" is ``None`` uniformly, never an
-anonymous Avatar. The constructor normalizes ``tags=None`` to an empty list
-(the identity boundary for e.g. a JWT null tags claim). No framework machinery.
+An ``Avatar`` is a plain slotted value object: an identity string, the active
+group, its authorization tags, and an extensible ``Bag`` of per-user data.
+``AuthCore`` returns it and sessions carry it — "nobody" is ``None``
+uniformly, never an anonymous Avatar. The constructor normalizes ``tags=None``
+to an empty list (the identity boundary for e.g. a JWT null tags claim).
+``group`` is the group the identity entered with, the one whose tags it
+carries; ``None`` when it entered with no group. No framework machinery.
 """
 
 from __future__ import annotations
@@ -29,20 +31,28 @@ __all__ = ["Avatar"]
 
 
 class Avatar:
-    """User identity with authorization tags and extensible Bag data."""
+    """User identity with its active group, authorization tags and extensible Bag data."""
 
-    __slots__ = ("_identity", "_tags", "_data")
+    __slots__ = ("_identity", "_tags", "_group", "_data")
 
-    def __init__(self, identity: str, tags: list[str] | None = None) -> None:
+    def __init__(
+        self, identity: str, tags: list[str] | None = None, group: str | None = None
+    ) -> None:
         """Build the avatar; ``tags=None`` normalizes to an empty list."""
         self._identity = identity
         self._tags = list(tags) if tags else []
+        self._group = group
         self._data = Bag()
 
     @property
     def identity(self) -> str:
         """User identifier (username, email, ...)."""
         return self._identity
+
+    @property
+    def group(self) -> str | None:
+        """The active group, whose tags the avatar carries; ``None`` without a group."""
+        return self._group
 
     @property
     def tags(self) -> list[str]:

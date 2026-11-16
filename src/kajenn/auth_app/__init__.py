@@ -14,11 +14,23 @@
 
 """The authentication application package.
 
-It holds the store of users, groups, tags and tokens (`AuthStore`, with its
-file backend `FileAuthStore`, in `auth_store`). It is the subpackage
-``kajenn.auth_app``: ``import kajenn`` does not load it.
+It holds the authentication application (`AuthApplicationBase` and its
+grammar, in `auth_app`), its login methods (`auth_method`), its management
+sections (`auth_sections`) and the store of users, groups, tags and tokens
+(`AuthStore`, with its file backend `FileAuthStore`, in `auth_store`). It is
+the subpackage ``kajenn.auth_app``: ``import kajenn`` does not load it.
 """
 
+from .auth_app import AuthApplicationBase, AuthApplicationGrammar
+from .auth_method import AuthMethod, AuthMethodRegistry, PasswordMethod
 from .auth_store import AuthStore, FileAuthStore
 
-__all__ = ["AuthStore", "FileAuthStore"]
+__all__ = [
+    "AuthApplicationBase",
+    "AuthApplicationGrammar",
+    "AuthMethod",
+    "AuthMethodRegistry",
+    "AuthStore",
+    "FileAuthStore",
+    "PasswordMethod",
+]
