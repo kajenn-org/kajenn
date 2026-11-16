@@ -81,6 +81,7 @@ import uvicorn
 from .application import BaseApplication
 from .db import DbHandlerBase
 from .exceptions import HTTPException
+from ._event_metrics import EventMetrics
 from ._http_metrics import ROUTE_SCOPE_KEY, CountedExchange, HttpMetrics
 from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
@@ -210,6 +211,7 @@ class BaseServer:
         self._lifespan = Lifespan(self)
         self._registry = RequestRegistry(self)
         self._http_metrics = HttpMetrics()
+        self._event_metrics = EventMetrics()
         self._websockets = WebSocketRegistry()
         self._websocket_origins: list[str] = list(websocket.get("origins") or [])
         self._websocket_max_concurrent: int = int(
@@ -634,6 +636,11 @@ class BaseServer:
         """The HTTP request families, counted by ``_serve_http``."""
         return self._http_metrics
 
+    @property
+    def event_metrics(self) -> EventMetrics:
+        """The credential check, WSX message and websocket connection families."""
+        return self._event_metrics
+
     async def run_sync(self, fn: Callable[..., Any], *args: Any) -> Any:
         """Dispatch blocking ``fn`` onto the pool (the app-side sync protocol).
 
@@ -933,16 +940,29 @@ class BaseServer:
         a connection it does not hold. It is the admitted mode of the design,
         the one a hosted framework with a websocket protocol of its own reaches
         the server by.
+
+        Every connection handed over is counted in ``event_metrics`` with the
+        code of the application the demux chose (``""`` when none) and its
+        kind, ``raw`` for ``serve_websocket``, ``wsx`` for ``WsxConnection``:
+        one more opened and one more live when the handover starts, one less
+        live when it returns. A connection refused above the demux is not
+        counted.
         """
         if self.state != RUNNING:
             await WebSocket(scope, receive, send).refuse(1013, "server restarting")
             return
-        app, target = self.demux(scope)
+        served, app, target = self._demux_application(scope)
+        code = served.code if served is not None else ""
         raw_seam = getattr(app, "serve_websocket", None)
-        if raw_seam is not None:
-            await raw_seam(target, receive, send)
-            return
-        await WsxConnection(self, scope, receive, send).serve()
+        kind = "raw" if raw_seam is not None else "wsx"
+        self.event_metrics.websocket_opened(code, kind)
+        try:
+            if raw_seam is not None:
+                await raw_seam(target, receive, send)
+            else:
+                await WsxConnection(self, scope, receive, send).serve()
+        finally:
+            self.event_metrics.websocket_closed(code, kind)
 
     @property
     def state(self) -> str:

@@ -82,6 +82,7 @@ from .application import BaseApplication, is_broadcast_hook
 from .applications.mcp import McpTransport
 from .applications.openapi import ApplicationMeta
 from .exceptions import ROUTER_ERRORS, HTTPBadRequest, HTTPException
+from ._exposition import families_text
 from ._http_metrics import ROUTE_SCOPE_KEY
 from .plugins.openapi.plugin import METHOD_NOT_ALLOWED, OpenAPIPlugin
 from .request import Request
@@ -222,6 +223,18 @@ class RoutedApplication(BaseApplication, RoutingClass):
     def mcp_engine(self) -> Any:
         """The MCP engine driving this application's tools."""
         return self.mcp_transport.engine
+
+    def prometheus_metrics(self) -> str:
+        """This application's own families, as exposition text: the MCP ones.
+
+        The calls answered on ``_meta/mcp`` by method, tool and outcome, and
+        the ``tools/call`` duration, counted by ``mcp_transport.metrics``. A
+        spawned application's text reaches ``_server/metrics`` through the
+        forwarded hook. An application that overrides the hook includes
+        ``super().prometheus_metrics()`` in its text, or these families leave
+        ``_server/metrics``.
+        """
+        return families_text(self.mcp_transport.metrics.collect())
 
     def meta_url(self, path: str) -> str:
         """The public URL of ``_meta/<path>`` of this application."""

@@ -25,21 +25,17 @@ What the suite pins:
 
 from __future__ import annotations
 
-import asyncio
-import json
-from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
 from genro_routes import route
 from prometheus_client import CollectorRegistry, Counter, generate_latest
-from prometheus_client.parser import text_string_to_metric_families
 
 from kajenn import AsgiServer, RoutedApplication
 from kajenn.application import BaseApplication
 from kajenn.exceptions import Redirect
 from kajenn.streaming import StreamingResponse
-from tests.conftest import start_server
+from tests.conftest import call, exchange, json_body, read_samples, running, start_server, value
 from tests.storage_support import MemoryApiKeyStore
 
 
@@ -85,65 +81,6 @@ class Silent(BaseApplication):
 async def metrics_server(*applications: Any) -> AsgiServer:
     return await start_server(AsgiServer(
         applications=list(applications), tokens={"store_class": MemoryApiKeyStore}))
-
-
-async def call(server: AsgiServer, method: str, path: str, body: bytes = b"",
-               headers: list[tuple[bytes, bytes]] | None = None) -> dict[str, Any]:
-    """One request through the server's ASGI entry point: status and body."""
-    sent = await exchange(server, method, path, body, headers)
-    start = next(message for message in sent if message["type"] == "http.response.start")
-    answer = b"".join(message.get("body", b"") for message in sent
-                      if message["type"] == "http.response.body")
-    return {"status": start["status"], "body": answer}
-
-
-async def exchange(server: AsgiServer, method: str, path: str, body: bytes = b"",
-                   headers: list[tuple[bytes, bytes]] | None = None) -> list[dict[str, Any]]:
-    """One request through the server's ASGI entry point: every message sent."""
-    scope = {
-        "type": "http", "method": method, "path": path, "query_string": b"",
-        "headers": [(b"host", b"site.example"), *(headers or [])], "scheme": "http",
-        "client": ("10.0.0.1", 5555),
-    }
-    sent: list[dict[str, Any]] = []
-    requested = False
-    staying = asyncio.Event()
-
-    async def receive() -> dict[str, Any]:
-        """The body once, then nothing: the client stays until the answer ends."""
-        nonlocal requested
-        if requested:
-            await staying.wait()
-        requested = True
-        return {"type": "http.request", "body": body, "more_body": False}
-
-    async def send(message: dict[str, Any]) -> None:
-        sent.append(message)
-
-    await server(scope, receive, send)
-    return sent
-
-
-async def read_samples(server: AsgiServer) -> list[Any]:
-    """Every sample of ``/_server/metrics``, read with an API key holding only SERVER_METRICS."""
-    key = server.api_key_store.issue("prometheus", ["SERVER_METRICS"])
-    answer = await call(server, "GET", "/_server/metrics",
-                        headers=[(b"authorization", f"Bearer {key}".encode())])
-    assert answer["status"] == 200
-    return [sample for family in text_string_to_metric_families(answer["body"].decode())
-            for sample in family.samples]
-
-
-def value(samples: list[Any], name: str, **labels: str) -> float:
-    """The value of the sample ``name`` with exactly ``labels`` (``app="_server"`` added)."""
-    wanted = {"app": "_server", **labels}
-    [found] = [sample.value for sample in samples
-               if sample.name == name and sample.labels == wanted]
-    return found
-
-
-def json_body(data: dict[str, Any]) -> tuple[bytes, list[tuple[bytes, bytes]]]:
-    return json.dumps(data).encode(), [(b"content-type", b"application/json")]
 
 
 async def test_requests_to_a_route_are_counted_with_sizes_and_duration() -> None:
@@ -223,26 +160,6 @@ class Recipe(CONFIGURATION_TEMPLATES["default"]):
         cfg.applications().application(code="billing", app_class=Billing,
                                        spawner="subprocess", request_timeout=5)
 '''
-
-
-@asynccontextmanager
-async def running(config: str):
-    server = AsgiServer(config=config)
-    inbox: asyncio.Queue = asyncio.Queue()
-    outbox: asyncio.Queue = asyncio.Queue()
-    lifespan = asyncio.create_task(server(
-        {"type": "lifespan", "asgi": {"version": "3.0"}}, inbox.get, outbox.put))
-    await inbox.put({"type": "lifespan.startup"})
-    assert (await outbox.get())["type"] == "lifespan.startup.complete"
-    try:
-        async with asyncio.timeout(30):
-            while not all(server.is_enabled(code) for code in server.applications):
-                await asyncio.sleep(0.05)
-        yield server
-    finally:
-        await inbox.put({"type": "lifespan.shutdown"})
-        await outbox.get()
-        await lifespan
 
 
 async def test_a_spawned_application_counts_with_the_route_of_its_process(tmp_path) -> None:

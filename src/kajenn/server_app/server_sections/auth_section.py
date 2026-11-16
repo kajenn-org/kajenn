@@ -36,7 +36,8 @@ from typing import TYPE_CHECKING, Any
 
 from genro_routes import RoutingClass, route
 
-from kajenn.exceptions import HTTPForbidden
+from kajenn._event_metrics import accepted_scheme, refused_scheme
+from kajenn.exceptions import HTTPForbidden, HTTPUnauthorized
 
 if TYPE_CHECKING:
     from ..auth_method import AuthMethod
@@ -126,11 +127,23 @@ class AuthSection(RoutingClass):
         ``HTTPUnauthorized`` (status 401 for a bus caller). Reachable through
         the bus only: an HTTP caller gets 403.
 
+        Every verification is counted in ``server.event_metrics``: an accepted
+        one with the scheme of the backend that accepted it, a refused one
+        with the scheme of the header (``other`` when it is not ``Basic`` or
+        ``Bearer``, a malformed value included). A caller refused by the bus
+        gate is not counted.
+
         Note:
             Route: POST /_server/auth/authenticate
         """
         self._bus_only(_request)
-        avatar, valid_until = self.server.auth_core.verify_with_validity(credential)
+        metrics = self.server.event_metrics
+        try:
+            avatar, valid_until, backend = self.server.auth_core._verify_backend(credential)
+        except HTTPUnauthorized:
+            metrics.record_credential_check(refused_scheme(credential), "refused")
+            raise
+        metrics.record_credential_check(accepted_scheme(backend), "accepted")
         return {
             "identity": avatar.identity,
             "tags": avatar.tags,

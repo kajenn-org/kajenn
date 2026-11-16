@@ -99,7 +99,7 @@ from kajenn.routed_application import RoutedApplication
 from kajenn.session import Avatar
 from kajenn.well_known import as_list
 
-from ._exposition import families_text
+from .._exposition import families_text
 from .auth_method import AuthMethod, PasswordMethod
 from .oidc_method import OidcMethod
 from .server_sections import (
@@ -480,7 +480,9 @@ class ServerApplication(RoutedApplication):
         ``WorkPool`` gauges (``pool.metrics``), the requests in flight
         (``requests.in_flight``), for every started spawner backend the
         processes still running, and the HTTP request families
-        (``server.http_metrics``).
+        (``server.http_metrics``), the credential check, WSX message and
+        websocket connection families (``server.event_metrics``), and the
+        families of ``RoutedApplication.prometheus_metrics`` (MCP).
         """
         server = self.server
         process = psutil.Process()
@@ -528,7 +530,8 @@ class ServerApplication(RoutedApplication):
                 value=server.requests.in_flight),
             spawned,
             *server.http_metrics.collect(),
-        ])
+            *server.event_metrics.collect(),
+        ]) + super().prometheus_metrics()
 
     @route()
     def index(self) -> dict[str, Any]:
@@ -583,9 +586,20 @@ class ServerApplication(RoutedApplication):
             is wired — with ``remaining_attempts`` when the identity has a
             record.
 
+        Every answer is counted in ``server.event_metrics`` as a check of
+        scheme ``password``: ``accepted`` on success, ``refused`` for every
+        error answer.
+
         Note:
             Route: POST /_server/login
         """
+        answer = self._login_answer(identity, password, _request)
+        outcome = "refused" if "error" in answer else "accepted"
+        self.server.event_metrics.record_credential_check("password", outcome)
+        return answer
+
+    def _login_answer(self, identity: str, password: str, _request: Any) -> dict[str, Any]:
+        """The answer of ``login``: verify, lock out, attach; see ``login``."""
         if not identity or not password:
             return {"error": "Identity and password are required"}
         user_store = getattr(_request.server, "user_store", None)
