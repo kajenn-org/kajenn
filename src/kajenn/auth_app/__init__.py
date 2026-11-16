@@ -15,7 +15,8 @@
 """The authentication application package.
 
 It holds the authentication application (`AuthApplicationBase` and its
-grammar, in `auth_app`), its login methods (`auth_method`), its management
+grammar, in `auth_app`), its login methods (`auth_method`, and the OIDC
+login `OidcMethod` in `oidc_method`), its management
 sections (`auth_sections`) and the store of users, groups, tags and tokens
 (`AuthStore`, with its file backend `FileAuthStore`, in `auth_store`). It is
 the subpackage ``kajenn.auth_app``: ``import kajenn`` does not load it.
@@ -24,6 +25,7 @@ the subpackage ``kajenn.auth_app``: ``import kajenn`` does not load it.
 from .auth_app import AuthApplicationBase, AuthApplicationGrammar
 from .auth_method import AuthMethod, AuthMethodRegistry, PasswordMethod
 from .auth_store import AuthStore, FileAuthStore
+from .oidc_method import OidcMethod
 
 __all__ = [
     "AuthApplicationBase",
@@ -32,5 +34,6 @@ __all__ = [
     "AuthMethodRegistry",
     "AuthStore",
     "FileAuthStore",
+    "OidcMethod",
     "PasswordMethod",
 ]

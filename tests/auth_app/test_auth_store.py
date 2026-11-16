@@ -401,6 +401,46 @@ class TestTokenVerify:
         assert store.verify_token(key) is None
 
 
+class TestExternalLookups:
+    def test_a_user_is_found_by_iss_and_sub(self, store) -> None:
+        linked = _user(store, external_ids=[{"iss": "https://idp.example.org", "sub": "42"}])
+        store.save_user(linked)
+        store.save_user(_user(store, identity="bob"))
+        assert store.get_user_by_external_id("https://idp.example.org", "42") == linked
+
+    def test_iss_and_sub_must_both_match(self, store) -> None:
+        store.save_user(
+            _user(store, external_ids=[{"iss": "https://idp.example.org", "sub": "42"}])
+        )
+        assert store.get_user_by_external_id("https://other.example.org", "42") is None
+        assert store.get_user_by_external_id("https://idp.example.org", "43") is None
+
+    def test_a_user_with_several_external_ids_is_found_by_each(self, store) -> None:
+        store.save_user(
+            _user(
+                store,
+                external_ids=[
+                    {"iss": "https://idp.example.org", "sub": "42"},
+                    {"iss": "https://other.example.org", "sub": "7"},
+                ],
+            )
+        )
+        assert store.get_user_by_external_id("https://other.example.org", "7")["identity"] == (
+            "alice"
+        )
+
+    def test_users_are_listed_by_email_compared_lowercased(self, store) -> None:
+        store.save_user(_user(store, email="Alice@Example.org"))
+        store.save_user(_user(store, identity="alice2", email="alice@example.org"))
+        store.save_user(_user(store, identity="bob"))
+        found = store.get_user_list_by_email("ALICE@example.ORG")
+        assert sorted(user["identity"] for user in found) == ["alice", "alice2"]
+
+    def test_an_unknown_email_lists_nothing(self, store) -> None:
+        store.save_user(_user(store, email=None))
+        assert store.get_user_list_by_email("nobody@example.org") == []
+
+
 class TestFileAuthStore:
     def test_write_without_key_material_raises(self, tmp_path) -> None:
         store = FileAuthStore(site_storage(tmp_path))

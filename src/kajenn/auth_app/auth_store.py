@@ -42,6 +42,8 @@ Contract::
         delete_group(code) -> bool                  # ValueError while it has members
         delete_tag(code) -> bool
         delete_token(key_id) -> bool
+        get_user_by_external_id(iss, sub) -> dict | None
+        get_user_list_by_email(email) -> list[dict]
         get_user_tags(identity, group=None) -> list[str]
         verify_password(identity, password) -> dict | None
         hash_password(password) -> str
@@ -76,6 +78,12 @@ The user record::
 a program: it never verifies a password and enters only with a token.
 ``failed_attempts`` and ``last_failed_at`` are optional: a login surface keeps
 its lockout counter on the record; the store neither reads nor enforces them.
+
+``get_user_by_external_id`` returns the user whose ``external_ids`` holds
+``{iss, sub}``, or None. ``get_user_list_by_email`` returns every user whose
+``email`` equals ``email``; both sides are compared lowercased. The base class
+implements both over ``user_list``; a database backend may rewrite them with
+a query.
 
 The group record: ``{"code": "staff", "tags": ["reports"]}``.
 ``delete_group`` raises ``ValueError`` while a user has the group among its
@@ -268,6 +276,19 @@ class AuthStore:
                 "is not one of its groups"
             )
         self.write_user(record)
+
+    def get_user_by_external_id(self, iss: str, sub: str) -> dict[str, Any] | None:
+        """The user whose ``external_ids`` holds ``{iss, sub}``, or None."""
+        for user in self.user_list:
+            for external_id in user.get("external_ids", []):
+                if external_id.get("iss") == iss and external_id.get("sub") == sub:
+                    return user
+        return None
+
+    def get_user_list_by_email(self, email: str) -> list[dict[str, Any]]:
+        """Every user whose ``email`` equals ``email``, compared lowercased."""
+        wanted = email.lower()
+        return [user for user in self.user_list if (user.get("email") or "").lower() == wanted]
 
     def get_user_tags(self, identity: str, group: str | None = None) -> list[str]:
         """The user's own tags plus the tags of ``group`` (default: its primary group).

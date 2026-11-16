@@ -26,6 +26,13 @@ Configuration, under the application element (``AuthApplicationGrammar``)::
     auth_app = applications.application(app_class=AuthApplicationBase, code="_auth")
     auth_app.store(store_class=FileAuthStore, prefix="auth")
     auth_app.login(max_attempts=5, backoff=30)
+    auth_app.oidc().provider(
+        code="google",
+        issuer="https://accounts.example.com",
+        client_id="client-123",
+        client_secret=EnvResolver("GOOGLE_CLIENT_SECRET"),
+    )
+    auth_app.self_registration(status="waiting", tags=["GUEST"])
 
 - ``store(store_class=None, **params)`` — the application builds
   ``store_class(server.storage, **params)``; ``FileAuthStore`` when
@@ -35,6 +42,21 @@ Configuration, under the application element (``AuthApplicationGrammar``)::
 - ``login(max_attempts, backoff)`` — the lockout policy, defaults 5 attempts
   and 30 seconds. A hand-built server passes the same dict as the ``login``
   kwarg.
+- ``oidc()`` with one ``provider(code, issuer, client_id, client_secret,
+  scopes)`` per external provider; ``client_secret`` is optional and is
+  written as a resolver; ``scopes`` defaults to ``openid email profile``. Each
+  provider registers an ``OidcMethod`` with id ``oidc:<code>`` and routes
+  ``/_auth/oidc:<code>/start`` and ``/_auth/oidc:<code>/callback`` (see
+  ``oidc_method``). Without a provider no OIDC route exists. A hand-built
+  server passes ``oidc={code: {issuer, client_id, ...}}``. A provider declared
+  on a server without ``external_url`` raises ``ValueError`` when the server
+  takes the application: the callback url handed to the provider is absolute.
+- ``self_registration(status, tags)`` — what happens to a user an external
+  provider recognises and the store does not have: a record is written with
+  that ``status`` and those ``tags``. One setting for every provider. Without
+  the word such a login is refused. A setting whose ``status`` is not a user
+  status is not applied: self registration stays off and a warning is logged.
+  A hand-built server passes the same dict as the ``self_registration`` kwarg.
 
 Credentials accepted: a password, through ``/_auth/login`` or an
 ``Authorization: Basic`` header, and a ``gak_`` token as
@@ -66,7 +88,8 @@ Routes called by a client:
   the user does not belong to;
 - ``logout(session_id)`` — deletes the session; answers ``{"status": "ok"}``;
 - ``login_methods`` — public: ``{"methods": [descriptor, ...]}`` from the
-  registry of login methods (``PasswordMethod`` is registered at construction).
+  registry of login methods: ``PasswordMethod`` first, then one ``OidcMethod``
+  per declared provider.
 
 Management, every route asking ``AUTH_ADMIN``: ``/_auth/users/...``,
 ``/_auth/groups/...``, ``/_auth/tags/...``, ``/_auth/tokens/...`` (see
@@ -92,9 +115,11 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
 import time
 from typing import Any, ClassVar
 
+from genro_bag import BagResolver
 from genro_builders.builder import element
 from genro_routes import RoutingClass, route
 
@@ -105,7 +130,8 @@ from kajenn.session import Avatar
 
 from .auth_method import AuthMethod, AuthMethodRegistry, PasswordMethod
 from .auth_sections import GroupsSection, TagsSection, TokensSection, UsersSection
-from .auth_store import AUTHENTICATING_STATUS, AuthStore, FileAuthStore
+from .auth_store import AUTHENTICATING_STATUS, USER_STATUSES, AuthStore, FileAuthStore
+from .oidc_method import OidcMethod
 
 __all__ = ["AuthApplicationBase", "AuthApplicationGrammar"]
 
@@ -125,6 +151,26 @@ class AuthApplicationGrammar(ApplicationGrammar):
     def login(self, max_attempts: int = None, backoff: float = None) -> None:
         """Lockout policy of the password check: ``max_attempts`` and ``backoff`` seconds."""
 
+    @element(sub_tags="provider", collection_key="code", node_label="oidc")
+    def oidc(self) -> None:
+        """Collection of the external OIDC providers, each labelled by its ``code``."""
+
+    @element(parent_tags="oidc", sub_tags="")
+    def provider(
+        self,
+        code: str,
+        issuer: str = None,
+        client_id: str = None,
+        client_secret: str | BagResolver = None,
+        scopes: str = "openid email profile",
+    ) -> None:
+        """One OIDC provider: ``code`` (required), ``issuer``, ``client_id``,
+        optional ``client_secret`` and ``scopes``."""
+
+    @element(sub_tags="", node_label="self_registration")
+    def self_registration(self, status: str = None, tags: list = None) -> None:
+        """Self registration of a user unknown to the store: birth ``status`` and ``tags``."""
+
 
 class AuthApplicationBase(RoutedApplication):
     """The authentication application, mounted at ``/_auth`` (see module docstring)."""
@@ -140,11 +186,16 @@ class AuthApplicationBase(RoutedApplication):
     def __init__(self, **kwargs: Any) -> None:
         self._store_options: dict[str, Any] = kwargs.pop("store", {})
         self._login_policy: dict[str, Any] = kwargs.pop("login", {})
+        self._oidc_providers: dict[str, dict[str, Any]] = kwargs.pop("oidc", {})
+        self._self_registration: dict[str, Any] = {}
+        self.self_registration = kwargs.pop("self_registration", {})
         self._store: AuthStore | None = None
         self._sections: dict[str, RoutingClass] = {}
         super().__init__(**kwargs)
         self._auth_method_registry = AuthMethodRegistry(self)
         self.register_auth_method(PasswordMethod(self, "password"))
+        for code, provider in self.oidc_providers.items():
+            self.register_auth_method(OidcMethod(self, f"oidc:{code}", code, provider))
         self.attach_section(UsersSection(self), name="users")
         self.attach_section(GroupsSection(self), name="groups")
         self.attach_section(TagsSection(self), name="tags")
@@ -152,24 +203,58 @@ class AuthApplicationBase(RoutedApplication):
 
     @RoutedApplication.server.setter
     def server(self, value: Any) -> None:
-        """Take ownership, then read the ``store`` and ``login`` words of the recipe."""
-        RoutedApplication.server.fset(self, value)
-        self.read_declared_configuration()
+        """Read the words of the recipe, take ownership, then check ``external_url``.
 
-    def read_declared_configuration(self) -> None:
-        """Fold the recipe's ``store`` and ``login`` nodes into this application.
+        The recipe is read before ownership: an OIDC method it declares joins
+        the router while the router has no server to arm its plugins from.
 
-        Reads nothing when the owning server carries no configuration.
+        Raises:
+            ValueError: An OIDC provider is declared and the server has no
+                ``external_url``.
         """
-        handler = getattr(self.server, "config", None)
-        if handler is None:
-            return
+        handler = getattr(value, "config", None)
+        if handler is not None:
+            self.read_declared_configuration(handler)
+        RoutedApplication.server.fset(self, value)
+        if self.oidc_providers and self.server.external_url is None:
+            codes = ", ".join(sorted(self.oidc_providers))
+            raise ValueError(
+                f"application {self.code!r}: oidc provider(s) {codes} declared but the "
+                "server has no external_url, needed for the absolute redirect_uri"
+            )
+
+    def read_declared_configuration(self, handler: Any) -> None:
+        """Fold the recipe's ``store``, ``login``, ``oidc`` and ``self_registration`` nodes.
+
+        ``handler`` is the configuration handler of the server taking the
+        application. Each provider found is added to ``oidc_providers`` and
+        registered as an ``OidcMethod``.
+        """
         section = f"applications.{self.code}"
         store_node = handler.node(f"{section}.store")
         if store_node is not None:
             self._store_options = handler.open_attrs(store_node)
         if handler.node(f"{section}.login") is not None:
             self._login_policy = handler.closed_attrs(f"{section}.login", "max_attempts", "backoff")
+        if handler.node(f"{section}.self_registration") is not None:
+            self.self_registration = handler.closed_attrs(
+                f"{section}.self_registration", "status", "tags"
+            )
+        oidc_node = handler.node(f"{section}.oidc")
+        if oidc_node is None:
+            return
+        for child in oidc_node.value:
+            provider = handler.closed_attrs(
+                f"{section}.oidc.{child.label}",
+                "issuer",
+                "client_id",
+                "client_secret",
+                "scopes",
+            )
+            self.oidc_providers[child.label] = provider
+            self.register_auth_method(
+                OidcMethod(self, f"oidc:{child.label}", child.label, provider)
+            )
 
     # ── store, policy, registry, sections ──────────────────────────────
 
@@ -203,6 +288,33 @@ class AuthApplicationBase(RoutedApplication):
     def login_policy(self) -> dict[str, Any]:
         """The lockout policy from the ``login`` word (may be empty)."""
         return self._login_policy
+
+    @property
+    def oidc_providers(self) -> dict[str, dict[str, Any]]:
+        """The declared OIDC providers, keyed by code (may be empty)."""
+        return self._oidc_providers
+
+    @property
+    def self_registration(self) -> dict[str, Any]:
+        """The ``self_registration`` setting: ``status`` and ``tags``; empty when absent."""
+        return self._self_registration
+
+    @self_registration.setter
+    def self_registration(self, setting: dict[str, Any]) -> None:
+        """Take the setting. One whose ``status`` is not a user status is not applied.
+
+        The refused setting leaves self registration off and a warning in the log.
+        """
+        if setting and setting.get("status") not in USER_STATUSES:
+            logging.getLogger(__name__).warning(
+                "application %s: self_registration not applied, status %r is not one of %s",
+                self.code,
+                setting.get("status"),
+                ", ".join(USER_STATUSES),
+            )
+            self._self_registration = {}
+            return
+        self._self_registration = setting
 
     @property
     def auth_method_registry(self) -> AuthMethodRegistry:
