@@ -82,6 +82,7 @@ from .application import BaseApplication, is_broadcast_hook
 from .applications.mcp import McpTransport
 from .applications.openapi import ApplicationMeta
 from .exceptions import ROUTER_ERRORS, HTTPBadRequest, HTTPException
+from ._http_metrics import ROUTE_SCOPE_KEY
 from .plugins.openapi.plugin import METHOD_NOT_ALLOWED, OpenAPIPlugin
 from .request import Request
 from .streaming import StreamingResponse
@@ -344,7 +345,13 @@ class RoutedApplication(BaseApplication, RoutingClass):
         gives the answer of its new address, with a ``Deprecation`` header and
         a log line; ``mcp`` moves only while the application has no route of
         that name.
+
+        The route name ``execute`` writes under ``"kajenn.route"`` ends up in
+        the scope this call received, also for a URL of 0.8.0 answered on a
+        copy of it; ``_meta/mcp`` writes ``"_meta/mcp"`` there. The server's
+        ``http_metrics`` reads it.
         """
+        served = scope
         path = str(scope.get("path", "/")).strip("/")
         moved = self.moved_url(path)
         if moved is not None:
@@ -354,12 +361,17 @@ class RoutedApplication(BaseApplication, RoutingClass):
             path = moved
             scope = {**scope, "path": "/" + moved, "raw_path": ("/" + moved).encode()}
         if path == META_MCP:
+            served[ROUTE_SCOPE_KEY] = META_MCP
             await self.mcp_transport.handle(scope, receive, send)
             return
         scope.setdefault("kajenn.channel", self.http_channel)
         request = Request(scope, receive, server=self.server, application=self)
         await request.init()
-        result = await self.execute(request)
+        try:
+            result = await self.execute(request)
+        finally:
+            if scope is not served and ROUTE_SCOPE_KEY in scope:
+                served[ROUTE_SCOPE_KEY] = scope[ROUTE_SCOPE_KEY]
         if isinstance(result, StreamingResponse):
             await result(scope, receive, send)
             return
@@ -397,7 +409,10 @@ class RoutedApplication(BaseApplication, RoutingClass):
         The single execution point every face reaches (#37): REST through
         ``__call__``, an MCP ``tools/call`` through the transport, WSX and the
         KajennBus through ``__call__``. The resolved node is left on
-        ``request.node``. An async handler runs on the loop, a sync one through
+        ``request.node`` and, when the path matches a route (refused or not:
+        every ``node.error`` but ``not_found``), its path on
+        ``request.scope["kajenn.route"]``: the route name, never the request
+        path with its parameters. An async handler runs on the loop, a sync one through
         ``server.run_sync`` with ``route_cleanup`` after it on the same thread.
         A scope without ``auth`` is authenticated before resolution
         (``authenticate_scope``, the step ``discover`` shares): an invalid
@@ -424,6 +439,8 @@ class RoutedApplication(BaseApplication, RoutingClass):
             **self.auth_filters(request.scope),
             **self.method_filters(request.scope),
         )
+        if node.error != "not_found":
+            request.scope[ROUTE_SCOPE_KEY] = node.path
         if node.error and node.error.startswith(METHOD_NOT_ALLOWED):
             allow = node.error.removeprefix(METHOD_NOT_ALLOWED)
             raise HTTPException(405, "Method Not Allowed", headers=[(b"allow", allow.encode())])

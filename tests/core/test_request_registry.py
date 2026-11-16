@@ -99,7 +99,7 @@ async def drive(server: BaseServer, path: str) -> None:
     async def send(message: dict[str, object]) -> None:
         pass
 
-    await server({"type": "http", "path": path}, receive, send)
+    await server({"type": "http", "method": "GET", "path": path}, receive, send)
 
 
 class TestRegisteredRequest:

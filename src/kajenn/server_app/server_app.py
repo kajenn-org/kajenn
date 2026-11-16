@@ -31,7 +31,7 @@ adds:
   (endpoints at ``/_server/<name>/...``) and records it so the introspection
   surfaces (``index`` and ``MonitorSection``) can enumerate them;
 - ``prometheus_metrics`` — the server's own families (build, process,
-  ``WorkPool``, requests in flight, spawned processes), read by the
+  ``WorkPool``, requests in flight, spawned processes, HTTP requests), read by the
   ``metrics`` section at ``/_server/metrics`` with the rest;
 - the PASSWORD login surface: ``login`` (JSON POST → ``UserStore.verify`` →
   ``Avatar`` → ``request.session.attach_avatar``), ``logout`` and the public
@@ -478,8 +478,9 @@ class ServerApplication(RoutedApplication):
         Build (kajenn and Python versions), the process (pid, start time, CPU
         seconds, resident memory, open file descriptors, from psutil), the
         ``WorkPool`` gauges (``pool.metrics``), the requests in flight
-        (``requests.in_flight``) and, for every started spawner backend, the
-        processes still running.
+        (``requests.in_flight``), for every started spawner backend the
+        processes still running, and the HTTP request families
+        (``server.http_metrics``).
         """
         server = self.server
         process = psutil.Process()
@@ -526,6 +527,7 @@ class ServerApplication(RoutedApplication):
                 "kajenn_requests_in_flight", "Requests registered on the server right now.",
                 value=server.requests.in_flight),
             spawned,
+            *server.http_metrics.collect(),
         ])
 
     @route()
