@@ -259,9 +259,13 @@ class TestRestart:
     async def test_a_restart_gives_a_new_password_and_refuses_the_old_one(
         self, site: Site, log: pytest.LogCaptureFixture
     ) -> None:
-        await site.start()
+        first_server = await site.start()
         first = logged_password(log)
+        for _ in range(5):
+            await login(first_server, TEMPORARY, "wrong")
+        assert first_server.applications["_auth"].store.get_login_failures(TEMPORARY) is not None
         server = await site.start()
+        assert server.applications["_auth"].store.get_login_failures(TEMPORARY) is None
         second = logged_password(log)
         assert password_lines(log) == [first, second]
         assert first != second

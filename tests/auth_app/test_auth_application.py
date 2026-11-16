@@ -391,6 +391,67 @@ class TestLockout:
         monkeypatch.setattr(time, "time", frozen)
         return frozen
 
+    async def test_failed_logins_never_change_the_user(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        store = auth_store(server)
+        before = store.get_user("alice")
+        for remaining in (4, 3, 2):
+            assert await login(server, "alice", "wrong") == {
+                "error": "Invalid credentials",
+                "remaining_attempts": remaining,
+            }
+            assert store.get_user("alice") == before
+        assert store.get_login_failures("alice")["failed_attempts"] == 3
+        assert (await login(server, "alice", "wonder"))["identity"] == "alice"
+        assert store.get_user("alice") == before
+        assert store.get_login_failures("alice") is None
+
+    async def test_management_ban_survives_failed_logins(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        store = auth_store(server)
+        cookie = await admin(server)
+        await login(server, "alice", "wrong")
+        failures = store.get_login_failures("alice")
+        sent = await drive(
+            server,
+            "/_auth/users/save?identity=alice",
+            "POST",
+            body={"status": "banned"},
+            cookie=cookie,
+        )
+        assert status(sent) == 200
+        assert payload(sent)["status"] == "banned"
+        assert store.get_login_failures("alice") == failures
+        banned = store.get_user("alice")
+        assert banned["status"] == "banned"
+        assert "error" in await login(server, "alice", "wrong")
+        assert store.get_user("alice") == banned
+        assert store.get_login_failures("alice")["failed_attempts"] == 2
+
+    async def test_ban_during_password_check_survives_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        server = await started(tmp_path)
+        store = auth_store(server)
+        check_password = store.check_password
+
+        def ban_during_check(password: str, stored: str) -> bool:
+            record = store.get_user("alice")
+            record["status"] = "banned"
+            store.save_user(record)
+            return check_password(password, stored)
+
+        monkeypatch.setattr(AuthStore, "check_password", staticmethod(ban_during_check))
+        assert "error" in await login(server, "alice", "wrong")
+        assert store.get_user("alice")["status"] == "banned"
+        assert store.get_login_failures("alice")["failed_attempts"] == 1
+
+    async def test_unknown_identity_writes_nothing(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        assert await login(server, "ghost", "wrong") == {"error": "Invalid credentials"}
+        assert auth_store(server).get_user("ghost") is None
+        assert auth_store(server).get_login_failures("ghost") is None
+
     async def test_max_attempts_failures_lock_even_the_correct_password(
         self, tmp_path: Path, clock: Clock
     ) -> None:
@@ -398,8 +459,11 @@ class TestLockout:
         await login(server, "alice", "nope")
         await login(server, "alice", "nope")
         assert await login(server, "alice", "wonder") == {"error": "Too many failed attempts"}
+        assert auth_store(server).get_login_failures("alice")["failed_attempts"] == 2
         clock.advance(11)
         assert (await login(server, "alice", "wonder"))["identity"] == "alice"
+        assert auth_store(server).get_login_failures("alice") is None
+        assert (await login(server, "alice", "wrong"))["remaining_attempts"] == 1
 
     async def test_a_locked_identity_is_refused_by_basic(
         self, tmp_path: Path, clock: Clock
@@ -851,8 +915,11 @@ class TestUsersSection:
     async def test_delete_removes_the_user(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
         cookie = await admin(server)
+        await login(server, "alice", "wrong")
+        assert auth_store(server).get_login_failures("alice") is not None
         sent = await drive(server, "/_auth/users/delete?identity=alice", "POST", cookie=cookie)
         assert payload(sent) == {"identity": "alice", "deleted": True}
+        assert auth_store(server).get_login_failures("alice") is None
         assert "error" in await login(server, "alice", "wonder")
 
     async def test_get_missing_user_reports_no_such_user(self, tmp_path: Path) -> None:

@@ -118,7 +118,7 @@ A hand-built server passes the same values as kwargs of the application:
 
 ## The records
 
-The store holds four kinds of record.
+The store holds five kinds of record.
 
 A **user**:
 
@@ -152,12 +152,15 @@ always belongs to a user. `tags` is `"*"` or a non-empty list. `expires_at` is
 a POSIX timestamp, or `None` for a token that never expires. The key is
 `gak_<key_id>_<secret>`; the store keeps only the hash of the secret.
 
+A **login failure counter**: `{identity, failed_attempts, last_failed_at}`.
+Password login writes this separate record and deletes it on success.
+
 ### The store
 
 `AuthStore` is the contract of the store, and `FileAuthStore` is its file
 backend. `FileAuthStore` writes one encrypted JSON file per record, at
 `<mount>:<prefix>/<kind>/<key>.json`, with `kind` one of `users`, `groups`,
-`tags`, `tokens`. The default is `site:auth`.
+`tags`, `tokens`, `login_failures`. The default is `site:auth`.
 
 The rules live in `AuthStore`: the tags of a user in a group, the password
 hash and its check, the issue and the verification of a token. A backend
@@ -172,7 +175,9 @@ implements only persistence:
 - `save_group(record)`, `save_tag(record)`, `save_token(record)`;
 - `delete_user`, `delete_group`, `delete_tag`, `delete_token` — `True` when a
   record was removed. `delete_group` raises `ValueError` while a user has the
-  group among its `groups`.
+  group among its `groups`;
+- `get_login_failures(identity)`, `save_login_failures(record)`,
+  `delete_login_failures(identity)` — read, write and remove a login counter.
 
 `get_user_by_external_id(iss, sub)` and `get_user_list_by_email(email)` have a
 body in `AuthStore`, over `user_list`. A database backend may rewrite them with
@@ -262,11 +267,13 @@ with a password.
 ### The lockout
 
 A password check through `/_auth/login` and through a `Basic` header share one
-counter on the user record (`failed_attempts`, `last_failed_at`). After
-`max_attempts` consecutive failures the identity is refused for
+counter in a separate `login_failures` record keyed by identity
+(`identity`, `failed_attempts`, `last_failed_at`). Login never writes the user
+record. After `max_attempts` consecutive failures the identity is refused for
 `backoff * 2**(failed_attempts - max_attempts)` seconds from the last failure.
 A refused attempt during the lockout does not touch the counter; a success
-resets it. An identity without a record has no counter.
+deletes it. An identity without a user record has no counter. Deleting a user
+through `/_auth/users/delete` also deletes its counter.
 
 A failed login answers `{"error": "Invalid credentials", "remaining_attempts":
 n}` for a known identity; a login during the lockout answers

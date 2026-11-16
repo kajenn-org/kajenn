@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""AuthStore — one store for users, groups, tags and tokens (contract + file backend).
+"""AuthStore — one store for users, groups, tags, tokens and login failures (contract + file backend).
 
 ``AuthStore`` is the contract. The rules live in the base class, so every
 backend computes tags, hashes passwords and verifies tokens the same way:
@@ -30,6 +30,9 @@ Contract::
         group_list -> list[dict]                    # property: every group record
         tag_list -> list[dict]                      # property: every tag record
         token_list -> list[dict]                    # property: every token record
+        get_login_failures(identity) -> dict | None
+        save_login_failures(record) -> None
+        delete_login_failures(identity) -> bool
         get_user(identity) -> dict | None
         get_group(code) -> dict | None
         get_tag(code) -> dict | None
@@ -67,17 +70,20 @@ The user record::
       "system": false,
       "password_hash": "scrypt$n=16384,r=8,p=1$<salt-b64>$<hash-b64>",  # or None
       "email": "alice@example.org",
-      "external_ids": [{"iss": "https://idp.example.org", "sub": "248289761001"}],
-      "failed_attempts": 0,
-      "last_failed_at": 0.0
+      "external_ids": [{"iss": "https://idp.example.org", "sub": "248289761001"}]
     }
 
 ``status`` has three fixed values. Only ``confirmed`` authenticates.
 ``save_user`` raises ``ValueError`` for any other value, and for a
 ``primary_group`` that is not one of ``groups``. A ``system`` user is
 a program: it never verifies a password and enters only with a token.
-``failed_attempts`` and ``last_failed_at`` are optional: a login surface keeps
-its lockout counter on the record; the store neither reads nor enforces them.
+The separate ``login_failures`` record is keyed by identity::
+
+    {"identity": "alice", "failed_attempts": 2, "last_failed_at": 123.5}
+
+The login surface enforces lockout using this record and deletes it on success.
+User writes do not change login failures; deleting a user through the management
+route also deletes its login failures.
 
 ``get_user_by_external_id`` returns the user whose ``external_ids`` holds
 ``{iss, sub}``, or None. ``get_user_list_by_email`` returns every user whose
@@ -137,7 +143,7 @@ compared in constant time.
 
 ``FileAuthStore`` keeps one JSON file per record at
 ``<mount>:<prefix>/<kind>/<key>.json``, with ``kind`` one of ``users``,
-``groups``, ``tags``, ``tokens``; the default is ``site:auth``. The key is the
+``groups``, ``tags``, ``tokens``, ``login_failures``; the default is ``site:auth``. The key is the
 record's identity, code or ``key_id``, percent-encoded. Every record is
 written ``encrypted=True``: without installed key material the write raises
 ``StorageError``. All I/O is synchronous: an async caller wraps it in
@@ -175,7 +181,7 @@ SALT_BYTES = 16
 
 
 class AuthStore:
-    """Contract for the store of users, groups, tags and tokens (see module docstring).
+    """Contract for the store of users, groups, tags, tokens and login failures (see module docstring).
 
     Subclasses implement persistence. Tag computation, password hashing and
     token issue and verification live here.
@@ -203,6 +209,18 @@ class AuthStore:
     @property
     def token_list(self) -> list[dict[str, Any]]:
         """Every token record."""
+        raise NotImplementedError
+
+    def get_login_failures(self, identity: str) -> dict[str, Any] | None:
+        """The login failure record for ``identity``, or None."""
+        raise NotImplementedError
+
+    def save_login_failures(self, record: dict[str, Any]) -> None:
+        """Persist login failures, keyed by ``identity``."""
+        raise NotImplementedError
+
+    def delete_login_failures(self, identity: str) -> bool:
+        """Remove login failures. True if removed, False if absent."""
         raise NotImplementedError
 
     def get_user(self, identity: str) -> dict[str, Any] | None:
@@ -445,7 +463,8 @@ class FileAuthStore(AuthStore):
     """One JSON file per record over a storage mount, written encrypted at rest.
 
     It holds the shared ``StorageManager`` and never raw paths. Records live
-    at ``<mount>:<prefix>/<kind>/<key>.json`` (see module docstring).
+    at ``<mount>:<prefix>/<kind>/<key>.json`` for users, groups, tags, tokens
+    and login failures (see module docstring).
     """
 
     __slots__ = ("_storage", "_mount", "_prefix")
@@ -473,7 +492,7 @@ class FileAuthStore(AuthStore):
 
     @property
     def prefix(self) -> str:
-        """The directory under the mount that holds the four record kinds."""
+        """The directory under the mount that holds the five record kinds."""
         return self._prefix
 
     # ── persistence helpers ────────────────────────────────────────────
@@ -537,6 +556,18 @@ class FileAuthStore(AuthStore):
     def token_list(self) -> list[dict[str, Any]]:
         """Every token record."""
         return self._read_all("tokens")
+
+    def get_login_failures(self, identity: str) -> dict[str, Any] | None:
+        """The login failure record for ``identity``, or None."""
+        return self._read("login_failures", identity)
+
+    def save_login_failures(self, record: dict[str, Any]) -> None:
+        """Persist login failures, keyed by ``identity``."""
+        self._write("login_failures", record["identity"], record)
+
+    def delete_login_failures(self, identity: str) -> bool:
+        """Remove login failures. True if removed, False if absent."""
+        return self._delete("login_failures", identity)
 
     def get_user(self, identity: str) -> dict[str, Any] | None:
         """The user record for ``identity``, or None."""

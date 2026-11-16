@@ -30,7 +30,7 @@ from cryptography.fernet import Fernet
 
 from genro_storage.exceptions import StorageError
 
-from tests.storage_support import site_storage
+from tests.storage_support import MemoryAuthStore, site_storage
 
 from kajenn.auth_app import AuthStore, FileAuthStore
 
@@ -99,8 +99,6 @@ class TestRecords:
             primary_group="staff",
             tags=["OWN"],
             external_ids=[{"iss": "https://idp.example.org", "sub": "42"}],
-            failed_attempts=2,
-            last_failed_at=123.5,
         )
         store.save_user(record)
         assert store.get_user("alice") == record
@@ -145,6 +143,32 @@ class TestRecords:
     def test_records_survive_a_new_store_on_the_same_mount(self, store, storage) -> None:
         store.save_user(_user(store))
         assert type(store)(storage).get_user("alice") is not None
+
+
+@pytest.mark.parametrize("store_class", [FileAuthStore, MemoryAuthStore])
+class TestLoginFailures:
+    def test_roundtrip_update_and_delete(self, store_class, storage) -> None:
+        store = store_class(storage)
+        assert store.get_login_failures("ns/alice:x") is None
+        assert store.delete_login_failures("ns/alice:x") is False
+        record = {"identity": "ns/alice:x", "failed_attempts": 2, "last_failed_at": 123.5}
+        store.save_login_failures(record)
+        assert store.get_login_failures("ns/alice:x") == record
+        record = {**record, "failed_attempts": 3, "last_failed_at": 124.5}
+        store.save_login_failures(record)
+        assert store.get_login_failures("ns/alice:x") == record
+        assert store.delete_login_failures("ns/alice:x") is True
+        assert store.get_login_failures("ns/alice:x") is None
+        assert store.delete_login_failures("ns/alice:x") is False
+
+    def test_user_writes_and_deletion_leave_failures_unchanged(self, store_class, storage) -> None:
+        store = store_class(storage)
+        record = {"identity": "alice", "failed_attempts": 2, "last_failed_at": 123.5}
+        store.save_login_failures(record)
+        store.save_user(_user(store))
+        assert store.get_login_failures("alice") == record
+        assert store.delete_user("alice") is True
+        assert store.get_login_failures("alice") == record
 
 
 class TestStatus:
@@ -453,8 +477,13 @@ class TestFileAuthStore:
         store = FileAuthStore(site_storage(tmp_path, key_material))
         store.save_user(_user(store, "dave"))
         key = store.issue_token("dave", ["OWN"], expires_at=None)
+        failures = {"identity": "dave", "failed_attempts": 2, "last_failed_at": 123.5}
+        store.save_login_failures(failures)
+        reopened = FileAuthStore(site_storage(tmp_path, key_material))
+        assert reopened.get_login_failures("dave") == failures
         for raw in (
             (tmp_path / "auth" / "users" / "dave.json").read_bytes(),
+            (tmp_path / "auth" / "login_failures" / "dave.json").read_bytes(),
             (tmp_path / "auth" / "tokens" / f"{_key_id(key)}.json").read_bytes(),
         ):
             assert raw.startswith(b"#GNRE1:")

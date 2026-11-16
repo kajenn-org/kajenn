@@ -53,7 +53,7 @@ def site_storage(base_dir: object, storage_key: str | None = None) -> StorageMan
 
 
 class MemoryAuthStore(AuthStore):
-    """In-memory ``AuthStore`` backend: the shared rules over four dicts."""
+    """In-memory ``AuthStore`` backend: the shared rules over five dicts."""
 
     __slots__ = ("_records",)
 
@@ -63,6 +63,7 @@ class MemoryAuthStore(AuthStore):
             "groups": {},
             "tags": {},
             "tokens": {},
+            "login_failures": {},
         }
 
     @property
@@ -80,6 +81,19 @@ class MemoryAuthStore(AuthStore):
     @property
     def token_list(self) -> list[dict[str, Any]]:
         return [dict(record) for record in self._records["tokens"].values()]
+
+    def get_login_failures(self, identity: str) -> dict[str, Any] | None:
+        """The login failure record for ``identity``, or None."""
+        record = self._records["login_failures"].get(identity)
+        return dict(record) if record is not None else None
+
+    def save_login_failures(self, record: dict[str, Any]) -> None:
+        """Persist login failures, keyed by ``identity``."""
+        self._records["login_failures"][record["identity"]] = dict(record)
+
+    def delete_login_failures(self, identity: str) -> bool:
+        """Remove login failures. True if removed, False if absent."""
+        return self._records["login_failures"].pop(identity, None) is not None
 
     def get_user(self, identity: str) -> dict[str, Any] | None:
         record = self._records["users"].get(identity)

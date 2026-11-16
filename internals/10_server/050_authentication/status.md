@@ -46,17 +46,20 @@ Claim anchors: [`_ask_avatar`](../../../src/kajenn/auth/mixin.py#AuthMixin._ask_
 
 ## Store, configuration and login
 
-`AuthStore` holds users, groups, tags and tokens. `FileAuthStore` writes one
+`AuthStore` holds users, groups, tags, tokens and login failures. `FileAuthStore` writes one
 encrypted JSON file per record under `site:auth` by default. The application
 builds the store on first use with `store_class(server.storage, **params)`.
 Its grammar provides `store`, `login`, `oidc`/`provider` and
 `self_registration`. `cache_ttl` is an application attribute.
 
 `verify_credential` accepts Basic passwords and Bearer `gak_` tokens.
-Password checks and `/_auth/login` share a store-backed lockout counter.
+Password checks and `/_auth/login` share a separate `login_failures` record
+keyed by identity, containing `failed_attempts` and `last_failed_at`. Login
+never writes the user record. User management saves leave counters unchanged;
+`/_auth/users/delete` also deletes the counter record.
 After 5 failures by default, the backoff is
 `30 * 2**(failed_attempts - 5)` seconds. The `login` word changes both defaults.
-Success resets the counter; attempts during lockout leave it unchanged.
+Success deletes the counter record; attempts during lockout leave it unchanged.
 A password requires a confirmed, non-system user.
 
 Login attaches the avatar to the existing session without changing its id.

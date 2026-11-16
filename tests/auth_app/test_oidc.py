@@ -456,12 +456,10 @@ class TestLinkedUser:
     async def test_the_callback_does_not_touch_the_lockout_counter(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
         store = auth_store(server)
-        record = store.get_user("alice")
-        record["failed_attempts"] = 2
-        record["last_failed_at"] = 123.0
-        store.save_user(record)
+        record = {"identity": "alice", "failed_attempts": 2, "last_failed_at": 123.0}
+        store.save_login_failures(record)
         await oidc_login(server)
-        after = store.get_user("alice")
+        after = store.get_login_failures("alice")
         assert (after["failed_attempts"], after["last_failed_at"]) == (2, 123.0)
 
 

@@ -143,7 +143,8 @@ user's own tags plus those of the active group (``AuthStore.get_user_tags``);
 for a token they come from ``AuthStore.verify_token``.
 
 Lockout: a password check through ``login`` or a ``Basic`` header shares one
-counter on the user record (``failed_attempts``, ``last_failed_at``). After
+counter in a separate ``login_failures`` record keyed by identity
+(``failed_attempts``, ``last_failed_at``). After
 ``max_attempts`` consecutive failures the identity is refused for
 ``backoff * 2**(failed_attempts - max_attempts)`` seconds from the last
 failure; a refused attempt does not touch the counter; a success resets it.
@@ -515,22 +516,27 @@ class AuthApplicationBase(RoutedApplication):
         leaves the counter as it is; a failure counts; a success resets.
         """
         record = self.store.get_user(identity)
-        if record is not None and self._lock_seconds_remaining(record) > 0:
+        failures = self.store.get_login_failures(identity)
+        if (
+            record is not None
+            and failures is not None
+            and self._lock_seconds_remaining(failures) > 0
+        ):
             return None, {"error": "Too many failed attempts"}
         verified = self.store.verify_password(identity, password)
         if verified is None:
             if record is None:
                 return None, {"error": "Invalid credentials"}
-            record["failed_attempts"] = record.get("failed_attempts", 0) + 1
-            record["last_failed_at"] = time.time()
-            self.store.save_user(record)
+            if failures is None:
+                failures = {"identity": identity, "failed_attempts": 0}
+            failures["failed_attempts"] += 1
+            failures["last_failed_at"] = time.time()
+            self.store.save_login_failures(failures)
             max_attempts = self.login_policy.get("max_attempts", LOCKOUT_MAX_ATTEMPTS)
-            remaining = max(0, max_attempts - record["failed_attempts"])
+            remaining = max(0, max_attempts - failures["failed_attempts"])
             return None, {"error": "Invalid credentials", "remaining_attempts": remaining}
-        if verified.get("failed_attempts"):
-            verified["failed_attempts"] = 0
-            verified["last_failed_at"] = 0.0
-            self.store.save_user(verified)
+        if failures is not None:
+            self.store.delete_login_failures(identity)
         return verified, {}
 
     def _lock_seconds_remaining(self, record: dict[str, Any]) -> float:
@@ -627,6 +633,7 @@ class AuthApplicationBase(RoutedApplication):
                 "password_hash": self.store.hash_password(password),
             }
         )
+        self.store.delete_login_failures(TEMPORARY_ADMIN)
         logging.getLogger(__name__).warning(
             "application %s: temporary administrator %s, password %s",
             self.code,
@@ -835,9 +842,7 @@ class AuthApplicationBase(RoutedApplication):
         self.server.event_metrics.record_credential_check("password", outcome)
         return answer
 
-    def _login(
-        self, identity: str, password: str, group: str, request: Any
-    ) -> dict[str, Any]:
+    def _login(self, identity: str, password: str, group: str, request: Any) -> dict[str, Any]:
         """Verify the password and attach the avatar, returning the login answer."""
         if not identity or not password:
             return {"error": "Identity and password are required"}

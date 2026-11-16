@@ -524,12 +524,15 @@ Claim anchors: [`link_user`](src/kajenn/auth_app/oidc_method.py#L263), [`authent
 
 **D28 — Server-side login lockout: a store-backed counter with exponential
 backoff (REVIEW #9).** The password login enforces a lockout whose failure
-counter LIVES ON the user's store record (`failed_attempts` int,
+counter lives in a separate `login_failures` record keyed by `identity`
+(`failed_attempts` int,
 `last_failed_at` epoch float) — store-backed, so it survives restarts and is
 shared across processes on a shared store. After `max_attempts` consecutive
 failures (default 5) further attempts are refused until
 `backoff * 2**(failed_attempts - max_attempts)` seconds (base default 30) have
-passed since the last failure; a success resets the counter. Attempts refused
+passed since the last failure; a success deletes the counter record. Login
+never writes the user record. User management saves leave counters unchanged;
+`/_auth/users/delete` also deletes the counter record. Attempts refused
 DURING the lock window do NOT increment the counter nor touch `last_failed_at`
 — anti-DoS: an attacker hammering a locked identity cannot extend a legitimate
 user's lock. Known-identity failures surface the server-computed
