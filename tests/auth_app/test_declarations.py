@@ -297,7 +297,8 @@ class TestBoot:
     async def test_an_application_that_redefines_nothing_creates_nothing(self) -> None:
         server = make_server((Plain, {"code": "plain"}))
         users = (await get(server, "/_auth/users/list"))["users"]
-        assert [user["identity"] for user in users] == ["root"]
+        # _temporary_admin is written at boot by _auth on a site without administrator
+        assert sorted(user["identity"] for user in users) == ["_temporary_admin", "root"]
         assert await owners(server) == SYSTEM_TAGS
 
     async def test_an_existing_record_is_left_as_it_is(self) -> None:

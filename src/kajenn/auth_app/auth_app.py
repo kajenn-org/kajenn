@@ -115,6 +115,28 @@ for one with a ``spawner`` across the ``joined`` call: an entry with a wrong
 type, or a tag code an auth rule cannot hold, is not written and a warning is
 logged.
 
+Temporary administrator: the identity ``_temporary_admin``
+(``TEMPORARY_ADMIN``), the way into a site that has no administrator. At
+startup, after the declared records, the application looks for an
+administrator: a user other than ``_temporary_admin``, with status
+``confirmed`` and ``system`` false, that holds ``AUTH_ADMIN`` among its own
+tags or among the tags of any of its groups. Without one it writes the record
+of ``_temporary_admin`` (tags ``["AUTH_ADMIN"]``, status ``confirmed``,
+``system`` false, no group, no email, no external id) with a password
+generated at every startup, and logs one warning line that carries the
+identity and the password. The password is stored only as its hash; no other
+line, answer or record carries it. A restart in which the record still exists
+writes it again with a new password: the password of the previous log stops
+working. With an administrator the record is deleted and no password is
+generated. After every write of the ``users`` and ``groups`` management
+sections the application looks again (``remove_temporary_admin``): when an
+administrator exists it deletes the record and empties the credential cache
+of the server and of every joined process, so the password, the sessions and
+the tokens of ``_temporary_admin`` stop working at once. Otherwise the
+management treats ``_temporary_admin`` as any user. A store that cannot be
+built or written at startup writes nothing and a warning is logged, as for the
+declared records.
+
 ``group`` in every answer is the active group: the one asked for, else the
 user's primary group, ``None`` when the user has none. The tags are the
 user's own tags plus those of the active group (``AuthStore.get_user_tags``);
@@ -138,6 +160,7 @@ import base64
 import binascii
 import logging
 import re
+import secrets
 import time
 from typing import Any, ClassVar
 
@@ -159,6 +182,12 @@ from .auth_store import AUTHENTICATING_STATUS, USER_STATUSES, AuthStore, FileAut
 from .oidc_method import OidcMethod
 
 __all__ = ["AuthApplicationBase", "AuthApplicationGrammar"]
+
+#: The identity of the temporary administrator of a site without an administrator.
+TEMPORARY_ADMIN = "_temporary_admin"
+
+#: Bytes of randomness in the generated password of the temporary administrator.
+TEMPORARY_PASSWORD_BYTES = 24
 
 LOCKOUT_MAX_ATTEMPTS = 5
 LOCKOUT_BACKOFF_SECONDS = 30.0
@@ -493,16 +522,99 @@ class AuthApplicationBase(RoutedApplication):
         return [{"code": ADMIN_TAG, "description": "Management of users, groups, tags and tokens"}]
 
     def on_startup(self) -> None:
-        """Create the declared records of every application, then watch for added ones.
+        """Create the declared records, then the temporary administrator; watch for added apps.
 
         Every application the server holds is read with
-        ``create_declared_records``. An application written later in the
-        ``applications`` branch of the live configuration is read once the
-        server has registered it.
+        ``create_declared_records``; then ``refresh_temporary_admin``. An
+        application written later in the ``applications`` branch of the live
+        configuration is read once the server has registered it.
         """
         for app in list(self.server.applications.values()):
             self.create_declared_records(app)
+        self.refresh_temporary_admin()
         self.server.application_nodes.subscribe(self.code, insert=self._application_written)
+
+    # ── temporary administrator ────────────────────────────────────────
+
+    @property
+    def has_admin(self) -> bool:
+        """True when a user other than ``_temporary_admin`` is an administrator.
+
+        An administrator has status ``confirmed``, ``system`` false, and
+        ``AUTH_ADMIN`` among its own tags or the tags of any of its groups.
+        """
+        for user in self.store.user_list:
+            if user["identity"] == TEMPORARY_ADMIN:
+                continue
+            if user.get("status") != AUTHENTICATING_STATUS or user.get("system", False):
+                continue
+            if ADMIN_TAG in user.get("tags", []):
+                return True
+            for code in user.get("groups", []):
+                group = self.store.get_group(code)
+                if group is not None and ADMIN_TAG in group.get("tags", []):
+                    return True
+        return False
+
+    def refresh_temporary_admin(self) -> None:
+        """Write ``_temporary_admin`` with a new password when the site has no administrator.
+
+        The password is logged once, in one warning line with the identity.
+        The tokens issued to ``_temporary_admin`` before are deleted: nothing
+        obtained with an earlier password stays valid.
+        With an administrator the record of ``_temporary_admin`` is deleted
+        and nothing is logged. A store that cannot be built or written
+        (``RuntimeError``, ``StorageError``) writes nothing and a warning is
+        logged.
+        """
+        try:
+            self._write_temporary_admin()
+        except (RuntimeError, StorageError) as failure:
+            logging.getLogger(__name__).warning(
+                "application %s: temporary administrator not written: %s", self.code, failure
+            )
+
+    def _write_temporary_admin(self) -> None:
+        """The writes of ``refresh_temporary_admin``; a store failure propagates."""
+        if self.has_admin:
+            self.store.delete_user(TEMPORARY_ADMIN)
+            return
+        for token in self.store.token_list:
+            if token.get("user") == TEMPORARY_ADMIN:
+                self.store.delete_token(token["key_id"])
+        password = secrets.token_urlsafe(TEMPORARY_PASSWORD_BYTES)
+        self.store.save_user(
+            {
+                "identity": TEMPORARY_ADMIN,
+                "groups": [],
+                "primary_group": None,
+                "tags": [ADMIN_TAG],
+                "status": AUTHENTICATING_STATUS,
+                "system": False,
+                "email": None,
+                "external_ids": [],
+                "password_hash": self.store.hash_password(password),
+            }
+        )
+        logging.getLogger(__name__).warning(
+            "application %s: temporary administrator %s, password %s",
+            self.code,
+            TEMPORARY_ADMIN,
+            password,
+        )
+
+    async def remove_temporary_admin(self) -> None:
+        """Delete ``_temporary_admin`` when another administrator exists (see ``has_admin``).
+
+        After the deletion the credential cache of the server and of every
+        joined process is emptied: the password, the sessions and the tokens
+        of ``_temporary_admin`` stop working at once. Nothing happens when the
+        record does not exist or no other administrator exists.
+        """
+        if self.store.get_user(TEMPORARY_ADMIN) is None or not self.has_admin:
+            return
+        self.store.delete_user(TEMPORARY_ADMIN)
+        await self.server.forget_credentials_everywhere()
 
     def on_remove(self) -> None:
         """Stop watching the ``applications`` branch of the live configuration."""

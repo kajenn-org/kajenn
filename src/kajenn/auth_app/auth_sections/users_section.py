@@ -31,6 +31,11 @@ Every route asks ``auth_rule="AUTH_ADMIN"``. Routes, under ``/_auth/users/``:
   match;
 - ``delete(identity)`` — ``{"identity", "deleted"}``.
 
+After a write ``create_user``, ``save``, ``set_password`` and ``delete`` ask
+the application to remove the temporary administrator
+(``AuthApplicationBase.remove_temporary_admin``): it is deleted once another
+user is an administrator.
+
 ``password_hash`` never crosses the wire: every answer strips it, and a body
 never sets it. A password enters only as plaintext through ``create_user`` and
 ``set_password`` and is hashed by ``AuthStore.hash_password``.
@@ -100,12 +105,17 @@ class UsersSection(RoutingClass):
         dropped = {*CREDENTIAL_FIELDS, "identity"}
         return {k: v for k, v in body.items() if k not in dropped}
 
-    def save_record(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Save ``record``; the public record, or the error shape when the store refuses it."""
+    async def save_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Save ``record``; the public record, or the error shape when the store refuses it.
+
+        After the write the application removes the temporary administrator
+        when another administrator exists.
+        """
         try:
             self.store.save_user(record)
         except ValueError as refused:
             return {"error": str(refused)}
+        await self.application.remove_temporary_admin()
         return self.public_record(record)
 
     @route(name="list", auth_rule=ADMIN_TAG)
@@ -122,7 +132,9 @@ class UsersSection(RoutingClass):
         return self.public_record(record)
 
     @route(auth_rule=ADMIN_TAG, openapi_method="post")
-    def create_user(self, identity: str = "", body_data: dict | None = None) -> dict[str, Any]:
+    async def create_user(
+        self, identity: str = "", body_data: dict | None = None
+    ) -> dict[str, Any]:
         """Create a new user from the body (fields + optional password/confirm).
 
         Without a password the record carries no ``password_hash``: the user
@@ -144,10 +156,10 @@ class UsersSection(RoutingClass):
             if password is None:
                 return {"error": "Password and confirmation must match"}
             record["password_hash"] = self.store.hash_password(password)
-        return self.save_record(record)
+        return await self.save_record(record)
 
     @route(auth_rule=ADMIN_TAG, openapi_method="post")
-    def save(self, identity: str = "", body_data: dict | None = None) -> dict[str, Any]:
+    async def save(self, identity: str = "", body_data: dict | None = None) -> dict[str, Any]:
         """Merge the body's fields over an existing record; ``password_hash`` untouched."""
         record = self.store.get_user(identity)
         if record is None:
@@ -156,10 +168,12 @@ class UsersSection(RoutingClass):
         if refusal:
             return refusal
         record.update(self.metadata_of(body_data or {}))
-        return self.save_record(record)
+        return await self.save_record(record)
 
     @route(auth_rule=ADMIN_TAG, openapi_method="post")
-    def set_password(self, identity: str = "", body_data: dict | None = None) -> dict[str, Any]:
+    async def set_password(
+        self, identity: str = "", body_data: dict | None = None
+    ) -> dict[str, Any]:
         """Replace an existing user's password (plaintext in, hashed by the store)."""
         record = self.store.get_user(identity)
         if record is None:
@@ -168,12 +182,14 @@ class UsersSection(RoutingClass):
         if password is None:
             return {"error": "Password and confirmation are required and must match"}
         record["password_hash"] = self.store.hash_password(password)
-        answer = self.save_record(record)
+        answer = await self.save_record(record)
         if "error" in answer:
             return answer
         return {"identity": identity, "updated": True}
 
     @route(auth_rule=ADMIN_TAG, openapi_method="post")
-    def delete(self, identity: str = "") -> dict[str, Any]:
+    async def delete(self, identity: str = "") -> dict[str, Any]:
         """Remove a user; reports whether a record was removed."""
-        return {"identity": identity, "deleted": self.store.delete_user(identity)}
+        deleted = self.store.delete_user(identity)
+        await self.application.remove_temporary_admin()
+        return {"identity": identity, "deleted": deleted}
