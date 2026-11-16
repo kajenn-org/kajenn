@@ -78,21 +78,17 @@ at attachment by ``read_declared_login_surface``. Both absent, the defaults
 from __future__ import annotations
 
 import logging
-import os
-import platform
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 from urllib.parse import urlparse
 
-import psutil
 from genro_bag import BagResolver
 from genro_builders.builder import element
 from genro_routes import RoutingClass, route
-from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily, InfoMetricFamily
+from prometheus_client.core import GaugeMetricFamily
 
-import kajenn
 from kajenn.application import ApplicationGrammar, BaseApplication
 from kajenn.exceptions import HTTPNotFound
 from kajenn.routed_application import RoutedApplication
@@ -475,19 +471,14 @@ class ServerApplication(RoutedApplication):
     def prometheus_metrics(self) -> str:
         """The server's own families, read at call time, as exposition text.
 
-        Build (kajenn and Python versions), the process (pid, start time, CPU
-        seconds, resident memory, open file descriptors, from psutil), the
-        ``WorkPool`` gauges (``pool.metrics``), the requests in flight
-        (``requests.in_flight``), for every started spawner backend the
-        processes still running, and the HTTP request families
-        (``server.http_metrics``), the credential check, WSX message and
-        websocket connection families (``server.event_metrics``), and the
-        families of ``RoutedApplication.prometheus_metrics`` (MCP).
+        The families of the server process (``server.process_metrics``: build,
+        process, ``WorkPool``, tasks, scheduler, startup), the requests in
+        flight (``requests.in_flight``), for every started spawner backend the
+        processes still running, the HTTP request families
+        (``server.http_metrics``), the event families (``server.event_metrics``)
+        and the families of ``RoutedApplication.prometheus_metrics`` (MCP).
         """
         server = self.server
-        process = psutil.Process()
-        cpu = process.cpu_times()
-        pool = server.pool.metrics
         spawned = GaugeMetricFamily(
             "kajenn_spawned_processes",
             "Processes of external applications still running, per spawner backend.",
@@ -496,35 +487,7 @@ class ServerApplication(RoutedApplication):
             running = sum(1 for item in spawner.processes.values() if item.returncode is None)
             spawned.add_metric([backend], running)
         return families_text([
-            InfoMetricFamily(
-                "kajenn_build", "kajenn and Python versions of the server process.",
-                value={"version": kajenn.__version__,
-                       "python_version": platform.python_version()}),
-            GaugeMetricFamily(
-                "kajenn_process_pid", "Process id of the server process.",
-                value=os.getpid()),
-            GaugeMetricFamily(
-                "kajenn_process_start_time_seconds",
-                "Start time of the server process since the Unix epoch, in seconds.",
-                value=process.create_time()),
-            CounterMetricFamily(
-                "kajenn_process_cpu_seconds",
-                "User and system CPU time of the server process, in seconds.",
-                value=cpu.user + cpu.system),
-            GaugeMetricFamily(
-                "kajenn_process_resident_memory_bytes",
-                "Resident memory size of the server process, in bytes.",
-                value=process.memory_info().rss),
-            GaugeMetricFamily(
-                "kajenn_process_open_fds", "Open file descriptors of the server process.",
-                value=process.num_fds()),
-            GaugeMetricFamily(
-                "kajenn_pool_threads", "Threads of the WorkPool, 0 before the first sync call.",
-                value=pool["total"]),
-            GaugeMetricFamily(
-                "kajenn_pool_calls_in_flight",
-                "Calls entered in the WorkPool and not yet exited, queued ones included.",
-                value=pool["busy"]),
+            *server.process_metrics.collect(),
             GaugeMetricFamily(
                 "kajenn_requests_in_flight", "Requests registered on the server right now.",
                 value=server.requests.in_flight),

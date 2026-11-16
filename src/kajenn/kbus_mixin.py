@@ -166,7 +166,10 @@ class KBusMixin:
         Every joined process is called at once and confirms it forgot;
         returns when all of them answered. A process the bus cannot reach, or
         that does not confirm within ``FORGET_CREDENTIALS_TIMEOUT``, is
-        relaunched: the new process starts with an empty cache.
+        relaunched: the new process starts with an empty cache. A process that
+        does not confirm in time is counted in ``event_metrics`` as a
+        ``forget_credentials`` timeout and, relaunched, as an ``unresponsive``
+        restart; one the bus cannot reach as a ``lost`` restart.
         """
         if credential is None:
             self.forget_all_credentials()
@@ -178,12 +181,19 @@ class KBusMixin:
             try:
                 async with asyncio.timeout(FORGET_CREDENTIALS_TIMEOUT):
                     await self.kbus_member.call(f"{code}.forget_credentials", kbus.Message(meta))
-            except (kbus.Error, TimeoutError):
-                if self.kbus_pids.get(code) == pid:
-                    del self.kbus_pids[code]
-                    self._relaunch(code, pid=pid)
+            except kbus.Error:
+                self._relaunch_unconfirmed(code, pid, "lost")
+            except TimeoutError:
+                self.event_metrics.record_kbus_timeout(code, "forget_credentials")
+                self._relaunch_unconfirmed(code, pid, "unresponsive")
 
         await asyncio.gather(*(forget_in(code, pid) for code, pid in list(self.kbus_pids.items())))
+
+    def _relaunch_unconfirmed(self, code: str, pid: int, cause: str) -> None:
+        """Relaunch ``code`` for ``cause`` when ``pid`` is still its joined process."""
+        if self.kbus_pids.get(code) == pid:
+            del self.kbus_pids[code]
+            self._relaunch(code, cause, pid=pid)
 
     async def _serve_with_children(
         self, scope: Scope, receive: Receive, send: Send
@@ -305,16 +315,22 @@ class KBusMixin:
         """Hand a joined external member that disconnected back to its spawner."""
         pid = self.kbus_pids.pop(name, None)
         if pid is not None and not self.kbus_stopping:
-            self._relaunch(name, pid=pid)
+            self._relaunch(name, "lost", pid=pid)
 
     def _relaunch_role(self, role: str) -> None:
-        """Hand a role whose process ended unrequested back to its spawner."""
-        code = role.partition(":")[2]
-        self.kbus_pids.pop(code, None)
-        self._relaunch(code)
+        """Hand a role whose process ended unrequested back to its spawner.
 
-    def _relaunch(self, code: str, pid: int | None = None) -> None:
-        """Ask the spawner of ``code`` to ensure it again with a new URL."""
+        A process with no pid recorded never joined: it is also counted as a
+        start failure in ``event_metrics``.
+        """
+        code = role.partition(":")[2]
+        if self.kbus_pids.pop(code, None) is None:
+            self.event_metrics.record_start_failure(code)
+        self._relaunch(code, "exited")
+
+    def _relaunch(self, code: str, cause: str, pid: int | None = None) -> None:
+        """Ask the spawner of ``code`` to ensure it again with a new URL, counting ``cause``."""
+        self.event_metrics.record_restart(code, cause)
         app = self.external_applications[code]
         self.kbus_spawners[app.spawner].relaunch(
             f"application:{code}", mint=lambda: self._mint_url(code),

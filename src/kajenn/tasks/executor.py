@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 from .spool import TaskSpool
@@ -106,7 +107,10 @@ class LocalTaskExecutor:
         result, and settles the folder to ``terminated`` (ok) or ``aborted`` (error).
         The spool is synchronous: its calls run in a thread (``asyncio.to_thread``).
         The outcome is ``"ok"`` or ``"error"``; on error the exception text is
-        stamped on the descriptor via ``settle``.
+        stamped on the descriptor via ``settle``. The settled task is counted
+        in ``server.process_metrics`` with the code of the resolved application
+        (``""`` when the resolution failed), its ``node_path`` and its outcome,
+        and the time its handler ran.
 
         Raises:
             LookupError: if no task ``task_id`` exists in the spool.
@@ -120,12 +124,18 @@ class LocalTaskExecutor:
         item = self.server.requests.register(
             {"type": "task", "path": f"{descriptor['mount']}/{descriptor['node_path']}"}
         )
+        application, seconds = "", None
         try:
             node = self.resolve(descriptor)
-            if asyncio.iscoroutinefunction(node):
-                result = await node(**params)
-            else:
-                result = await self.server.run_sync(lambda: node(**params))
+            application = self.server.application_at(descriptor["mount"]).code
+            started = time.perf_counter()
+            try:
+                if asyncio.iscoroutinefunction(node):
+                    result = await node(**params)
+                else:
+                    result = await self.server.run_sync(lambda: node(**params))
+            finally:
+                seconds = time.perf_counter() - started
             await asyncio.to_thread(self.spool.write_result, task_id, worker_id, result)
         except Exception as exc:
             outcome, error = "error", f"{type(exc).__name__}: {exc}"
@@ -136,6 +146,8 @@ class LocalTaskExecutor:
             finally:
                 self.server.requests.unregister(item)
         await asyncio.to_thread(self.spool.settle, task_id, worker_id, outcome, error=error)
+        self.server.process_metrics.record_task(
+            application, descriptor["node_path"], outcome, seconds)
         self._publish(descriptor, {"type": "settled", "outcome": outcome, "error": error})
         return outcome
 

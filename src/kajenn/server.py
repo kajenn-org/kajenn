@@ -83,6 +83,7 @@ from .db import DbHandlerBase
 from .exceptions import HTTPException
 from ._event_metrics import EventMetrics
 from ._http_metrics import ROUTE_SCOPE_KEY, CountedExchange, HttpMetrics
+from ._process_metrics import ProcessMetrics
 from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
 from .request_registry import RegisteredRequest, RequestRegistry
@@ -212,6 +213,7 @@ class BaseServer:
         self._registry = RequestRegistry(self)
         self._http_metrics = HttpMetrics()
         self._event_metrics = EventMetrics()
+        self._process_metrics = ProcessMetrics(self)
         self._websockets = WebSocketRegistry()
         self._websocket_origins: list[str] = list(websocket.get("origins") or [])
         self._websocket_max_concurrent: int = int(
@@ -640,6 +642,11 @@ class BaseServer:
     def event_metrics(self) -> EventMetrics:
         """The credential check, WSX message and websocket connection families."""
         return self._event_metrics
+
+    @property
+    def process_metrics(self) -> ProcessMetrics:
+        """The families of this process: build, process, pool, tasks, scheduler, startup."""
+        return self._process_metrics
 
     async def run_sync(self, fn: Callable[..., Any], *args: Any) -> Any:
         """Dispatch blocking ``fn`` onto the pool (the app-side sync protocol).
