@@ -174,8 +174,10 @@ implements only persistence:
   the record first, then calls it;
 - `save_group(record)`, `save_tag(record)`, `save_token(record)`;
 - `delete_user`, `delete_group`, `delete_tag`, `delete_token` — `True` when a
-  record was removed. `delete_group` raises `ValueError` while a user has the
-  group among its `groups`;
+  record was removed. `delete_user` also deletes every token whose `user` is
+  that identity and its `login_failures` record. `delete_group` raises `ValueError` while a user has the
+  group among its `groups`. Each backend enforces both constraints with its
+  own means;
 - `get_login_failures(identity)`, `save_login_failures(record)`,
   `delete_login_failures(identity)` — read, write and remove a login counter.
 
@@ -273,7 +275,7 @@ record. After `max_attempts` consecutive failures the identity is refused for
 `backoff * 2**(failed_attempts - max_attempts)` seconds from the last failure.
 A refused attempt during the lockout does not touch the counter; a success
 deletes it. An identity without a user record has no counter. Deleting a user
-through `/_auth/users/delete` also deletes its counter.
+(`delete_user`, also through `/_auth/users/delete`) deletes its counter.
 
 A failed login answers `{"error": "Invalid credentials", "remaining_attempts":
 n}` for a known identity; a login during the lockout answers
@@ -309,7 +311,8 @@ none. Its questions go to the server process over the bus.
 
 A change of the status, the tags or the groups of a user reaches a live session
 and a token within `cache_ttl`. It reaches them at once when the cache is
-emptied. Revoking or deleting a token, and
+emptied. A successful write of the `users` or `groups` management section,
+revoking or deleting a token, and
 `await server.forget_credentials_everywhere()` without an argument, empty the
 whole cache. `/_auth/forget_credential` empties the entries of the credential
 it names and the entries of every session; the other tokens of the same user

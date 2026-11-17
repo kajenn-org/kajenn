@@ -27,7 +27,9 @@ Every route asks ``auth_rule="AUTH_ADMIN"``. Routes, under ``/_auth/groups/``:
 After a write ``create_group``, ``save`` and ``delete`` ask the application to
 remove the temporary administrator
 (``AuthApplicationBase.remove_temporary_admin``): it is deleted once another
-user is an administrator through a group.
+user is an administrator through a group. Then they empty the credential cache
+of the server and of every joined process, so a changed group applies from the
+next request. A refused write empties nothing.
 
 Errors answer ``{"error": message}`` with status 200. ``create_group`` and
 ``save`` refuse a ``tags`` field naming a tag that has no record, and nothing is
@@ -98,6 +100,7 @@ class GroupsSection(RoutingClass):
         record = {"tags": [], **self.fields_of(body_data or {}), "code": code}
         self.store.save_group(record)
         await self.application.remove_temporary_admin()
+        await self.application.server.forget_credentials_everywhere()
         return record
 
     @route(auth_rule=ADMIN_TAG, openapi_method="post")
@@ -112,6 +115,7 @@ class GroupsSection(RoutingClass):
         record.update(self.fields_of(body_data or {}))
         self.store.save_group(record)
         await self.application.remove_temporary_admin()
+        await self.application.server.forget_credentials_everywhere()
         return record
 
     @route(auth_rule=ADMIN_TAG, openapi_method="post")
@@ -122,4 +126,5 @@ class GroupsSection(RoutingClass):
         except ValueError as refused:
             return {"error": str(refused)}
         await self.application.remove_temporary_admin()
+        await self.application.server.forget_credentials_everywhere()
         return {"code": code, "deleted": deleted}

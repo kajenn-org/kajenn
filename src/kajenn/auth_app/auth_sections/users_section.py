@@ -34,7 +34,9 @@ Every route asks ``auth_rule="AUTH_ADMIN"``. Routes, under ``/_auth/users/``:
 After a write ``create_user``, ``save``, ``set_password`` and ``delete`` ask
 the application to remove the temporary administrator
 (``AuthApplicationBase.remove_temporary_admin``): it is deleted once another
-user is an administrator.
+user is an administrator. Then they empty the credential cache of the server
+and of every joined process, so a changed status or tag applies from the next
+request. A refused write empties nothing.
 
 ``password_hash`` never crosses the wire: every answer strips it, and a body
 never sets it. A password enters only as plaintext through ``create_user`` and
@@ -109,13 +111,14 @@ class UsersSection(RoutingClass):
         """Save ``record``; the public record, or the error shape when the store refuses it.
 
         After the write the application removes the temporary administrator
-        when another administrator exists.
+        when another administrator exists, and the credential cache is emptied.
         """
         try:
             self.store.save_user(record)
         except ValueError as refused:
             return {"error": str(refused)}
         await self.application.remove_temporary_admin()
+        await self.application.server.forget_credentials_everywhere()
         return self.public_record(record)
 
     @route(name="list", auth_rule=ADMIN_TAG)
@@ -189,8 +192,8 @@ class UsersSection(RoutingClass):
 
     @route(auth_rule=ADMIN_TAG, openapi_method="post")
     async def delete(self, identity: str = "") -> dict[str, Any]:
-        """Remove a user; reports whether a record was removed."""
+        """Remove a user, its tokens and its login failures; the credential cache is emptied."""
         deleted = self.store.delete_user(identity)
-        self.store.delete_login_failures(identity)
         await self.application.remove_temporary_admin()
+        await self.application.server.forget_credentials_everywhere()
         return {"identity": identity, "deleted": deleted}

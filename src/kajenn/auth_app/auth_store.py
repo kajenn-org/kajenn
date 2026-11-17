@@ -41,7 +41,7 @@ Contract::
         save_group(record) -> None
         save_tag(record) -> None
         save_token(record) -> None
-        delete_user(identity) -> bool               # True if a record was removed
+        delete_user(identity) -> bool               # True if a record was removed; deletes its tokens and login failures
         delete_group(code) -> bool                  # ValueError while it has members
         delete_tag(code) -> bool
         delete_token(key_id) -> bool
@@ -82,8 +82,7 @@ The separate ``login_failures`` record is keyed by identity::
     {"identity": "alice", "failed_attempts": 2, "last_failed_at": 123.5}
 
 The login surface enforces lockout using this record and deletes it on success.
-User writes do not change login failures; deleting a user through the management
-route also deletes its login failures.
+User writes do not change login failures; ``delete_user`` deletes them.
 
 ``get_user_by_external_id`` returns the user whose ``external_ids`` holds
 ``{iss, sub}``, or None. ``get_user_list_by_email`` returns every user whose
@@ -117,6 +116,11 @@ The token record::
 
 The key is ``gak_<key_id>_<secret>``. Only the sha256 hash of the secret is
 stored; the full key exists in clear once, as ``issue_token``'s return value.
+
+``delete_user`` deletes every token whose ``user`` is the deleted identity and
+the identity's ``login_failures`` record: a user created later with the same
+identity inherits neither. Each backend enforces this constraint with its own
+means.
 
 Tag computation (``get_user_tags``): the user's own tags plus the tags of one
 group. ``group=None`` means the user's ``primary_group``; a user without a
@@ -256,7 +260,10 @@ class AuthStore:
         raise NotImplementedError
 
     def delete_user(self, identity: str) -> bool:
-        """Remove a user. True if a record was removed, False if absent."""
+        """Remove a user, every token whose ``user`` is ``identity`` and its login failures.
+
+        True if a user record was removed, False if absent.
+        """
         raise NotImplementedError
 
     def delete_group(self, code: str) -> bool:
@@ -602,7 +609,14 @@ class FileAuthStore(AuthStore):
         self._write("tokens", record["key_id"], record)
 
     def delete_user(self, identity: str) -> bool:
-        """Remove a user. True if a record was removed, False if absent."""
+        """Remove a user, every token whose ``user`` is ``identity`` and its login failures.
+
+        True if a user record was removed, False if absent.
+        """
+        for token in self.token_list:
+            if token.get("user") == identity:
+                self._delete("tokens", token["key_id"])
+        self._delete("login_failures", identity)
         return self._delete("users", identity)
 
     def delete_group(self, code: str) -> bool:

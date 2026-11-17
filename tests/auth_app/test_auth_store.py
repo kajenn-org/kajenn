@@ -125,10 +125,10 @@ class TestRecords:
         store.save_group({"code": "staff", "tags": []})
         store.save_tag({"code": "T", "description": "", "owner": "", "reserved": False})
         key = store.issue_token("alice", "*")
+        assert store.delete_token(_key_id(key)) is True
         assert store.delete_user("alice") is True
         assert store.delete_group("staff") is True
         assert store.delete_tag("T") is True
-        assert store.delete_token(_key_id(key)) is True
         assert store.get_user("alice") is None
         assert store.get_group("staff") is None
         assert store.get_tag("T") is None
@@ -161,14 +161,31 @@ class TestLoginFailures:
         assert store.get_login_failures("ns/alice:x") is None
         assert store.delete_login_failures("ns/alice:x") is False
 
-    def test_user_writes_and_deletion_leave_failures_unchanged(self, store_class, storage) -> None:
+    def test_user_writes_leave_failures_and_deletion_removes_them(self, store_class, storage) -> None:
         store = store_class(storage)
         record = {"identity": "alice", "failed_attempts": 2, "last_failed_at": 123.5}
         store.save_login_failures(record)
         store.save_user(_user(store))
         assert store.get_login_failures("alice") == record
         assert store.delete_user("alice") is True
-        assert store.get_login_failures("alice") == record
+        assert store.get_login_failures("alice") is None
+
+
+@pytest.mark.parametrize("store_class", [FileAuthStore, MemoryAuthStore])
+class TestUserDeleteTokens:
+    def test_delete_user_removes_its_tokens_and_leaves_the_others(
+        self, store_class, storage
+    ) -> None:
+        store = store_class(storage)
+        store.save_user(_user(store, "alice"))
+        store.save_user(_user(store, "bob"))
+        alice_keys = [store.issue_token("alice", "*"), store.issue_token("alice", ["OWN"])]
+        bob_key = store.issue_token("bob", "*")
+        assert store.delete_user("alice") is True
+        for key in alice_keys:
+            assert store.get_token(_key_id(key)) is None
+        assert [token["key_id"] for token in store.token_list] == [_key_id(bob_key)]
+        assert store.verify_token(bob_key)["identity"] == "bob"
 
 
 class TestStatus:

@@ -124,6 +124,10 @@ class MemoryAuthStore(AuthStore):
         self._records["tokens"][record["key_id"]] = dict(record)
 
     def delete_user(self, identity: str) -> bool:
+        tokens = self._records["tokens"]
+        for key_id in [k for k, token in tokens.items() if token.get("user") == identity]:
+            del tokens[key_id]
+        self._records["login_failures"].pop(identity, None)
         return self._records["users"].pop(identity, None) is not None
 
     def delete_group(self, code: str) -> bool:
