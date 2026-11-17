@@ -1039,6 +1039,57 @@ class TestGroupsAndTagsSections:
         sent = await drive(server, "/_auth/tags/delete?code=DEV", "POST", cookie=cookie)
         assert payload(sent) == {"code": "DEV", "deleted": True}
 
+    async def test_a_tag_is_read_and_saved_and_the_code_stays(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        await drive(
+            server,
+            "/_auth/tags/create_tag?code=DEV",
+            "POST",
+            body={"description": "Developers"},
+            cookie=cookie,
+        )
+        saved = payload(
+            await drive(
+                server,
+                "/_auth/tags/save?code=DEV",
+                "POST",
+                body={"description": "Builders", "reserved": True, "code": "OTHER"},
+                cookie=cookie,
+            )
+        )
+        expected = {
+            "code": "DEV",
+            "description": "Builders",
+            "owner": "",
+            "reserved": True,
+            "parent": None,
+        }
+        assert saved == expected
+        assert payload(await drive(server, "/_auth/tags/get?code=DEV", cookie=cookie)) == expected
+        assert "error" in payload(await drive(server, "/_auth/tags/get?code=OTHER", cookie=cookie))
+
+    async def test_tag_management_refuses_a_missing_or_duplicate_code(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        await drive(server, "/_auth/tags/create_tag?code=DEV", "POST", body={}, cookie=cookie)
+        refused = [
+            await drive(server, "/_auth/tags/create_tag", "POST", body={}, cookie=cookie),
+            await drive(
+                server,
+                "/_auth/tags/create_tag?code=DEV",
+                "POST",
+                body={"description": "again"},
+                cookie=cookie,
+            ),
+            await drive(server, "/_auth/tags/save?code=GHOST", "POST", body={}, cookie=cookie),
+            await drive(server, "/_auth/tags/get?code=GHOST", cookie=cookie),
+        ]
+        assert all("error" in payload(sent) for sent in refused)
+        tag = payload(await drive(server, "/_auth/tags/get?code=DEV", cookie=cookie))
+        assert tag["description"] == ""
+        assert "error" in payload(await drive(server, "/_auth/tags/get?code=GHOST", cookie=cookie))
+
 
 class TestTokensSection:
     async def test_an_issued_token_authenticates_and_its_secret_is_never_listed(
