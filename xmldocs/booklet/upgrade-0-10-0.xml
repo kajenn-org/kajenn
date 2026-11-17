@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<booklet id="booklet/upgrade-0-10-0" title="Upgrading to kajenn 0.10.0: login with the _auth application, and what each application must change" date="2026-11-17" lang="en" author="Giovanni Porcari">
+  <purpose>
+    <p>kajenn 0.10.0 moves authentication out of <c>_server</c> into one application with code <c>_auth</c>. This booklet is for the developers of the applications that run on kajenn. It states what changed, how to set up login, a generic checklist, and the changes each known application needs.</p>
+    <p>Every fact carries its source. A source without a repository prefix is a path in the kajenn repository at tag <c>v0.10.0</c>. A source with a prefix (<c>kajenn-webrtc/</c>, <c>sourcerer_v2/</c>, <c>genropy-kajenn/</c>, <c>hetzner-kube/</c>) is a path in that repository, read on 2026-11-17.</p>
+  </purpose>
+
+  <requires>
+    <list>
+      <item>kajenn 0.10.0 (tag <c>v0.10.0</c>, on PyPI).</item>
+      <item>A <c>storage_key</c> on the server: the <c>_auth</c> records are written encrypted.</item>
+      <item>For OIDC login: <c>external_url</c> on the server.</item>
+    </list>
+  </requires>
+
+  <step id="s-what" title="What changed">
+    <list>
+      <item>Authentication belongs to the application with code <c>_auth</c>, class <c>AuthApplicationBase</c>. A server without it authenticates nobody.</item>
+      <item><c>_server</c> has no login, no users and no tokens.</item>
+      <item>One store, <c>AuthStore</c>, with the file backend <c>FileAuthStore</c>. It holds users, groups, tag records, tokens and login failure counters.</item>
+      <item>A user record has <c>status</c> (<c>waiting</c>, <c>confirmed</c>, <c>banned</c>), <c>groups</c>, <c>primary_group</c> and <c>system</c>. Only <c>confirmed</c> authenticates.</item>
+      <item>A token belongs to a user. It carries <c>"*"</c> or a list of the user's tags.</item>
+      <item>A tag must have a tag record. An application declares its tags in <c>declared_tags</c> and its program users in <c>system_users</c>. Other tags are created with <c>/_auth/tags/create_tag</c>.</item>
+      <item>The management of users, groups, tags and tokens asks <c>AUTH_ADMIN</c>. The <c>_server</c> sections ask <c>SERVER_ADMIN</c>. <c>SUPERADMIN</c> is removed.</item>
+      <item>The session keeps the identity and the group of an avatar. The tags are asked to <c>/_auth/avatar</c> at every request.</item>
+      <item><c>avatar.data</c> lasts one request. Data for the whole session goes in <c>session.data</c>.</item>
+      <item><c>external_url</c> is optional. It switches on the capability <c>external_links</c>. The OIDC routes require it.</item>
+      <item>Data under <c>site:users</c> and <c>site:api_keys</c> is not read. At the first start the server log carries the password of <c>_temporary_admin</c>.</item>
+      <item>Session dumps and snapshots of earlier versions cannot be loaded. Delete them before the first start.</item>
+    </list>
+    <fact source="CHANGELOG.md:12" method="read" verified="2026-11-17">A server that does not mount <c>_auth</c> authenticates nobody: a presented <c>Authorization</c> header answers 401 and a session gives no identity.</fact>
+    <fact source="src/kajenn/auth_app/auth_app.py:277" method="read" verified="2026-11-17"><c>AuthApplicationBase</c> has <c>code</c> and <c>mount</c> equal to <c>AUTHENTICATION_CODE</c>, which is <c>"_auth"</c> (<c>src/kajenn/auth/mixin.py:71</c>).</fact>
+    <fact source="CHANGELOG.md:18" method="read" verified="2026-11-17">The <c>_server</c> routes <c>login</c>, <c>logout</c>, <c>login_methods</c>, <c>users/...</c>, <c>tokens/...</c> and <c>auth/...</c> are removed.</fact>
+    <fact source="CHANGELOG.md:55" method="read" verified="2026-11-17"><c>AuthCore</c>, <c>UserStore</c>, <c>FileUserStore</c>, <c>ApiKeyStore</c> and <c>FileApiKeyStore</c> are removed. <c>AuthStore</c> and <c>FileAuthStore</c> import from <c>kajenn</c>.</fact>
+    <fact source="docs/guides/authentication.md:121" method="read" verified="2026-11-17">The store holds five kinds of record: user, group, tag, token, login failure counter.</fact>
+    <fact source="CHANGELOG.md:103" method="read" verified="2026-11-17">The user record has <c>status</c> in place of <c>enabled</c>, and the fields <c>groups</c>, <c>primary_group</c>, <c>system</c>, <c>email</c>, <c>external_ids</c>. Only <c>confirmed</c> authenticates.</fact>
+    <fact source="CHANGELOG.md:106" method="read" verified="2026-11-17">A token belongs to a user and carries <c>"*"</c> or a non-empty list of tags, a subset of the user's tags. <c>label</c> is removed.</fact>
+    <fact source="CHANGELOG.md:113" method="read" verified="2026-11-17">The management refuses a tag that has no tag record. The tags an application uses are declared in <c>declared_tags</c>, or created with <c>/_auth/tags/create_tag</c>.</fact>
+    <fact source="CHANGELOG.md:109" method="read" verified="2026-11-17"><c>SUPERADMIN</c> is removed. Users, groups, tags and tokens ask <c>AUTH_ADMIN</c>; the <c>_server</c> sections, tasks included, ask <c>SERVER_ADMIN</c>.</fact>
+    <fact source="CHANGELOG.md:116" method="read" verified="2026-11-17">The session stores the identity and the group of an avatar, never its tags. At every request the server asks <c>/_auth/avatar</c> for the tags. A refused identity loses its session.</fact>
+    <fact source="CHANGELOG.md:127" method="read" verified="2026-11-17"><c>avatar.data</c> lives for one request. Data that must last for the session is written in <c>session.data</c>.</fact>
+    <fact source="src/kajenn/server_capabilities.py:53" method="read" verified="2026-11-17">The capability <c>external_links</c> is true when the server has an <c>external_url</c>.</fact>
+    <fact source="src/kajenn/auth_app/oidc_method.py:108" method="read" verified="2026-11-17"><c>OidcMethod</c> declares <c>env_requires = "external_links"</c> on its <c>start</c> and <c>callback</c> routes.</fact>
+    <fact source="CHANGELOG.md:98" method="read" verified="2026-11-17"><c>FileAuthStore</c> reads only <c>site:auth</c>. Records under <c>site:users</c> and <c>site:api_keys</c> are ignored. The server log carries the password of <c>_temporary_admin</c>.</fact>
+    <fact source="CHANGELOG.md:121" method="read" verified="2026-11-17">A session dump or snapshot of an earlier version cannot be loaded. Whoever upgrades deletes the session dump and the snapshot file before the first start.</fact>
+  </step>
+
+  <step id="s-setup" title="Set up login">
+    <section title="Mount _auth in the recipe">
+      <p>The recipe writes one <c>application</c> element with code <c>_auth</c>. The words under it configure the store, the lockout, the OIDC providers and the self registration.</p>
+      <example title="Recipe from docs/guides/authentication.md">
+        <code lang="python"><![CDATA[from genro_bag.resolvers import EnvResolver
+from kajenn import AuthApplicationBase, FileAuthStore
+
+
+def applications_section(self, cfg):
+    """The authentication application: who keeps the users, the lockout, the external provider."""
+    apps = cfg.applications()
+    auth_app = apps.application(code="_auth", app_class=AuthApplicationBase, cache_ttl=60)
+    auth_app.store(store_class=FileAuthStore, mount="site", prefix="auth")
+    auth_app.login(max_attempts=3, backoff=10)
+    auth_app.oidc().provider(
+        code="google",
+        issuer="https://accounts.example.com",
+        client_id="client-123",
+        client_secret=EnvResolver("GOOGLE_CLIENT_SECRET"),
+    )
+    auth_app.self_registration(status="waiting", tags=["shop_guest"])]]></code>
+      </example>
+      <list>
+        <item><c>cache_ttl</c>: seconds an answer of <c>_auth</c> stays cached. Default 300.</item>
+        <item><c>store(store_class, ...)</c>: without the word the store is <c>FileAuthStore</c> on <c>site:auth</c>.</item>
+        <item><c>login(max_attempts, backoff)</c>: defaults 5 attempts, 30 seconds.</item>
+        <item><c>oidc().provider(code, issuer, client_id, client_secret, scopes)</c>: one per provider. <c>scopes</c> defaults to <c>openid email profile</c>.</item>
+        <item><c>self_registration(status, tags)</c>: what happens to a provider user the store does not have.</item>
+      </list>
+      <fact source="docs/guides/authentication.md:84" method="read" verified="2026-11-17">The recipe above is the documented form of the <c>_auth</c> element.</fact>
+      <fact source="src/kajenn/auth_app/auth_app.py:242" method="read" verified="2026-11-17">The <c>_auth</c> grammar has the words <c>store</c>, <c>login</c>, <c>oidc</c>, <c>provider</c> (code, issuer, client_id, client_secret, scopes) and <c>self_registration</c> (status, tags).</fact>
+      <fact source="docs/guides/authentication.md:101" method="read" verified="2026-11-17"><c>cache_ttl</c> defaults to 300; the store defaults to <c>FileAuthStore</c> on <c>site:auth</c>; the lockout defaults to 5 attempts and 30 seconds.</fact>
+    </section>
+
+    <section title="The first administrator">
+      <p>An empty store has no administrator. At startup <c>_auth</c> writes <c>_temporary_admin</c> and logs its password. Enter with it and create a real user with <c>AUTH_ADMIN</c> (and <c>SERVER_ADMIN</c> for the <c>_server</c> sections). <c>_temporary_admin</c> is then deleted.</p>
+      <code lang="text"><![CDATA[application _auth: temporary administrator _temporary_admin, password <password>]]></code>
+      <fact source="src/kajenn/auth_app/auth_app.py:629" method="read" verified="2026-11-17">The log line is <c>application %s: temporary administrator %s, password %s</c>, at level warning.</fact>
+      <fact source="docs/guides/authentication.md:418" method="read" verified="2026-11-17">When a user other than <c>_temporary_admin</c> holds <c>AUTH_ADMIN</c>, <c>_auth</c> deletes <c>_temporary_admin</c>. A restart while it still exists writes it again with a new password.</fact>
+    </section>
+
+    <section title="Password login">
+      <list>
+        <item><c>POST /_auth/login</c> with <c>{identity, password, group}</c>. <c>group</c> is optional.</item>
+        <item>A refusal answers status 200 with <c>{"error": ...}</c>. Check the body.</item>
+        <item>An <c>Authorization: Basic</c> header is checked on the same users.</item>
+      </list>
+      <fact source="docs/guides/authentication.md:224" method="read" verified="2026-11-17"><c>/_auth/login</c> answers <c>{session_id, identity, group, tags, groups}</c>, or 200 with <c>{"error": ...}</c>.</fact>
+    </section>
+
+    <section title="Replace a static bearer with a token of a system user">
+      <p>A fixed bearer of the recipe no longer exists. Declare a system user in the application. An administrator issues it a <c>gak_</c> token.</p>
+      <example title="Declared tags and system user, from docs/guides/authentication.md">
+        <code lang="python"><![CDATA[class Billing(RoutedApplication):
+    @property
+    def declared_tags(self) -> list:
+        return [
+            {"code": "bll_reports", "description": "Read the billing reports"},
+            {"code": "bll_admin", "parent": "bll_reports"},
+        ]
+
+    @property
+    def system_users(self) -> list:
+        return [{"identity": "bll_robot", "status": "confirmed",
+                 "tags": ["bll_reports"], "groups": []}]]]></code>
+      </example>
+      <code lang="bash"><![CDATA[curl -u "operator:$ADMIN_PASSWORD" -H 'Content-Type: application/json' \
+  -d '{"user":"bll_robot","tags":["bll_reports"]}' \
+  https://<host>/_auth/tokens/issue]]></code>
+      <p>The answer carries the <c>key</c> once. The client sends it as <c>Authorization: Bearer gak_...</c>.</p>
+      <fact source="CHANGELOG.md:50" method="read" verified="2026-11-17">A fixed bearer becomes a <c>gak_</c> token of a system user.</fact>
+      <fact source="docs/guides/authentication.md:381" method="read" verified="2026-11-17">At startup <c>_auth</c> writes the declared tags and system users that do not exist. A system user gets <c>system</c> true and no token.</fact>
+      <fact source="docs/guides/management.md:117" method="read" verified="2026-11-17"><c>/_auth/tokens/issue</c> takes <c>{user, tags, expires_at}</c>; the <c>key</c> is returned only once.</fact>
+    </section>
+
+    <section title="OIDC login">
+      <list>
+        <item>The provider goes under the <c>_auth</c> element: <c>auth_app.oidc().provider(code, issuer, client_id, client_secret)</c>.</item>
+        <item>Write <c>client_secret</c> as a resolver, for example <c>EnvResolver("...")</c>.</item>
+        <item>The server needs <c>external_url</c>. The default template reads <c>KAJENN_EXTERNAL_URL</c>.</item>
+        <item>Register <c>&lt;external_url&gt;/_auth/oidc:&lt;code&gt;/callback</c> as redirect URI with the provider.</item>
+        <item>The login starts at <c>/_auth/oidc:&lt;code&gt;/start?next=...</c>.</item>
+      </list>
+      <p>How a provider user is found in the store:</p>
+      <list ordered="true">
+        <item>The user whose <c>external_ids</c> holds the token's <c>iss</c> + <c>sub</c>.</item>
+        <item>Else, with <c>email</c> and <c>email_verified</c> true, the one user with that email. <c>{iss, sub}</c> is added to its <c>external_ids</c>.</item>
+        <item>Else <c>self_registration</c>: absent, the login is refused; present, a user is written with identity = the verified email.</item>
+      </list>
+      <p>The provider attributes <c>tags</c> and <c>identity_claim</c> are removed. The tags of a provider user come from its store record.</p>
+      <fact source="CHANGELOG.md:27" method="read" verified="2026-11-17">The OIDC routes move from <c>/_server/auth/oidc:&lt;code&gt;/...</c> to <c>/_auth/oidc:&lt;code&gt;/...</c>. The <c>redirect_uri</c> becomes <c>&lt;external_url&gt;/_auth/oidc:&lt;code&gt;/callback</c>.</fact>
+      <fact source="CHANGELOG.md:38" method="read" verified="2026-11-17"><c>_server_app.oidc().provider(...)</c> becomes <c>auth_app.oidc().provider(...)</c>. The provider attributes <c>tags</c> and <c>identity_claim</c> are removed.</fact>
+      <fact source="src/kajenn/auth_app/oidc_method.py:268" method="read" verified="2026-11-17"><c>link_user</c> looks up <c>iss</c> + <c>sub</c>, then the one user with the verified email, then calls <c>register_user</c>.</fact>
+      <fact source="src/kajenn/config/templates.py:78" method="read" verified="2026-11-17">The default template writes <c>cfg.server(external_url=EnvResolver("KAJENN_EXTERNAL_URL", default=""))</c>.</fact>
+      <fact source="src/kajenn/auth_app/auth_method.py:128" method="read" verified="2026-11-17"><c>login_methods</c> lists only the methods whose required capability is on: without <c>external_url</c> the OIDC providers are left out.</fact>
+    </section>
+
+    <section title="Replace a custom credential check">
+      <p>Subclass <c>AuthApplicationBase</c>. Override <c>verify_credential(credential)</c>. Mount the subclass with code <c>_auth</c>. The answer is <c>{identity, group, tags, data, valid_until}</c>, or <c>HTTPUnauthorized</c>.</p>
+      <code lang="python"><![CDATA[apps.application(code="_auth", app_class=SiteAuth)]]></code>
+      <p>A login method of a subclass is registered with <c>register_auth_method</c> on the <c>AuthApplicationBase</c> subclass.</p>
+      <fact source="src/kajenn/auth_app/auth_app.py:431" method="read" verified="2026-11-17"><c>verify_credential(credential)</c> receives the <c>Authorization</c> value and answers <c>{identity, group, tags, data, valid_until}</c>. It accepts <c>Basic</c> and <c>Bearer gak_...</c>.</fact>
+      <fact source="src/kajenn/auth_app/auth_app.py:790" method="read" verified="2026-11-17">The route <c>/_auth/authenticate</c> receives <c>channel</c> and calls <c>self.verify_credential(credential)</c>: the channel does not reach <c>verify_credential</c>.</fact>
+      <fact source="src/kajenn/auth_app/auth_app.py:415" method="read" verified="2026-11-17"><c>register_auth_method(method)</c> is a member of <c>AuthApplicationBase</c>.</fact>
+      <fact source="docs/guides/authentication.md:518" method="read" verified="2026-11-17">The guide has a full <c>SiteAuth</c> example that overrides <c>verify_credential</c>.</fact>
+    </section>
+  </step>
+
+  <step id="s-checklist" title="Upgrade checklist">
+    <table title="Old to new">
+      <row head="true"><cell>Before 0.10.0</cell><cell>0.10.0</cell></row>
+      <row><cell>No <c>_auth</c> in the recipe</cell><cell><c>application(code="_auth", app_class=AuthApplicationBase)</c></cell></row>
+      <row><cell><c>cfg.authentication()</c> with <c>users</c>, <c>tokens</c>, <c>credentials</c>, <c>basic_user</c>, <c>bearer_token</c>, <c>jwt</c>, <c>cache_ttl</c></cell><cell><c>auth_app.store(store_class=...)</c>; <c>cache_ttl</c> as attribute of the <c>_auth</c> element</cell></row>
+      <row><cell><c>cfg.channels().channel(name, authentication_route)</c></cell><cell>Removed. Custom check: subclass with <c>verify_credential</c></cell></row>
+      <row><cell><c>bearer_token(identity, token, tags)</c></cell><cell><c>gak_</c> token of a system user (<c>/_auth/tokens/issue</c>)</cell></row>
+      <row><cell>JWT with a shared secret, <c>/_server/tokens/create_jwt</c></cell><cell>Removed. A JWT issued elsewhere: <c>verify_credential</c> in a subclass</cell></row>
+      <row><cell><c>_server_app.login(...)</c>, <c>_server_app.oidc().provider(...)</c></cell><cell><c>auth_app.login(...)</c>, <c>auth_app.oidc().provider(...)</c></cell></row>
+      <row><cell>Provider attributes <c>tags</c>, <c>identity_claim</c></cell><cell>Removed. Tags from the store record</cell></row>
+      <row><cell><c>/_server/login</c>, <c>/_server/logout</c>, <c>/_server/login_methods</c></cell><cell><c>/_auth/login</c>, <c>/_auth/logout</c>, <c>/_auth/login_methods</c></cell></row>
+      <row><cell><c>/_server/users/...</c>, <c>/_server/tokens/...</c></cell><cell><c>/_auth/users/...</c>, <c>/_auth/tokens/...</c>; new <c>/_auth/groups/...</c>, <c>/_auth/tags/...</c></cell></row>
+      <row><cell><c>/_server/auth/oidc:&lt;code&gt;/start</c>, <c>/callback</c></cell><cell><c>/_auth/oidc:&lt;code&gt;/start</c>, <c>/callback</c></cell></row>
+      <row><cell><c>/_server/auth/authenticate</c>, <c>/_server/auth/forget_credential</c></cell><cell><c>/_auth/authenticate</c>, <c>/_auth/forget_credential</c></cell></row>
+      <row><cell><c>from kajenn.server_app import AuthMethod, PasswordMethod, OidcMethod, safe_next_path</c></cell><cell><c>from kajenn.auth_app import ...</c>; <c>OidcMethod.get_safe_next_path</c></cell></row>
+      <row><cell><c>AuthCore</c>, <c>UserStore</c>, <c>ApiKeyStore</c> and their file classes</cell><cell><c>AuthStore</c>, <c>FileAuthStore</c> from <c>kajenn</c></cell></row>
+      <row><cell><c>server.user_store</c>, <c>server.api_key_store</c>, <c>server.auth_core</c>, <c>server.channels</c></cell><cell><c>server.applications["_auth"].store</c></cell></row>
+      <row><cell><c>AsgiServer(credential_cache_ttl=...)</c></cell><cell><c>cache_ttl</c> of the <c>_auth</c> application</cell></row>
+      <row><cell><c>ServerApplication.register_auth_method</c>, <c>login_policy</c>, <c>oidc_providers</c></cell><cell>Same names on a subclass of <c>AuthApplicationBase</c></cell></row>
+      <row><cell><c>SUPERADMIN</c></cell><cell><c>AUTH_ADMIN</c>; <c>SERVER_ADMIN</c> for tasks</cell></row>
+      <row><cell>Any tag written in a rule</cell><cell>A tag record: <c>declared_tags</c> or <c>/_auth/tags/create_tag</c></cell></row>
+      <row><cell>User field <c>enabled</c></cell><cell><c>status</c>: <c>waiting</c>, <c>confirmed</c>, <c>banned</c></cell></row>
+      <row><cell>Token field <c>label</c></cell><cell>Removed. Token has <c>user</c></cell></row>
+      <row><cell>Authentication answer <c>{identity, tags, ...}</c></cell><cell><c>{identity, group, tags, ...}</c></cell></row>
+      <row><cell><c>avatar.data</c> for the session</cell><cell><c>session.data</c></cell></row>
+      <row><cell>Users in <c>site:users</c>, keys in <c>site:api_keys</c></cell><cell>Not read. Create them again with <c>_temporary_admin</c></cell></row>
+      <row><cell>Session dump and snapshot files</cell><cell>Delete before the first start</cell></row>
+    </table>
+    <fact source="CHANGELOG.md:31" method="read" verified="2026-11-17">The recipe elements <c>authentication</c> and <c>channels</c> are removed. A recipe that still writes them fails with the error of the grammar.</fact>
+    <fact source="CHANGELOG.md:64" method="read" verified="2026-11-17"><c>AsgiServer(..., credential_cache_ttl=5)</c> raises <c>TypeError</c>.</fact>
+    <fact source="CHANGELOG.md:70" method="read" verified="2026-11-17">The server members <c>auth_core</c>, <c>user_store</c>, <c>api_key_store</c>, <c>channels</c> and <c>authentication_route(channel)</c> are removed.</fact>
+    <fact source="CHANGELOG.md:82" method="read" verified="2026-11-17"><c>ServerApplication</c> loses <c>login_policy</c>, <c>oidc_providers</c>, <c>auth_section</c>, <c>register_auth_method</c> and <c>read_declared_login_surface</c>. That code moves to a subclass of <c>AuthApplicationBase</c>.</fact>
+    <fact source="CHANGELOG.md:94" method="read" verified="2026-11-17"><c>AuthMethod</c>, <c>PasswordMethod</c>, <c>OidcMethod</c> and <c>safe_next_path</c> are removed from <c>kajenn.server_app</c>. <c>OidcMethod.get_safe_next_path</c> replaces <c>safe_next_path</c>.</fact>
+    <fact source="CHANGELOG.md:129" method="read" verified="2026-11-17">A custom authentication answer adds <c>group</c>.</fact>
+  </step>
+
+  <step id="s-apps" title="Application by application">
+    <section title="meetlot (kajenn-webrtc)">
+      <list>
+        <item><c>pyproject.toml</c> pins <c>kajenn&gt;=0.9.2,&lt;0.10</c>. Raise it.</item>
+        <item><c>site.py</c>: the static <c>bearer_token</c> of identity <c>webrtc</c>, tag <c>rooms</c>, becomes a <c>gak_</c> token of a system user.</item>
+        <item><c>site.py</c>: the provider <c>keycloak</c> moves from the <c>_server</c> element to the <c>_auth</c> element. <c>identity_claim='sub'</c> is removed. <c>external_url</c> stays.</item>
+        <item><c>auth.py</c>: the imports from <c>kajenn.server_app</c> move to <c>kajenn.auth_app</c>. <c>safe_next_path</c> becomes <c>OidcMethod.get_safe_next_path</c>.</item>
+        <item><c>auth.py</c>: <c>MeetlotServer(ServerApplication).register_auth_method</c> moves to a subclass of <c>AuthApplicationBase</c>.</item>
+        <item><c>auth.py</c>: <c>KeycloakMethod.callback</c> attaches <c>Avatar(subject, tags)</c>. In 0.10.0 the session identity must be a user of the <c>_auth</c> store.</item>
+        <item><c>auth.py</c>: <c>avatar_from_claims</c> writes <c>expires_at</c>, <c>name</c>, <c>email</c> in <c>avatar.data</c>. <c>require()</c> and <c>Account.me</c> read them on later requests. In 0.10.0 they are gone after the login request.</item>
+        <item><c>auth.py</c>: the tags <c>meetlot_host</c> and <c>meetlot_admin</c> come from the Keycloak groups. How groups become tags is an open decision (see the decisions).</item>
+        <item>The path <c>/_server/auth/oidc:keycloak/...</c> becomes <c>/_auth/oidc:keycloak/...</c> in <c>auth.py</c>, <c>welcome.html</c> and <c>tests/test_auth.py</c>. <c>application.py</c> and <c>pages/call.py</c> use it through <c>LOGIN</c>.</item>
+        <item>Tags to declare: <c>meetlot_host</c>, <c>meetlot_admin</c>, <c>rooms</c>.</item>
+        <item>Keycloak (realm <c>softwell</c>, client <c>meetlot</c>): the redirect URI becomes <c>https://meetlot.genro.com/_auth/oidc:keycloak/callback</c>, in <c>deploy/keycloak-meetlot.json</c> and in Keycloak.</item>
+        <item>Point to check: <c>deploy/meetlot.yaml</c> has <c>readOnlyRootFilesystem: true</c> and mounts only <c>/tmp</c>. <c>FileAuthStore</c> writes records and needs writable persistent storage.</item>
+      </list>
+      <fact source="kajenn-webrtc/pyproject.toml:19" method="read" verified="2026-11-17">The dependency is <c>"kajenn&gt;=0.9.2,&lt;0.10"</c>.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/site.py:49" method="read" verified="2026-11-17"><c>cfg.authentication().credentials().bearer_token(identity="webrtc", token=EnvResolver(ACCESS_CODE_VARIABLE), tags=ROOMS_TAG)</c>; <c>ROOMS_TAG</c> is <c>"rooms"</c> (<c>kajenn-webrtc/src/kajenn_webrtc/access.py:14</c>).</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/site.py:56" method="read" verified="2026-11-17"><c>apps.application(code='_server', app_class=MeetlotServer)</c> with <c>server.oidc().provider(code='keycloak', ..., scopes='openid email profile groups', identity_claim='sub')</c>.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/site.py:43" method="read" verified="2026-11-17"><c>cfg.server(external_url=self.public_url)</c>.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/auth.py:11" method="read" verified="2026-11-17">Imports <c>ServerApplication</c> from <c>kajenn.server_app</c>, <c>safe_next_path</c> from <c>kajenn.server_app.auth_method</c>, <c>OidcMethod</c> from <c>kajenn.server_app.oidc_method</c>.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/auth.py:18" method="read" verified="2026-11-17"><c>LOGIN = '/_server/auth/oidc:keycloak/start?next=/call'</c>.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/auth.py:26" method="read" verified="2026-11-17"><c>require()</c> refuses when <c>identity.data.get('expires_at', 0) &lt;= time.time()</c>.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/auth.py:40" method="read" verified="2026-11-17"><c>avatar_from_claims</c> gives <c>meetlot_host</c> to every user and <c>meetlot_admin</c> to members of <c>KEYCLOAK_ADMIN_GROUP</c>; it builds <c>Avatar(subject, tags)</c> and writes <c>expires_at</c>, <c>name</c>, <c>email</c> in <c>avatar.data</c>.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/auth.py:97" method="read" verified="2026-11-17"><c>KeycloakMethod.callback</c> calls <c>session.attach_avatar(avatar_from_claims(claims))</c> and redirects to <c>safe_next_path(target)</c>.</fact>
+      <fact source="CHANGELOG.md:119" method="read" verified="2026-11-17">A handler that attaches an <c>Avatar</c> to a session attaches an identity of the <c>_auth</c> store.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/auth.py:103" method="read" verified="2026-11-17"><c>MeetlotServer(ServerApplication)</c> overrides <c>register_auth_method</c> to replace the <c>keycloak</c> method with <c>KeycloakMethod</c>.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/auth.py:116" method="read" verified="2026-11-17"><c>Account.me</c> reads <c>identity.data.get('name', ...)</c>.</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/welcome.html:3" method="read" verified="2026-11-17">Two links point to <c>/_server/auth/oidc:keycloak/start?next=/call</c> (lines 3 and 4).</fact>
+      <fact source="kajenn-webrtc/tests/test_auth.py:160" method="read" verified="2026-11-17">The tests call <c>/_server/auth/oidc:keycloak/start</c> and <c>/callback</c> (lines 160, 165, 173).</fact>
+      <fact source="kajenn-webrtc/src/kajenn_webrtc/application.py:16" method="read" verified="2026-11-17"><c>application.py</c> imports <c>LOGIN</c> and redirects to it (lines 62, 68). <c>pages/call.py:18</c> imports it too.</fact>
+      <fact source="kajenn-webrtc/deploy/keycloak-meetlot.json:13" method="read" verified="2026-11-17"><c>"redirectUris": ["https://meetlot.genro.com/_server/auth/oidc:keycloak/callback"]</c>.</fact>
+      <fact source="kajenn-webrtc/deploy/meetlot.yaml:55" method="read" verified="2026-11-17"><c>KEYCLOAK_ISSUER</c> is <c>https://auth.gpkube.genro.dev/realms/softwell</c>; <c>KEYCLOAK_CLIENT_ID</c> is <c>meetlot</c> (line 56).</fact>
+      <fact source="kajenn-webrtc/deploy/meetlot.yaml:67" method="read" verified="2026-11-17">The container has <c>readOnlyRootFilesystem: true</c>; the only volume mount is <c>/tmp</c>, an <c>emptyDir</c> (lines 68, 73).</fact>
+    </section>
+
+    <section title="sourcerer v2">
+      <list>
+        <item>It pins <c>kajenn==0.5.0</c>.</item>
+        <item>Its Keycloak login goes through genropy <c>gnrauth:oidc</c>, not kajenn. No Keycloak change.</item>
+        <item><c>config.py</c> writes <c>cfg.channels()</c> with <c>authentication_route="/api/auth/authenticate"</c>. The element is removed. The logic of <c>AuthTools.authenticate</c> moves to a subclass of <c>AuthApplicationBase</c> mounted as <c>_auth</c>, and the answer adds <c>group</c>.</item>
+        <item><c>AuthTools.authenticate</c> branches on <c>channel</c> (telegram). <c>verify_credential</c> receives no channel.</item>
+        <item>Other breaks between 0.5 and 0.10 are not about authentication: <c>McpOpenApiApplication</c> is removed in 0.9.0; the channel <c>rest</c> is renamed <c>api</c> in 0.9.0. See the 0.9.x sections of <c>CHANGELOG.md</c>.</item>
+      </list>
+      <p>The statement on genropy <c>gnrauth:oidc</c> comes from the survey of 2026-11-17; this booklet carries no source line for it.</p>
+      <fact source="sourcerer_v2/docker_v2/requirements_v2.txt:166" method="read" verified="2026-11-17"><c>kajenn==0.5.0</c>.</fact>
+      <fact source="hetzner-kube/apps/sourcerer/sourcerer-v2.yaml:35" method="read" verified="2026-11-17">Started as <c>gnrkajenn sourcerer --config src/sourcerer_core/tools/config.py</c>.</fact>
+      <fact source="sourcerer_v2/src/sourcerer_core/tools/config.py:54" method="read" verified="2026-11-17"><c>cfg.channels()</c> with <c>channel(name=name, authentication_route=AUTHENTICATION_ROUTE)</c> for <c>rest</c>, <c>mcp</c>, <c>telegram</c>; <c>AUTHENTICATION_ROUTE = "/api/auth/authenticate"</c> (line 41).</fact>
+      <fact source="sourcerer_v2/src/sourcerer_core/tools/auth.py:72" method="read" verified="2026-11-17"><c>AuthTools.authenticate(credential, channel)</c> answers <c>{identity, tags, data}</c>, without <c>group</c>; for the telegram channel it calls <c>telegram_avatar</c> (line 84).</fact>
+      <fact source="sourcerer_v2/src/sourcerer_core/tools/application.py:25" method="read" verified="2026-11-17"><c>from kajenn.applications.mcp import McpOpenApiApplication</c>.</fact>
+      <fact source="CHANGELOG.md:222" method="read" verified="2026-11-17">In 0.9.0 <c>McpOpenApiApplication</c> is removed and the channel <c>rest</c> is renamed <c>api</c>.</fact>
+    </section>
+
+    <section title="sourcerer v1">
+      <p>It does not use kajenn. No change.</p>
+    </section>
+
+    <section title="kajenn-orchestra">
+      <p>PR #44 (Prometheus families of the SPA pool) is merged in <c>develop</c> on 2026-11-17. It raises the dependency to <c>kajenn&gt;=0.10.0</c>. Its tests mount <c>AuthApplicationBase</c> and read <c>GET /_server/metrics</c> with a <c>gak_</c> token of a user of <c>_auth</c>. The latest release is still 0.7.0.</p>
+      <fact source="gh pr view 44 -R kajenn-org/kajenn-orchestra" method="run" verified="2026-11-17">State <c>MERGED</c> at 2026-11-17T15:28:49Z, base <c>develop</c>.</fact>
+      <fact source="gh pr diff 44 -R kajenn-org/kajenn-orchestra" method="run" verified="2026-11-17"><c>pyproject.toml</c> changes <c>kajenn&gt;=0.9.0</c> to <c>kajenn&gt;=0.10.0</c>; <c>tests/orchestration/test_orchestration_prometheus_metrics.py</c> reads <c>/_server/metrics</c> with a token of <c>_auth</c>.</fact>
+      <fact source="gh release list -R kajenn-org/kajenn-orchestra" method="run" verified="2026-11-17">The latest release is <c>v0.7.0</c> (2026-11-13).</fact>
+    </section>
+
+    <section title="genropy-kajenn">
+      <p><c>GnrAppWrapper.authenticate</c> is used as <c>authentication_route</c>. Its answer has no <c>group</c>. How genropy-kajenn authenticates after 0.10.0 is an open decision of the owner (see the decisions).</p>
+      <fact source="genropy-kajenn/src/genropy_kajenn/gnrapp_wrapper/gnrapp_wrapper.py:89" method="read" verified="2026-11-17"><c>authenticate(credential, channel)</c> verifies a <c>Bearer</c> on <c>adm.api_token</c> and answers <c>{identity, tags, data, valid_until}</c> (line 123).</fact>
+      <fact source="genropy-kajenn/pyproject.toml:29" method="read" verified="2026-11-17">The dependency is <c>"kajenn&gt;=0.9.0"</c>.</fact>
+    </section>
+  </step>
+
+  <step id="s-open" title="Open decisions and known issues">
+    <p>The open decisions are listed at the end of this booklet. They have no proposal yet. The known issue is listed under limits.</p>
+  </step>
+
+  <limits>
+    <limit source="kajenn-org/kajenn#155">A WSX connection keeps the avatar of its handshake.</limit>
+  </limits>
+
+  <decisions>
+    <decision id="d-oidc-groups" status="open">
+      <question>How do the groups of an OIDC provider become tags of a user: in kajenn through a recipe rule, or in the application through a subclass? meetlot depends on it.</question>
+    </decision>
+    <decision id="d-genropy-kajenn-auth" status="open">
+      <question>How does genropy-kajenn authenticate its <c>adm.api_token</c> credentials after 0.10.0?</question>
+    </decision>
+  </decisions>
+</booklet>
