@@ -76,7 +76,9 @@ Claim anchors: [`AuthStore`](../../../src/kajenn/auth_app/auth_store.py#AuthStor
 
 Each configured provider registers `oidc:<code>` on `_auth`, with `start`
 and `callback` routes under `/_auth/oidc:<code>/`. A provider requires the
-server's `external_url`. Discovery is lazy; authorization uses PKCE S256.
+server's `external_url`: both routes declare `env_requires="external_links"`,
+so on a server without `external_url` the server boots and the routes are not
+available (`404`). Discovery is lazy; authorization uses PKCE S256.
 The callback finds a user by verified `iss` and `sub`, then by verified email,
 or registers one under `self_registration`. It refuses a user that is not
 confirmed or is a system user. Tags and the primary group come from the

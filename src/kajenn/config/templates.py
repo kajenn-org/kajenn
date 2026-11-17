@@ -39,6 +39,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from genro_bag.resolvers import EnvResolver
 from genro_storage import StorageManager
 
 from .builder import AsgiConfigBuilder, BaseConfiguration
@@ -57,10 +58,11 @@ __all__ = [
 class DefaultConfiguration(BaseConfiguration):
     """The usual assembly, complete and valid: listener, storage, applications.
 
-    ``BaseConfiguration`` brings the shipped defaults (the bare ``server``
-    section and the ``site:``/``home:`` mounts); this adds the empty
-    ``applications`` collection, so the section a shortcut or a site recipe
-    fills always exists.
+    ``BaseConfiguration`` brings the shipped defaults (the ``site:``/``home:``
+    mounts); this writes the server's public address from the environment
+    variable ``KAJENN_EXTERNAL_URL`` and adds the empty ``applications``
+    collection, so the section a shortcut or a site recipe fills always exists.
+    With the variable unset the server has no ``external_url``.
     """
 
     def main(self, root: Any) -> None:
@@ -70,6 +72,10 @@ class DefaultConfiguration(BaseConfiguration):
         self.server_section(cfg)
         self.storage_section(cfg)
         self.applications_section(cfg)
+
+    def server_section(self, cfg: Any) -> None:
+        """The public address, read from ``KAJENN_EXTERNAL_URL`` (absent when unset)."""
+        cfg.server(external_url=EnvResolver("KAJENN_EXTERNAL_URL", default=""))
 
     def applications_section(self, cfg: Any) -> None:
         """The application collection, empty — a site fills it."""

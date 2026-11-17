@@ -36,7 +36,11 @@ unreachable still boots. The JWKS client is built once and kept on the
 instance; its blocking key fetch runs through ``server.run_sync``.
 
 The ``redirect_uri`` is absolute: ``<server.external_url>/_auth/oidc:<code>/callback``.
-The start request and the token exchange send the same string.
+The start request and the token exchange send the same string. Both routes
+declare ``env_requires="external_links"``: on a server without
+``external_url`` they are not available and the router refuses them with
+``not_available`` (see ``ServerCapabilities``), and ``login_methods`` leaves
+the provider out.
 
 The user, from the verified ``id_token`` claims:
 
@@ -101,6 +105,7 @@ class OidcMethod(AuthMethod):
     """An OIDC provider as a ``redirect`` login method of ``_auth`` (see module docstring)."""
 
     kind = "redirect"
+    env_requires = "external_links"
 
     def __init__(
         self, application: Any, method_id: str, code: str, provider: dict[str, Any]
@@ -171,7 +176,7 @@ class OidcMethod(AuthMethod):
 
     # ── routes ─────────────────────────────────────────────────────────
 
-    @route(media_type="text/plain")
+    @route(media_type="text/plain", env_requires=env_requires)
     async def start(self, next: str = "", _request=None) -> str:
         """Begin the authorization-code flow with PKCE: redirect to the provider.
 
@@ -200,7 +205,7 @@ class OidcMethod(AuthMethod):
         }
         raise Redirect(f"{discovery['authorization_endpoint']}?{urlencode(params)}")
 
-    @route(media_type="text/plain")
+    @route(media_type="text/plain", env_requires=env_requires)
     async def callback(self, state: str = "", code: str = "", _request=None) -> str:
         """Close the flow: check state, exchange, verify, find the user, attach, redirect.
 

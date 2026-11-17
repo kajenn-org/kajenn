@@ -56,7 +56,10 @@ itself when it hands its own URL to a third party, for example the absolute
 (RFC 6749 §3.1.2). It is DECLARED rather than derived from a request: the URI
 must match the one registered with the provider — a deployment fact known to
 whoever installs — and deriving it from the client-supplied ``Host`` would
-build a value the provider then rejects.
+build a value the provider then rejects. It is optional: a server without it
+(not given, or a value that resolves empty) has ``external_url`` ``None`` and
+its applications lack the ``external_links`` capability, so a route that
+requires it (the OIDC routes of ``_auth``) is not available.
 
 The management application ``_server`` (``ServerApplication``) exists in every
 server: when no application of code ``_server`` reached the merged kwargs,
@@ -459,7 +462,9 @@ class AsgiServer(
         What the server calls ITSELF when it hands its own address to a third
         party — distinct from the ``host``/``port`` it binds to, which differ
         behind a proxy. Declared in the config's ``server`` section; the OIDC
-        ``redirect_uri`` of the ``_auth`` application is built on it.
+        ``redirect_uri`` of the ``_auth`` application is built on it. ``None``
+        when not given or when the declared value resolves empty: the
+        ``external_links`` capability (``ServerCapabilities``) is then off.
         """
         return self._external_url
 

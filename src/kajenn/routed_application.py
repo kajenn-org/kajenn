@@ -20,7 +20,10 @@ methods on subclasses, and external ``RoutingClass`` instances mount as
 sub-trees via ``add_branches({"name": ..., "instance": child})``. The constructor
 plugs the ``auth`` plugin on the app router, so
 entries declaring ``auth_rule`` are filtered by the request's authorization
-tags — attached children inherit the plug.
+tags — attached children inherit the plug. It also plugs the ``env`` plugin
+and sets ``capabilities`` to a ``ServerCapabilities`` bound to the app, so an
+entry declaring ``env_requires`` (``"external_links"``) resolves only while the
+server has that capability; a missing capability is ``not_available``.
 
 The config-driven plugins (the ``openapi`` dialect) are armed LAZILY:
 on the first ``route`` access made after the app is attached to a server, the
@@ -86,6 +89,7 @@ from ._exposition import families_text
 from ._http_metrics import ROUTE_SCOPE_KEY
 from .plugins.openapi.plugin import METHOD_NOT_ALLOWED, OpenAPIPlugin
 from .request import Request
+from .server_capabilities import ServerCapabilities
 from .streaming import StreamingResponse
 
 if TYPE_CHECKING:
@@ -186,6 +190,8 @@ class RoutedApplication(BaseApplication, RoutingClass):
         router.channel.configure(channels=cls.http_channel)
         router.plug("pydantic")
         router.plug(OpenAPIPlugin.plugin_code)
+        router.plug("env")
+        self.capabilities = ServerCapabilities(self)
         # A branch of the same name is refused by ``add_branches`` itself. Only a
         # route declared under that name clashes: a catch-all route resolves
         # every segment without naming it (kajenn-org/kajenn#123).

@@ -24,6 +24,7 @@ The contract::
     AuthMethod (RoutingClass):
         method_id: str          # "password", ...
         kind: str               # "form" | "redirect" | "ceremony"
+        env_requires: str       # capability its routes require; "" for none
         descriptor() -> dict    # what the login page renders it from
 
     AuthMethodRegistry:
@@ -34,6 +35,11 @@ The contract::
 ``kind`` tells the page how to draw the method: ``form`` renders the
 identity/password form, ``redirect`` renders one button navigating to the
 method's entry URL, ``ceremony`` names a client-driven exchange.
+
+``env_requires`` names the server capability the method's routes require
+(``ServerCapabilities``). ``descriptor_list`` leaves out a method whose
+capability is off, so the login page never shows a method whose routes
+answer 404.
 
 ``PasswordMethod`` is the ``form`` method: it owns no routes and posts to
 ``/_auth/login``. The registry attaches a method under
@@ -62,6 +68,9 @@ class AuthMethod(RoutingClass):
 
     #: The method kind: "form" | "redirect" | "ceremony". A concrete method sets it.
     kind: str = ""
+
+    #: The capability the method's routes require; "" when they require none.
+    env_requires: str = ""
 
     def __init__(self, application: Any, method_id: str) -> None:
         """Bind the method to its application and fix its id."""
@@ -117,8 +126,17 @@ class AuthMethodRegistry:
 
     @property
     def descriptor_list(self) -> list[dict[str, Any]]:
-        """The descriptor of every registered method, in registration order."""
-        return [method.descriptor() for method in self.methods.values()]
+        """The descriptor of every available method, in registration order.
+
+        A method is available when it requires no capability or when the
+        application's capabilities hold the one it requires.
+        """
+        capabilities = self.application.capabilities
+        return [
+            method.descriptor()
+            for method in self.methods.values()
+            if not method.env_requires or method.env_requires in capabilities
+        ]
 
     def register(self, method: AuthMethod) -> None:
         """Record ``method``; attach it under ``method_id`` only when it owns routes.

@@ -55,9 +55,10 @@ Configuration, under the application element (``AuthApplicationGrammar``)::
   provider registers an ``OidcMethod`` with id ``oidc:<code>`` and routes
   ``/_auth/oidc:<code>/start`` and ``/_auth/oidc:<code>/callback`` (see
   ``oidc_method``). Without a provider no OIDC route exists. A hand-built
-  server passes ``oidc={code: {issuer, client_id, ...}}``. A provider declared
-  on a server without ``external_url`` raises ``ValueError`` when the server
-  takes the application: the callback url handed to the provider is absolute.
+  server passes ``oidc={code: {issuer, client_id, ...}}``. The callback url
+  handed to the provider is absolute, built on the server's ``external_url``:
+  both routes require the ``external_links`` capability and are not available
+  on a server without ``external_url``.
 - ``self_registration(status, tags)`` — what happens to a user an external
   provider recognises and the store does not have: a record is written with
   that ``status`` and those ``tags``. One setting for every provider. Without
@@ -96,7 +97,8 @@ Routes called by a client:
 - ``logout(session_id)`` — deletes the session; answers ``{"status": "ok"}``;
 - ``login_methods`` — public: ``{"methods": [descriptor, ...]}`` from the
   registry of login methods: ``PasswordMethod`` first, then one ``OidcMethod``
-  per declared provider.
+  per declared provider. On a server without ``external_url`` the OIDC
+  providers are left out (``external_links`` capability).
 
 Management, every route asking ``AUTH_ADMIN``: ``/_auth/users/...``,
 ``/_auth/groups/...``, ``/_auth/tags/...``, ``/_auth/tokens/...`` (see
@@ -297,25 +299,15 @@ class AuthApplicationBase(RoutedApplication):
 
     @RoutedApplication.server.setter
     def server(self, value: Any) -> None:
-        """Read the words of the recipe, take ownership, then check ``external_url``.
+        """Read the words of the recipe, then take ownership.
 
         The recipe is read before ownership: an OIDC method it declares joins
         the router while the router has no server to arm its plugins from.
-
-        Raises:
-            ValueError: An OIDC provider is declared and the server has no
-                ``external_url``.
         """
         handler = getattr(value, "config", None)
         if handler is not None:
             self.read_declared_configuration(handler)
         RoutedApplication.server.fset(self, value)
-        if self.oidc_providers and self.server.external_url is None:
-            codes = ", ".join(sorted(self.oidc_providers))
-            raise ValueError(
-                f"application {self.code!r}: oidc provider(s) {codes} declared but the "
-                "server has no external_url, needed for the absolute redirect_uri"
-            )
 
     def read_declared_configuration(self, handler: Any) -> None:
         """Fold the recipe's ``store``, ``login``, ``oidc`` and ``self_registration`` nodes.
