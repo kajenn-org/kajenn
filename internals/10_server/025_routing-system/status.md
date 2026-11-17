@@ -57,9 +57,11 @@ Claim anchors: [`PluginMixin`](../../../src/kajenn/plugin_mixin.py#PluginMixin),
 ## Plugin arming and extension
 
 `PluginMixin` always enables `pydantic` and `openapi`; attempting to disable
-either raises `ValueError`. Applications plug `auth`, `channel`, `pydantic`
-and `openapi` themselves in `RoutedApplication.__init__`, and configure
-`channel` with `channels=http_channel`. `arm_router` arms every entry of the resolved
+either raises `ValueError`. Applications plug `auth`, `channel`, `pydantic`,
+`openapi` and `env` themselves in `RoutedApplication.__init__`, configure
+`channel` with `channels=http_channel`, and set `capabilities` to a
+[`ServerCapabilities`](../../../src/kajenn/server_capabilities.py#ServerCapabilities)
+whose `external_links` is on while the server has an `external_url`. `arm_router` arms every entry of the resolved
 plugin configuration — the fixed pair and every extra the `plugins` section
 enables — and skips a code already attached to the router.
 

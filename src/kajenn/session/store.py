@@ -26,9 +26,11 @@ tokens, a ``default_ttl`` for new sessions, lazy expiry on ``get``, and a
 delta-checked ``purge_expired`` at ``create`` time — the mass reap runs only
 when ``PURGE_INTERVAL`` has elapsed since the last one, with no background
 task and no purge loop anywhere else.
-``dump``/``restore`` persist meta and the keyed avatars'
-identity/tags only — never the data Bag. The serialized shape is
-``avatars: {key: {identity, tags}}``, the whole wardrobe of the session.
+``dump``/``restore`` persist meta and the keyed avatars' identity and group
+only — never the tags, never the data Bag. The serialized shape is
+``avatars: {key: {identity, group}}``, the whole wardrobe of the session. A
+restored avatar has no tags: the server asks the authentication application
+for the tags of the root avatar at every request.
 ``save_snapshot``/``load_snapshot`` are the OTHER persistence pair — one
 pickle file carrying every live session whole, data Bag included, the
 development survival line ``SessionMixin`` drives around the lifespan.
@@ -157,12 +159,12 @@ class MemorySessionStore(SessionStore):
         return len(expired)
 
     def dump(self) -> dict[str, Any]:
-        """Serialize meta and every keyed avatar's identity/tags (never the data Bag)."""
+        """Serialize meta and every keyed avatar's identity and group (never tags or data)."""
         return {
             session_id: {
                 "meta": dict(session.meta),
                 "avatars": {
-                    key: {"identity": avatar.identity, "tags": list(avatar.tags)}
+                    key: {"identity": avatar.identity, "group": avatar.group}
                     for key, avatar in session.avatars.items()
                 },
             }
@@ -197,19 +199,21 @@ class MemorySessionStore(SessionStore):
         return len(kept)
 
     def restore(self, data: dict[str, Any]) -> None:
-        """Restore non-expired sessions from ``dump()`` output (meta + rebuilt avatars)."""
+        """Restore non-expired sessions from ``dump()`` output (meta + avatars without tags)."""
         for session_id, session_data in data.items():
             meta = session_data["meta"]
             avatars = session_data["avatars"]
             root = avatars.get(Session.ROOT_AVATAR_KEY)
             session = Session(
                 session_id=session_id,
-                avatar=Avatar(root["identity"], root["tags"]) if root else None,
+                avatar=Avatar(root["identity"], group=root["group"]) if root else None,
                 ttl=meta["ttl"],
             )
             for key, avatar_data in avatars.items():
                 if key != Session.ROOT_AVATAR_KEY:
-                    session.attach_avatar(Avatar(avatar_data["identity"], avatar_data["tags"]), key)
+                    session.attach_avatar(
+                        Avatar(avatar_data["identity"], group=avatar_data["group"]), key
+                    )
             session.clear_dirty()
             session.meta["created_at"] = meta["created_at"]
             session.meta["last_access"] = meta["last_access"]

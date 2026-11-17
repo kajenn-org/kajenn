@@ -18,7 +18,8 @@ Every name a site composes a server from is imported here and listed in
 ``__all__``: the base server and the shipped composition, the app-side
 contract and its routed base, the configuration grammar and its handler, the
 capability mixins (auth, sessions, middleware, plugins, storage,
-communication), the request/response pair, the HTTP exceptions, the KajennBus
+communication), the authentication application and its store, the
+request/response pair, the HTTP exceptions, the KajennBus
 and MCP surfaces, the tasks grammar and the ASGI type aliases.
 
 ``__version__`` is read from the installed distribution.
@@ -26,16 +27,10 @@ and MCP surfaces, the tasks grammar and the ASGI type aliases.
 
 from importlib.metadata import version as _distribution_version
 
-from .application import ApplicationGrammar, BaseApplication
+from .application import ApplicationGrammar, BaseApplication, broadcast_hook
 from .asgi_server import AsgiServer
-from .auth import (
-    ApiKeyStore,
-    AuthCore,
-    AuthMixin,
-    FileApiKeyStore,
-    FileUserStore,
-    UserStore,
-)
+from .auth import AuthMixin
+from .auth_app import AuthApplicationBase, AuthStore, FileAuthStore
 from .kbus_mixin import KBusMixin
 from .config import (
     AsgiConfigBuilder,
@@ -81,13 +76,13 @@ from .types import ASGIApp, Message, Receive, Scope, Send
 
 __all__ = [
     "ASGIApp",
-    "ApiKeyStore",
     "ApplicationGrammar",
     "AsgiConfigBuilder",
     "AsgiServer",
     "AsgiServerGrammar",
-    "AuthCore",
+    "AuthApplicationBase",
     "AuthMixin",
+    "AuthStore",
     "Avatar",
     "BaseApplication",
     "BaseConfiguration",
@@ -99,8 +94,7 @@ __all__ = [
     "ConfigurationHandler",
     "DbHandlerBase",
     "DefaultConfig",
-    "FileApiKeyStore",
-    "FileUserStore",
+    "FileAuthStore",
     "HTTPBadRequest",
     "HTTPException",
     "HTTPForbidden",
@@ -132,9 +126,9 @@ __all__ = [
     "StorageMixin",
     "TaskGrammar",
     "UploadedFile",
-    "UserStore",
     "WebSocketDisconnect",
     "__version__",
+    "broadcast_hook",
     "router_openapi",
 ]
 

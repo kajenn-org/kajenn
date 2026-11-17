@@ -69,8 +69,9 @@ raises `KBusCallError` with status 503; its well-known paths answer 404
 
 ## Forget credentials
 
-`/_server/tokens/revoke`, `/_server/tokens/delete` and
-`/_server/auth/forget_credential` empty the server's credential cache, then
+`/_auth/tokens/revoke`, `/_auth/tokens/delete`,
+`/_auth/forget_credential` and the removal of the temporary administrator
+empty the server's credential cache, then
 call `<code>.forget_credentials` on every joined process, all at once, before
 they answer: `meta = {"credential": <credential>}` drops that credential, an
 empty `meta` drops every cached credential. The process evicts its own cache
@@ -89,7 +90,7 @@ A message carries the request in `meta` and the body in the payload:
 | --- | --- |
 | `format` | `"http"` (the payload is an `HttpRecord` request) or `"json"` (the payload is the request data as TYTX json, so `Decimal`, `date` and the other typed values keep their type) |
 | `path` | the route's path |
-| `auth` | `{"identity", "tags"}` of the caller's avatar, with optional `"data"` as the TYTX json string of its data Bag when the Bag is nonempty |
+| `auth` | `{"identity", "group", "tags"}` of the caller's avatar, with optional `"data"` as the TYTX json string of its data Bag when the Bag is nonempty |
 | `channel` | becomes `scope["kajenn.channel"]` |
 | `kbus` | `true` on a forwarded request that reached the server as a bus call; becomes `scope["kajenn.kbus"]` |
 | `genro` | `{"page_id", "reply_path"}`, the keys present on the forwarded scope; each becomes `scope["genro.<key>"]` |
@@ -239,8 +240,8 @@ same status, headers and body, a streamed answer chunk by chunk. The mount
 forwards every header of the request, the `Authorization` header included, and
 never verifies a credential. The channel the request already carries travels as
 `meta.channel`; the proxy sets no default. The process verifies the forwarded
-`Authorization` header through `authenticate_credential`, which reaches the
-server's authentication route for that channel over the bus. `meta.auth` on a
+`Authorization` header through `authenticate_credential`, which reaches
+`/_auth/authenticate` in the server's process over the bus, with the channel. `meta.auth` on a
 proxied request is the server's session identity (or an avatar a middleware put
 on the server's scope); a header never becomes `meta.auth`. `meta.kbus` is set
 only when the server's scope carries `kajenn.kbus`, and `meta.genro` only when
@@ -261,7 +262,7 @@ it; a body over it answers 413. Values must be integers.
 
 ## Not part of this contract
 
-The KajennBus carries identity as a string, the string tags and optional plain
+The KajennBus carries the identity as a string, the group as a string or null, the string tags and optional plain
 data of an authenticated `Avatar`, and nothing else of the session: no `Avatar`
 or `Bag` objects, no pickle. The far endpoint rebuilds an `Avatar` and its data
 Bag from those fields. Bag node attributes are not part of the plain data.

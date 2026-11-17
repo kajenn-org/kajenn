@@ -31,6 +31,7 @@ from genro_routes import route
 from kajenn import AsgiServer, RoutedApplication
 from kajenn.types import Message, Scope
 from tests.conftest import start_server
+from tests.storage_support import auth_application
 
 
 class Orders(RoutedApplication):
@@ -157,10 +158,11 @@ class TestNotHttp:
         assert {"submit", "remove", "lookup", "free"} <= set(listing["entries"])
 
 
-class TestDeclaredMethodOnTheServerApplication:
+class TestDeclaredMethodOnASystemApplication:
     async def test_get_on_the_login_route_is_405(self, http_request, response_status) -> None:
-        # The routes of _server keep their declared method whatever resolved
-        # them first: the well-known check at registration, the task scheduler.
-        server = AsgiServer(applications=[(Orders, {"code": "orders"})])
-        sent = await http_request(server, "/_server/login")
+        # The routes of a system application keep their declared method
+        # whatever resolved them first: the well-known check at registration,
+        # the task scheduler.
+        server = AsgiServer(applications=[auth_application(), (Orders, {"code": "orders"})])
+        sent = await http_request(server, "/_auth/login")
         assert response_status(sent) == 405

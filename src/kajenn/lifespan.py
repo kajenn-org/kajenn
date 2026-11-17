@@ -20,7 +20,7 @@
 starts the activation of every application registered disabled in a task the
 startup does not wait for (``on_startup``, then ``server.application_ready``);
 on ``lifespan.shutdown`` it cancels the activations still pending and runs
-``on_shutdown`` in REVERSE order. Hooks may
+``on_shutdown`` in REVERSE order, through ``server.applications_broadcast``. Hooks may
 be sync or async, detected with ``inspect.iscoroutinefunction`` at call time.
 The server's database handlers bracket the hooks: each handler's ``open()``
 runs before the first ``on_startup``, its ``close()`` after the last
@@ -57,6 +57,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import time
 from typing import TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
@@ -95,8 +96,9 @@ class FatalBootError(Exception):
     The one exception ``_run_hook`` does not swallow on startup: the startup
     stops at the app that raised it and ``Lifespan.__call__`` answers
     ``lifespan.startup.failed`` (message = the exception text) instead of
-    ``.complete``, so uvicorn exits. On shutdown it gets the ordinary
-    logged-and-continue isolation: nothing may abort the shutdown sequence.
+    ``.complete``, so uvicorn exits. On shutdown the broadcast's ``on_error``
+    (``_shutdown_failed``) logs it like any other error and the sequence goes
+    on: nothing may abort the shutdown sequence.
     """
 
 
@@ -113,16 +115,19 @@ class Lifespan:
         """Drive the ASGI lifespan protocol: startup then shutdown, both acked.
 
         A ``FatalBootError`` out of the startup is the one unacked road: the
-        answer is ``lifespan.startup.failed`` and the protocol ends there.
+        answer is ``lifespan.startup.failed`` and the protocol ends there. A
+        startup that completes sets its duration in ``server.process_metrics``.
         """
         while True:
             message = await receive()
             if message["type"] == "lifespan.startup":
+                began = time.perf_counter()
                 try:
                     await self.startup()
                 except FatalBootError as fatal:
                     await send({"type": "lifespan.startup.failed", "message": str(fatal)})
                     return
+                self.server.process_metrics.record_startup(time.perf_counter() - began)
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
                 await self.shutdown()
@@ -136,7 +141,13 @@ class Lifespan:
         server's ``abort_on_fatal_boot_error`` (the default) the startup stops
         there and the handlers already opened are closed before the error
         reaches ``__call__``; without it the error is logged, the server closes
-        its public part and the startup goes on.
+        its public part and the startup goes on, and the error is counted in
+        ``server.event_metrics``.
+
+        Every application then receives ``plugin_configuration`` through
+        ``applications_broadcast``, before any ``on_startup``: no request is
+        answered on a route before the installation's plugin options are on
+        it. A hook that raises is logged and the next application is called.
 
         An application already enabled runs ``on_startup`` here, in
         registration order, and a ``FatalBootError`` it raises stops the
@@ -159,17 +170,24 @@ class Lifespan:
                 await self._close_handlers(opened)
                 raise
             self._logger.exception("Fatal boot error: the server stays up for management only")
+            self.server.event_metrics.record_fatal_boot_error()
             self.server.close_public()
+        await self.server.applications_broadcast(
+            "plugin_configuration", on_error=self._plugin_configuration_failed)
         try:
             for app in self._apps():
                 if self.server.is_enabled(app.code):
-                    await self._run_hook(app, "on_startup")
+                    await self._run_hook(app)
                 else:
                     self.start_activation(app)
         except FatalBootError:
             await self._close_handlers(opened)
             raise
         self._started = True
+
+    def _plugin_configuration_failed(self, code: str, failure: Exception) -> None:
+        """Log the ``plugin_configuration`` hook of ``code`` that raised."""
+        self._logger.error("application %r: plugin_configuration raised: %r", code, failure)
 
     def start_activation(self, app: BaseApplication) -> None:
         """Activate ``app`` in a task of its own, cancelled if the server shuts down first."""
@@ -229,8 +247,8 @@ class Lifespan:
                 still_in_flight,
                 SHUTDOWN_DRAIN_TIMEOUT_SECONDS,
             )
-        for app in reversed(self._apps()):
-            await self._run_hook(app, "on_shutdown")
+        await self.server.applications_broadcast(
+            "on_shutdown", reverse=True, on_error=self._shutdown_failed)
         await self._close_handlers(self.server.db_handlers.values())
 
     async def _close_handlers(self, handlers: Iterable[DbHandlerBase]) -> None:
@@ -245,22 +263,28 @@ class Lifespan:
         """The server's applications, in registration order."""
         return list(self.server.applications.values())
 
-    async def _run_hook(self, app: BaseApplication, name: str) -> None:
-        """Call ``app``'s hook; a raise is logged, the sequence continues.
+    async def _run_hook(self, app: BaseApplication) -> None:
+        """Call ``app.on_startup``; a raise is logged, the sequence continues.
 
-        ``FatalBootError`` from ``on_startup`` propagates instead — the hook
-        declared the server must not start. From ``on_shutdown`` it is an
-        ordinary error: nothing may abort the shutdown sequence.
+        ``FatalBootError`` propagates instead — the hook declared the server
+        must not start.
         """
-        handler = getattr(app, name)
+        handler = app.on_startup
         try:
             if inspect.iscoroutinefunction(handler):
                 await handler()
             else:
                 handler()
         except FatalBootError:
-            if name == "on_startup":
-                raise
-            self._logger.exception("%s.%s raised", type(app).__name__, name)
+            raise
         except Exception:
-            self._logger.exception("%s.%s raised", type(app).__name__, name)
+            self._logger.exception("%s.on_startup raised", type(app).__name__)
+
+    def _shutdown_failed(self, code: str, exception: Exception) -> None:
+        """The ``on_error`` of the shutdown broadcast: log, and let the next application run.
+
+        ``FatalBootError`` is an ordinary error here: nothing may abort the
+        shutdown sequence.
+        """
+        self._logger.error("%s.on_shutdown raised", type(self.server.applications[code]).__name__,
+                           exc_info=exception)

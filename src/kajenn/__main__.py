@@ -22,6 +22,7 @@ Usage::
     kajenn serve application=pkg.mod:App --name demo   # serve AND register
     kajenn serve demo                             # run the site named by its card
     kajenn configure demo --home /srv/demo        # write a card and lay out its home
+    kajenn configure demo --external-url https://demo.example.com   # with its public address
     kajenn sites                                  # list the configured sites
     kajenn stop demo                              # stop a running site
     kajenn remove demo                            # drop a card
@@ -61,7 +62,10 @@ stale and reads as not running.
 ``configure <name>`` writes that card: it asks the home folder, the configuration
 template, the applications to mount and the listener, and every answer given as an
 option is not asked — with all of them given it runs without a prompt, which is
-what Docker and Kubernetes need. It lays the home out (``SiteHome.prepare``) and
+what Docker and Kubernetes need. ``--external-url`` is optional and never asked:
+given, the value is written literally into the recipe's ``server`` element;
+absent, the recipe reads it from ``EnvResolver("KAJENN_EXTERNAL_URL", default="")``. It lays
+the home out (``SiteHome.prepare``) and
 writes its ``config.py``. It is the ONLY command that creates anything: ``serve``
 refuses a name with no card and a card whose home is not on disk, naming
 ``configure`` in both messages.
@@ -599,7 +603,7 @@ class DatabaseCommand:
 RECIPE_HEADER = '''"""Configuration of the {name} site, written by ``kajenn configure``."""
 
 from kajenn.config import {template_class}
-{imports}
+{env_import}{imports}
 
 class ServerConfiguration({template_class}):
     """The {name} site: its home, its listener, its applications."""
@@ -608,8 +612,8 @@ class ServerConfiguration({template_class}):
     site_home = "{home}"
 
     def server_section(self, cfg):
-        """The listener."""
-        cfg.server(host="{host}", port={port})
+        """The listener and the public address."""
+        cfg.server(host="{host}", port={port}, external_url={external_url})
 '''
 """The recipe ``configure`` writes into the home. One class, its home declared."""
 
@@ -628,7 +632,10 @@ class SiteConfigurator:
     Every field has a question and a proposed answer. An option given on the
     command line answers its field and no question is asked for it, so a fully
     optioned invocation runs without a prompt — which is what an init container
-    needs. What it writes: the home with its folders and its ``config.py``, and
+    needs. The public base address is no question: the optional
+    ``--external-url`` is written literally into the recipe's ``server``
+    element, and without it the recipe reads ``KAJENN_EXTERNAL_URL``.
+    What it writes: the home with its folders and its ``config.py``, and
     the card ``sites/<name>.json`` pointing at both.
     """
 
@@ -694,9 +701,14 @@ class SiteConfigurator:
         """The ``config.py`` this site starts from: the template, narrowed to it."""
         entries = self.application_entries(answers["applications"])
         template_class = CONFIGURATION_TEMPLATES[answers["template"]].__name__
+        external_url = self.options.external_url
         source = RECIPE_HEADER.format(
             name=self.name,
             template_class=template_class,
+            env_import="" if external_url else "from genro_bag.resolvers import EnvResolver\n",
+            external_url=(
+                f'"{external_url}"' if external_url else 'EnvResolver("KAJENN_EXTERNAL_URL", default="")'
+            ),
             imports="".join(f"from {module} import {klass}\n" for module, klass in entries),
             home=home.path,
             host=answers["host"],
@@ -787,6 +799,11 @@ class Cli:
         )
         configure.add_argument("--host", help="bind host")
         configure.add_argument("--port", type=int, help="bind port")
+        configure.add_argument(
+            "--external-url",
+            help="the public base address of the server (https://shop.example.com); "
+            "absent, the recipe reads KAJENN_EXTERNAL_URL",
+        )
         configure.set_defaults(handler=self.configure)
 
         commands.add_parser("sites", help="list the configured sites").set_defaults(

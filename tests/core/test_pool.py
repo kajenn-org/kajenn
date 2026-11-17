@@ -98,7 +98,7 @@ class TestThrowawayRoute:
         async def send(message: dict[str, object]) -> None:
             sent.append(message)
 
-        await server({"type": "http", "path": "/sync"}, receive, send)
+        await server({"type": "http", "method": "GET", "path": "/sync"}, receive, send)
 
         assert server.pool.provisioned is True
         body = next(m["body"] for m in sent if m["type"] == "http.response.body")
@@ -116,7 +116,7 @@ class TestContextPropagation:
         async def send(message: dict[str, object]) -> None:
             sent.append(message)
 
-        await server({"type": "http", "path": "/sync-current"}, receive, send)
+        await server({"type": "http", "method": "GET", "path": "/sync-current"}, receive, send)
 
         # the pool copies the caller's context: the worker thread reads the
         # registry's ContextVar and sees the request being served

@@ -36,6 +36,8 @@ from kajenn.asgi_endpoint import BufferedAsgiEndpoint
 from kajenn.exceptions import KBusCallError
 from kajenn.wsx import WsxEnvelope
 
+from tests.storage_support import add_user
+
 from .test_external_application import running
 
 RECIPE = '''
@@ -45,9 +47,10 @@ from typing import Any
 
 from genro_routes import route
 
-from kajenn import RoutedApplication
+from kajenn import AuthApplicationBase, RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
 from kajenn.streaming import StreamingResponse
+from tests.storage_support import MemoryAuthStore
 
 
 def seen_by(request):
@@ -114,15 +117,26 @@ class Billing(RoutedApplication):
         return StreamingResponse(chunks(), media_type="text/plain")
 
 
-class Idp(RoutedApplication):
+CREDENTIALS = {"Bearer sk_live_xyz": "svc", "Bearer tok": "idp-user"}
+
+
+class Idp(AuthApplicationBase):
+    """Verifies two fixed bearers, records the channel each question names."""
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.channels_seen = []
 
-    @route()
-    def check(self, credential: str = "", channel: str = ""):
+    @route(media_type="application/json", openapi_method="post")
+    def authenticate(self, credential: str = "", channel: str = ""):
         self.channels_seen.append(channel)
-        return {"identity": "idp-user", "tags": ["admin"]}
+        return self.verify_credential(credential)
+
+    def verify_credential(self, credential):
+        if credential not in CREDENTIALS:
+            return super().verify_credential(credential)
+        return {"identity": CREDENTIALS[credential], "group": None, "tags": ["admin"],
+                "data": {}, "valid_until": None}
 
 
 class Local(RoutedApplication):
@@ -139,35 +153,29 @@ class Recipe(CONFIGURATION_TEMPLATES["default"]):
         self.storage_section(cfg)
         self.applications_section(cfg)
         cfg.plugins(openapi=True)
-        credentials = cfg.authentication().credentials()
-        credentials.bearer_token(identity="svc", token="sk_live_xyz", tags="admin")
-        CHANNELS
 
     def applications_section(self, cfg):
         apps = cfg.applications()
         billing = apps.application(code="billing", app_class=Billing, DECLARATION)
         BODY
-        apps.application(code="idp", app_class=Idp)
+        apps.application(code="_auth", app_class=Idp).store(store_class=MemoryAuthStore)
         apps.application(code="local", app_class=Local)
 '''
 
 PLACEMENTS = {"inprocess": 'mount="billing"', "external": 'spawner="subprocess", request_timeout=5'}
-MCP_CHANNEL = 'cfg.channels().channel(name="mcp", authentication_route="/idp/check")'
 RAW_BODY = 'billing.request(body="raw")'
 
 Scenario = Callable[[AsgiServer], Awaitable[Any]]
 
 
-async def in_both(tmp_path, scenario: Scenario, *, channels: str = "pass",
-                  body: str = "pass") -> tuple[Any, Any]:
+async def in_both(tmp_path, scenario: Scenario, *, body: str = "pass") -> tuple[Any, Any]:
     """What ``scenario`` returns against billing in-process, then spawned."""
     results = []
     for name, declaration in PLACEMENTS.items():
         folder = tmp_path / name
         folder.mkdir()
         path = folder / "config.py"
-        path.write_text(RECIPE.replace("DECLARATION", declaration)
-                        .replace("CHANNELS", channels).replace("BODY", body))
+        path.write_text(RECIPE.replace("DECLARATION", declaration).replace("BODY", body))
         async with running(str(path)) as server:
             results.append(await scenario(server))
     return results[0], results[1]
@@ -341,7 +349,8 @@ class TestTheIdentityIsTheSame:
         # wf:contract: a request carrying the server's session cookie (a session with an avatar)
         # wf:contract: reaches the handler with that identity in both placements.
         async def scenario(server: AsgiServer) -> tuple[int, Any, Any]:
-            session = server.session_store.create(Avatar("sess", ["admin"]))
+            add_user(server, "sess", ["admin"])
+            session = server.session_store.create(Avatar("sess"))
             cookie = [(b"cookie", f"session_id={session.id}".encode())]
             status, _, body = await call(server, "/billing/secret", headers=cookie)
             seen = json.loads(body)
@@ -351,9 +360,9 @@ class TestTheIdentityIsTheSame:
         assert inprocess == external == (200, "sess", ["admin"])
 
     async def test_an_mcp_face_on_its_own_route(self, tmp_path) -> None:
-        # wf:contract: with channels().channel(name="mcp", authentication_route=...) configured,
-        # wf:contract: a tools/call with a Bearer to the application's MCP face is verified on that
-        # wf:contract: route (it records channel "mcp") and answers the same in both placements.
+        # wf:contract: a tools/call with a Bearer to the application's MCP face is verified by
+        # wf:contract: /_auth/authenticate with channel "mcp" (the application records it) and
+        # wf:contract: answers the same in both placements.
         envelope = {
             "jsonrpc": "2.0", "id": 1, "method": "tools/call",
             "params": {"name": "secret", "arguments": {}},
@@ -364,9 +373,9 @@ class TestTheIdentityIsTheSame:
                 server, "/billing/_meta/mcp", method="POST", body=json.dumps(envelope).encode(),
                 headers=[*bearer("tok"), (b"content-type", b"application/json")])
             seen = json.loads(body)["result"]["structuredContent"]
-            return status, (seen["identity"], seen["channel"]), server.applications["idp"].channels_seen
+            return status, (seen["identity"], seen["channel"]), server.applications["_auth"].channels_seen
 
-        inprocess, external = await in_both(tmp_path, scenario, channels=MCP_CHANNEL)
+        inprocess, external = await in_both(tmp_path, scenario)
         assert inprocess == external == (200, ("idp-user", "mcp"), ["mcp"])
 
 

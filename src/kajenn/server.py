@@ -36,7 +36,9 @@ else 404 — ``websocket`` runs
 ``on_websocket``,
 whose DEFAULT is the empty socket of D7 (accepts nothing, closes cleanly with
 code 1000); ``lifespan`` runs the ``Lifespan`` handler (ordered startup,
-reverse shutdown, error isolation). Each http dispatch is registered in the
+reverse shutdown, error isolation). ``applications_broadcast`` calls one
+``@broadcast_hook`` method on every application and collects the answers;
+the shutdown runs ``on_shutdown`` through it. Each http dispatch is registered in the
 ``RequestRegistry`` (``requests``) for the span of the request — the current
 request and the in-flight picture. ``serve()`` boots uvicorn programmatically.
 
@@ -71,12 +73,17 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import time
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Iterable
 
 import uvicorn
 
 from .application import BaseApplication
 from .db import DbHandlerBase
+from .exceptions import HTTPException
+from ._event_metrics import EventMetrics
+from ._http_metrics import ROUTE_SCOPE_KEY, CountedExchange, HttpMetrics
+from ._process_metrics import ProcessMetrics
 from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
 from .request_registry import RegisteredRequest, RequestRegistry
@@ -204,6 +211,9 @@ class BaseServer:
         self._pool = WorkPool(self, max_threads=max_threads)
         self._lifespan = Lifespan(self)
         self._registry = RequestRegistry(self)
+        self._http_metrics = HttpMetrics()
+        self._event_metrics = EventMetrics()
+        self._process_metrics = ProcessMetrics(self)
         self._websockets = WebSocketRegistry()
         self._websocket_origins: list[str] = list(websocket.get("origins") or [])
         self._websocket_max_concurrent: int = int(
@@ -298,6 +308,53 @@ class BaseServer:
             self._enabled.add(app.code)
         else:
             self._disabled[app.code] = MOUNTING
+
+    async def applications_broadcast(
+        self,
+        method_name: str,
+        *args: Any,
+        on_error: Callable[[str, Exception], Any] | None = None,
+        reverse: bool = False,
+        **kwargs: Any,
+    ) -> list[tuple[str, Any]]:
+        """Call ``method_name`` on every application and collect the answers.
+
+        Every application in ``applications`` is asked, in every state,
+        management application included, for the callable of that hook: in
+        registration order, or in reverse order with ``reverse=True``. An
+        application that answers none (its class has no ``@broadcast_hook``
+        with that name) is skipped; when none answers the result is ``[]``. A
+        ``RemoteApplication`` answers with a call to its spawned process. ``args`` and ``kwargs`` reach
+        each call. A sync method is called, an async one awaited.
+
+        An application that raises goes to ``on_error(code, exception)``: when
+        it returns, the broadcast goes on with the next application; when it
+        raises, the broadcast stops and that exception reaches the caller. With
+        ``on_error=None`` the first exception reaches the caller at once.
+
+        Returns:
+            ``[(code, result)]`` for the applications that answered.
+        """
+        apps = list(self.applications.values())
+        if reverse:
+            apps.reverse()
+        answers: list[tuple[str, Any]] = []
+        for app in apps:
+            method = app._broadcast_callable(method_name)
+            if method is None:
+                continue
+            try:
+                if inspect.iscoroutinefunction(method):
+                    result = await method(*args, **kwargs)
+                else:
+                    result = method(*args, **kwargs)
+            except Exception as exception:
+                if on_error is None:
+                    raise
+                on_error(app.code, exception)
+                continue
+            answers.append((app.code, result))
+        return answers
 
     def starts_enabled(self, app: BaseApplication) -> bool:
         """Whether ``app`` answers as soon as it is registered.
@@ -408,8 +465,12 @@ class BaseServer:
         """Whether only the management application answers (a fatal boot kept the server up)."""
         return self._public_closed
 
+    def answers_when_public_closed(self, app: BaseApplication) -> bool:
+        """Whether ``app`` keeps answering with the public part closed: the management application."""
+        return self.is_management(app)
+
     def close_public(self) -> None:
-        """Answer 503 for every application except the management one."""
+        """Answer 503 for every application but those of ``answers_when_public_closed``."""
         self._public_closed = True
 
     def refusal(self, app: BaseApplication) -> Response | None:
@@ -417,10 +478,10 @@ class BaseServer:
 
         An application being mounted answers 503 with ``Retry-After``; one
         switched off or being removed answers 503 without it. With the public
-        part closed every application but the management one answers 503
-        without it.
+        part closed every application but those of
+        ``answers_when_public_closed`` answers 503 without it.
         """
-        if self._public_closed and not self.is_management(app):
+        if self._public_closed and not self.answers_when_public_closed(app):
             return Response(content="Service Unavailable", status_code=503,
                             media_type="text/plain")
         if app.code not in self._enabled:
@@ -576,6 +637,21 @@ class BaseServer:
         """The registry of in-flight requests and the current one."""
         return self._registry
 
+    @property
+    def http_metrics(self) -> HttpMetrics:
+        """The HTTP request families, counted by ``_serve_http``."""
+        return self._http_metrics
+
+    @property
+    def event_metrics(self) -> EventMetrics:
+        """The credential check, WSX message and websocket connection families."""
+        return self._event_metrics
+
+    @property
+    def process_metrics(self) -> ProcessMetrics:
+        """The families of this process: build, process, pool, tasks, scheduler, startup."""
+        return self._process_metrics
+
     async def run_sync(self, fn: Callable[..., Any], *args: Any) -> Any:
         """Dispatch blocking ``fn`` onto the pool (the app-side sync protocol).
 
@@ -682,7 +758,8 @@ class BaseServer:
         charge, and this branch renders the refusal the way HTTP says it — 503
         and ``Retry-After``. Another transport reads the same state and renders
         its own. Whatever the middleware chain answers by itself never reaches
-        here, so it is neither registered nor refused.
+        here, so it is neither registered nor refused, nor counted in
+        ``http_metrics``.
         """
         scope_type = scope["type"]
         if scope_type == "http":
@@ -696,8 +773,7 @@ class BaseServer:
                 return
             item = self.requests.register(scope)
             try:
-                app, target = self.demux(scope)
-                await app(target, receive, send)
+                await self._serve_http(scope, receive, send)
             finally:
                 try:
                     await item.run_cleanups()
@@ -712,6 +788,43 @@ class BaseServer:
             self.pool.shutdown(wait=True)
         else:
             raise ValueError(f"unsupported ASGI scope type: {scope_type}")
+
+    async def _serve_http(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Demux an http ``scope``, run what answers it, and count it in ``http_metrics``.
+
+        Every request that reaches the demux is counted: an application's
+        answer, its 503 refusal, a 404 of the demux, the ``default``
+        redirect. The duration runs from before the demux until the answer
+        returns. The dispatch goes through ``demux``, so a subclass that
+        overrides it changes where a request goes. ``application`` is the
+        ``code`` of what ``demux`` returned when it is a ``BaseApplication``,
+        ``""`` otherwise (a refusal, a 404, a redirect); ``route`` is what the application
+        wrote under ``"kajenn.route"`` in the scope it received, ``""`` when
+        nothing was written. An exception raised before the answer started
+        sets the status: an ``HTTPException`` its own, any other 500; after
+        the start the status sent stays. Any exception that is not an
+        ``HTTPException`` also counts in the exceptions counter with its class
+        name. Either is raised again unchanged, for the ``ErrorMiddleware``
+        to answer.
+        """
+        started = time.monotonic()
+        exchange = CountedExchange(receive, send)
+        app, target = self.demux(scope)
+        code = app.code if isinstance(app, BaseApplication) else ""
+        try:
+            await app(target, exchange.receive, exchange.send)
+        except HTTPException as answer:
+            if not exchange.status:
+                exchange.status = str(answer.status)
+            raise
+        except Exception as failure:
+            if not exchange.status:
+                exchange.status = "500"
+            self.http_metrics.record_exception(code, failure)
+            raise
+        finally:
+            self.http_metrics.record(code, target.get(ROUTE_SCOPE_KEY, ""), scope["method"],
+                                     exchange, time.monotonic() - started)
 
     def demux(self, scope: Scope) -> tuple[ASGIApp, Scope]:
         """D3 demux: pick what answers an http scope, and the scope it receives.
@@ -817,16 +930,29 @@ class BaseServer:
         a connection it does not hold. It is the admitted mode of the design,
         the one a hosted framework with a websocket protocol of its own reaches
         the server by.
+
+        Every connection handed over is counted in ``event_metrics`` with the
+        ``code`` of what ``demux`` returned when it is a ``BaseApplication``
+        (``""`` otherwise) and its kind, ``raw`` for ``serve_websocket``, ``wsx`` for ``WsxConnection``:
+        one more opened and one more live when the handover starts, one less
+        live when it returns. A connection refused above the demux is not
+        counted.
         """
         if self.state != RUNNING:
             await WebSocket(scope, receive, send).refuse(1013, "server restarting")
             return
         app, target = self.demux(scope)
+        code = app.code if isinstance(app, BaseApplication) else ""
         raw_seam = getattr(app, "serve_websocket", None)
-        if raw_seam is not None:
-            await raw_seam(target, receive, send)
-            return
-        await WsxConnection(self, scope, receive, send).serve()
+        kind = "raw" if raw_seam is not None else "wsx"
+        self.event_metrics.record_websocket_opened(code, kind)
+        try:
+            if raw_seam is not None:
+                await raw_seam(target, receive, send)
+            else:
+                await WsxConnection(self, scope, receive, send).serve()
+        finally:
+            self.event_metrics.record_websocket_closed(code, kind)
 
     @property
     def state(self) -> str:

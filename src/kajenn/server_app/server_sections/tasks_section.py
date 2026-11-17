@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""The ``_server/tasks`` section: SUPERADMIN-gated task backbone endpoints.
+"""The ``_server/tasks`` section: SERVER_ADMIN-gated task backbone endpoints.
 
 A ``RoutingClass`` the ``ServerApplication`` attaches (``attach_section``), so
 its routes live at ``/_server/tasks/...``. JSON endpoints ONLY: no HTML or JS
@@ -23,10 +23,10 @@ panel ships with this section. Two surfaces over the server's ``TaskManager``:
 - **spool** (the batch folders): ``spool_list`` (by ``owner`` or ``status``),
   ``progress``, ``cancel``, ``result``.
 
-Every route is gated ``auth_rule="SUPERADMIN"``. A server composed without the
-task backbone — or with ``tasks=False`` — answers every endpoint with the
-``{"error": ...}`` document (HTTP 200): the section is ALWAYS declared, fixed
-structure (D26), the payload states the availability.
+Every route is gated ``auth_rule="SERVER_ADMIN"`` (``TASKS_RULE``). A server
+composed without the task backbone — or with ``tasks=False`` — answers every
+endpoint with the ``{"error": ...}`` document (HTTP 200): the section is ALWAYS
+declared, fixed structure (D26), the payload states the availability.
 
 Parent (dual relationship): the section holds its ``ServerApplication`` as
 ``self.application`` and reaches the manager via ``self.application.server.tasks``
@@ -50,6 +50,8 @@ if TYPE_CHECKING:
 __all__ = ["TasksSection"]
 
 TASKS_DISABLED_ERROR = {"error": "Tasks are disabled"}
+
+TASKS_RULE = "SERVER_ADMIN"
 
 # The record fields a client may set through create/update (the run outcome
 # fields — last_*, next_run_ts — belong to the scheduler, never to the wire).
@@ -79,7 +81,7 @@ class TasksSection(RoutingClass):
 
     # -- schedules (the recurring scheduler's store) --
 
-    @route(name="list", auth_rule="SUPERADMIN")
+    @route(name="list", auth_rule=TASKS_RULE)
     def schedule_list(self) -> dict[str, Any]:
         """Every schedule record."""
         manager = self.manager
@@ -87,7 +89,7 @@ class TasksSection(RoutingClass):
             return TASKS_DISABLED_ERROR
         return {"schedules": manager.task_store.load_all()}
 
-    @route(auth_rule="SUPERADMIN", openapi_method="post")
+    @route(auth_rule=TASKS_RULE, openapi_method="post")
     def create(self, body_data: dict | None = None) -> dict[str, Any]:
         """Create a schedule: ``code``, ``kind``, ``spec`` required.
 
@@ -126,7 +128,7 @@ class TasksSection(RoutingClass):
         manager.task_store.save(record)
         return {"schedule": record}
 
-    @route(auth_rule="SUPERADMIN", openapi_method="post")
+    @route(auth_rule=TASKS_RULE, openapi_method="post")
     def update(self, body_data: dict | None = None) -> dict[str, Any]:
         """Merge the editable fields into a schedule (``code`` names it).
 
@@ -152,12 +154,12 @@ class TasksSection(RoutingClass):
         manager.task_store.save(record)
         return {"schedule": record}
 
-    @route(auth_rule="SUPERADMIN", openapi_method="post")
+    @route(auth_rule=TASKS_RULE, openapi_method="post")
     def enable(self, code: str = "") -> dict[str, Any]:
         """Arm a schedule."""
         return self._set_enabled(code, value=True)
 
-    @route(auth_rule="SUPERADMIN", openapi_method="post")
+    @route(auth_rule=TASKS_RULE, openapi_method="post")
     def disable(self, code: str = "") -> dict[str, Any]:
         """Disarm a schedule (the record stays)."""
         return self._set_enabled(code, value=False)
@@ -172,7 +174,7 @@ class TasksSection(RoutingClass):
             return {"error": f"schedule not found: {code}"}
         return {"schedule": record}
 
-    @route(auth_rule="SUPERADMIN", openapi_method="post")
+    @route(auth_rule=TASKS_RULE, openapi_method="post")
     def run_now(self, code: str = "") -> dict[str, Any]:
         """Fire a schedule immediately (same no-overlap guard as the loop)."""
         manager = self.manager
@@ -184,7 +186,7 @@ class TasksSection(RoutingClass):
             return {"error": str(exc)}
         return {"code": code, "run": outcome}
 
-    @route(auth_rule="SUPERADMIN", openapi_method="post")
+    @route(auth_rule=TASKS_RULE, openapi_method="post")
     def delete(self, code: str = "") -> dict[str, Any]:
         """Remove a schedule record. ``deleted`` reports whether it existed."""
         manager = self.manager
@@ -192,7 +194,7 @@ class TasksSection(RoutingClass):
             return TASKS_DISABLED_ERROR
         return {"code": code, "deleted": manager.task_store.delete(code)}
 
-    @route(auth_rule="SUPERADMIN")
+    @route(auth_rule=TASKS_RULE)
     def logs(self, task_name: str = "", limit: str = "") -> dict[str, Any]:
         """A task's capped JSONL run log, oldest first."""
         manager = self.manager
@@ -206,7 +208,7 @@ class TasksSection(RoutingClass):
 
     # -- spool (the batch folders) --
 
-    @route(auth_rule="SUPERADMIN")
+    @route(auth_rule=TASKS_RULE)
     def spool_list(self, owner: str = "", status: str = "") -> dict[str, Any]:
         """Task descriptors by ``owner`` OR by ``status`` (one filter required)."""
         manager = self.manager
@@ -220,7 +222,7 @@ class TasksSection(RoutingClass):
             return {"tasks": manager.spool.list_by_status(status)}
         return {"error": "owner or status is required"}
 
-    @route(auth_rule="SUPERADMIN")
+    @route(auth_rule=TASKS_RULE)
     def progress(self, task_id: str = "") -> dict[str, Any]:
         """A task's latest progress snapshot (``None`` until the worker writes)."""
         manager = self.manager
@@ -230,7 +232,7 @@ class TasksSection(RoutingClass):
             return {"error": f"task not found: {task_id}"}
         return {"task_id": task_id, "progress": manager.spool.read_progress(task_id)}
 
-    @route(auth_rule="SUPERADMIN", openapi_method="post")
+    @route(auth_rule=TASKS_RULE, openapi_method="post")
     def cancel(self, task_id: str = "") -> dict[str, Any]:
         """Drop the cancel marker (the worker honors it at its own pace)."""
         manager = self.manager
@@ -242,7 +244,7 @@ class TasksSection(RoutingClass):
             return {"error": str(exc)}
         return {"task_id": task_id, "cancelled": True}
 
-    @route(auth_rule="SUPERADMIN")
+    @route(auth_rule=TASKS_RULE)
     def result(self, task_id: str = "") -> dict[str, Any]:
         """A task's result (``None`` until written; JSON-encodable results only)."""
         manager = self.manager

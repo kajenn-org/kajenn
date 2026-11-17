@@ -19,8 +19,7 @@ The grammar the server class exposes as ``AsgiServer.grammar``: one
 with the full closed section list) whose sections describe the whole site.
 Every section is a singleton (``[0:1]``), so labels are clean and every path is
 stable and hand-writable: ``configuration.server``,
-``configuration.authentication.credentials``,
-``configuration.applications.<code>``.
+``configuration.storage``, ``configuration.applications.<code>``.
 
 Authoring conventions inherited from contrib/config:
 
@@ -40,9 +39,6 @@ Sections:
   (the session TTL) and ``tasks`` (declared by ``TaskGrammar``, the class that
   peels ``tasks=``).
 - ``middleware`` — one ``{name: bool | dict}`` switch per middleware.
-- ``authentication`` — the identity surface the core owns:
-  the ``users``/``tokens`` store descriptors and the
-  ``credentials`` handed to ``AuthCore``.
 - ``storage`` — the mount point of genro-storage's own grammar: the mounts of
   the server's ``StorageManager``, plus the section's ``storage_key``.
 - ``applications`` — the app collection keyed by ``code``; each entry MOUNTS
@@ -51,6 +47,10 @@ Sections:
 - ``plugins`` — the router plugins armed on every routed app.
 - ``openapi`` — the OpenAPI metadata, declared by the grammar and read by no
   core consumer.
+
+Authentication is NOT a section of this dialect: it is configured under the
+element of the application mounted with code ``_auth``, in the words its
+grammar declares.
 
 An application's own vocabulary is NOT a section of this dialect: it belongs to
 the application that owns it, so its words live in the grammar that application
@@ -92,7 +92,7 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
 
     @element(
         sub_tags=(
-            "site[0:1],server[0:1],middleware[0:1],authentication[0:1],channels[0:1],"
+            "site[0:1],server[0:1],middleware[0:1],"
             "storage[0:1],applications[0:1],databases[0:1],plugins[0:1],openapi[0:1]"
         ),
         node_label="configuration",
@@ -149,9 +149,13 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         calls itself when it hands its own URL to a third party
         (``https://shop.example.com``; a trailing slash is stripped). It is not
         the listener: behind a proxy the bind address and the public address
-        differ, and only the latter is meaningful to an outside caller. Required
-        when an application declares OIDC providers — the provider is given an
-        absolute ``redirect_uri`` — and a boot error when missing there.
+        differ, and only the latter is meaningful to an outside caller.
+        Optional: without it (or with a resolver that yields nothing) the
+        server's ``external_url`` is ``None`` and the ``external_links``
+        capability is off, so a route declaring
+        ``env_requires="external_links"`` — the OIDC routes of ``_auth``, whose
+        ``redirect_uri`` is absolute — is not available. The ``default``
+        template writes ``EnvResolver("KAJENN_EXTERNAL_URL", default="")``.
 
         ``max_threads`` sizes the server's thread pool: ``BaseServer`` peels it
         and hands it to ``WorkPool`` (omitted, the stdlib default
@@ -274,94 +278,6 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         through ``**extra`` — the signature is OPEN so that the switches have
         ONE place, the configuration, whatever registry the class came from."""
 
-    @element(
-        parent_tags="configuration",
-        sub_tags="users[0:1],tokens[0:1],credentials[0:1]",
-        node_label="authentication",
-    )
-    def authentication(self, cache_ttl: float = None) -> None:
-        """The server's identity surface: the STORES and the header credentials.
-
-        ``cache_ttl`` is the seconds a verified credential stays cached
-        (``credential_cache_ttl`` of the server; ``0`` disables the cache).
-
-        ``users`` and ``tokens`` are the store descriptors ``AuthMixin`` peels
-        and ``credentials`` the entries ``AuthCore`` verifies. What asks a
-        human for a user and a password is NOT here: the login policy and the
-        OIDC providers are words of the grammar the application owning the
-        login surface declares, written under its own ``application`` element.
-        The server creates no user either: there is no bootstrap password word.
-        """
-
-    @element(parent_tags="authentication", sub_tags="")
-    def users(
-        self, mount: str = None, prefix: str = None, store_class: type = None, **params: Any
-    ) -> None:
-        """Identity store: where it keeps its records, and which class keeps them.
-
-        ``mount``/``prefix`` place the records (default ``site:users``);
-        ``store_class`` names the CLASS the server builds — ``FileUserStore``
-        when omitted — and the remaining attributes are its own kwargs. The
-        server hands it the storage: a built store is not a configuration
-        value."""
-
-    @element(parent_tags="authentication", sub_tags="")
-    def tokens(
-        self, mount: str = None, prefix: str = None, store_class: type = None, **params: Any
-    ) -> None:
-        """Api-key store: the same three words as ``users`` — ``mount``/``prefix``
-        for the records, ``store_class`` for the class the server builds
-        (``FileApiKeyStore`` when omitted) and its own remaining kwargs."""
-
-    @element(
-        parent_tags="authentication",
-        sub_tags="basic_user,bearer_token,jwt",
-        node_label="credentials",
-    )
-    def credentials(self) -> None:
-        """The header credentials handed to ``AuthCore``.
-
-        Three repeatable children, one per backend. They are NOT a keyed
-        collection: the three tags key differently (``username``, ``identity``,
-        nothing at all for ``jwt``, which is an ordered list), so the handler
-        folds them into ``AuthCore``'s own shapes by reading each child.
-        """
-
-    @element(parent_tags="credentials", sub_tags="")
-    def basic_user(
-        self,
-        username: str,
-        password: str | BagResolver = None,
-        tags: str = None,
-    ) -> None:
-        """One HTTP Basic user: ``username`` (REQUIRED — the ``AuthCore`` key),
-        ``password`` (give it a resolver) and comma-separated ``tags``."""
-
-    @element(parent_tags="credentials", sub_tags="")
-    def bearer_token(
-        self,
-        identity: str,
-        token: str | BagResolver = None,
-        tags: str = None,
-    ) -> None:
-        """One static Bearer token: ``identity`` (REQUIRED — the identity the
-        token authenticates as), ``token`` (give it a resolver) and
-        comma-separated ``tags``."""
-
-    @element(parent_tags="credentials", sub_tags="")
-    def jwt(
-        self,
-        name: str = None,
-        secret: str | BagResolver = None,
-        public_key: str | BagResolver = None,
-        algorithm: str = "HS256",
-        tags: str = None,
-    ) -> None:
-        """One JWT verifier (repeatable, an ORDERED list — the first that
-        verifies wins): ``secret`` (shared HMAC material, the only kind that may
-        also SIGN) or ``public_key`` (verify only), the ``algorithm``, an
-        optional ``name`` and comma-separated ``tags``."""
-
     @element(parent_tags="configuration", _meta={"subbuilder": "app:grammar"})
     def storage(self, app: type, storage_key: str | BagResolver = None) -> None:
         """The server's storage, and the MOUNT POINT of genro-storage's grammar.
@@ -395,19 +311,6 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         Omitted entirely, the server builds its default manager: the ``site:``
         and ``home:`` mounts, both on the deployment directory.
         """
-
-    @element(parent_tags="configuration", sub_tags="channel", collection_key="name")
-    def channels(self) -> None:
-        """Collection of channels, each labelled by its ``name`` (``api``,
-        ``mcp``, ``wsx``, ...): per channel, the route that authenticates a
-        credential presented on it."""
-
-    @element(parent_tags="channels", sub_tags="")
-    def channel(self, name: str = None, authentication_route: str = None) -> None:
-        """One channel: ``name`` (the collection key, the value of
-        ``scope["kajenn.channel"]``) and ``authentication_route``, the path the
-        server calls to verify a credential presented on it (REQUIRED: a channel
-        without it is refused when the server is built)."""
 
     @element(parent_tags="configuration", sub_tags="application", collection_key="code")
     def applications(self, default: str = None) -> None:

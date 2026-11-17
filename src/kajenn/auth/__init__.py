@@ -12,31 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Auth capability package: the credential core, the identity stores, the mixin.
+"""Auth capability package: the server side of authentication.
 
-``AuthCore`` verifies basic/bearer/jwt credentials; ``AuthMixin`` composes the
-capability onto a server and applies the §5.5 identity precedence over sessions;
-``UserStore`` and ``ApiKeyStore`` are the local identity and api-key registries
-with their filesystem backends. The identity is resolved by the execution point
+``AuthMixin`` composes the capability onto a server: it asks the
+authentication application mounted with code ``_auth`` (``kajenn.auth_app``)
+for the identity of a presented credential and of a session, and caches the
+answers. The identity is resolved by the execution point
 (``RoutedApplication.execute``), which awaits ``server.authenticate(scope)``.
-
-The package authenticates by header credentials and by the session avatar, and
-never asks a human for a user and a password: an interactive login surface is
-built by the applications mounted on the server, not here.
+The package holds no store, no credential and no login surface.
 """
 
 from __future__ import annotations
 
-from .api_key_store import ApiKeyStore, FileApiKeyStore
-from .core import AuthCore
 from .mixin import AuthMixin
-from .user_store import FileUserStore, UserStore
 
-__all__ = [
-    "ApiKeyStore",
-    "AuthCore",
-    "AuthMixin",
-    "FileApiKeyStore",
-    "FileUserStore",
-    "UserStore",
-]
+__all__ = ["AuthMixin"]

@@ -77,8 +77,8 @@ class AsgiConfigBuilder(ConfigBuilder, AsgiServerGrammar):
 
         Without ``app_class`` the ``_server`` envelope means ``ServerApplication``:
         the class is filled in before the grammar validates the call and the
-        subbuilder reference reads it, so ``login``, ``oidc`` and ``provider``
-        are written under it as under an explicit one. The hook lives on the
+        subbuilder reference reads it, so ``security_txt`` and ``robots`` are
+        written under it as under an explicit one. The hook lives on the
         dialect because the element handlers are resolved by the builder's
         ``__getattr__``, which precedes ``AsgiServerGrammar`` in the MRO.
         """

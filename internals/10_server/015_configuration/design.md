@@ -275,7 +275,14 @@ itself when it hands its own URL to somebody else. The two differ behind a
 proxy and answer different questions, which is why the public one is declared
 rather than guessed from an incoming request — it must match what a third party
 was told, and a value derived from a client's own header would be a value that
-party rejects. `max_threads` sizes the pool where blocking work runs.
+party rejects. It is optional: without it, or with a resolver that yields
+nothing, the server has no public address (`None`) and nothing is derived. The
+value drives the `external_links` capability of every routed application
+(`ServerCapabilities`, read at each request); a route that builds an external
+link declares `env_requires="external_links"` and is not available while the
+capability is off. The `default` template writes
+`external_url=EnvResolver("KAJENN_EXTERNAL_URL", default="")`. `max_threads` sizes the pool
+where blocking work runs.
 `shutdown_timeout_seconds` (5.0) bounds how long uvicorn waits for open
 connections at shutdown before cancelling them: without the bound one endless
 response — an SSE stream a client never closes — holds the process for ever and

@@ -127,9 +127,10 @@ skipped.
 `ServerApplication` (from `kajenn.server_app`) exposes the task backbone under
 `/_server/tasks/...` on every server: the server mounts it under the code
 `_server`. Every one of these endpoints carries
-`auth_rule="SUPERADMIN"`, so an anonymous request receives 401 and an identity
-without that tag receives 403. Authenticate with an appropriately authorized
-credential:
+`auth_rule="SERVER_ADMIN"`, so an anonymous request receives 401 and an identity
+without that tag receives 403. Authenticate with the credential of a user that
+holds the tag; the server verifies it through the
+[authentication application](authentication.md), which the site must mount:
 
 
 - schedule side: `list`, `create`, `enable`, `disable`, `run_now`, `logs`.
@@ -149,7 +150,7 @@ assert server.tasks.spool is not None
 ```
 
 Over HTTP, with a credential carrying the
-`SUPERADMIN` tag:
+`SERVER_ADMIN` tag:
 
 ```console
 $ curl -u admin:… http://127.0.0.1:8000/_server/tasks/list

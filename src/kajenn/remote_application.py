@@ -13,11 +13,23 @@ every ASGI websocket event crosses it as one message, in both directions.
 
 The mount is a transparent wire: the application receives a request as it
 would in this process. Every header travels in the record and the child
-authenticates on its own face, through the parent's authentication route over
-the bus. Only the identity this process holds — a session avatar, an avatar
-stamped on the scope — travels as ``meta["auth"]``; the scope's channel, its
+authenticates on its own face, through the parent's authentication application
+over the bus. Only the identity this process holds — the avatar of a session,
+asked to the authentication application here, an avatar stamped on the scope
+— travels as ``meta["auth"]``; the scope's channel, its
 ``kajenn.kbus`` flag and its ``genro.page_id``/``genro.reply_path`` travel as
 ``meta["channel"]``, ``meta["kbus"]`` and ``meta["genro"]``.
+
+An application moves to its own process by adding ``spawner`` and nothing
+else: every ``@broadcast_hook`` of the real class (``app_class``) is forwarded
+by the mount to the spawned process with ``remote_call``: the server's
+``applications_broadcast`` asks the mount for each hook at call time and the
+mount answers with a call to ``remote_call``. The
+methods this class defines itself stay local: ``on_startup`` waits for
+``joined``, ``on_shutdown`` and ``plugin_configuration`` do nothing, because
+the spawned process runs all three in its own lifespan. ``declared_tags`` and
+``system_users`` are those the spawned process presented at its last
+``joined``, empty before it joins.
 
 The kwargs of the declaration are split in two: ``PROXY_OPTIONS`` belong to
 this mount, every other kwarg belongs to the real application, built in the
@@ -27,15 +39,17 @@ does, so both processes answer the same URLs.
 
 import asyncio
 import json
+from collections.abc import Callable
 from typing import Any
 
 import kbus
 from genro_tytx import from_tytx, to_tytx
 
-from .application import BaseApplication
+from .application import BaseApplication, is_broadcast_hook
 from .spawner import cancel_and_wait
 from .asgi_endpoint import BufferedAsgiEndpoint
 from .exceptions import ExternalFailure, HTTPException, Redirect, failure_text
+from ._http_metrics import ROUTE_SCOPE_KEY
 from .http_record import HttpRecord
 from .middleware.base import headers_dict
 from .response import Response
@@ -52,18 +66,20 @@ PROXY_OPTIONS = frozenset({"spawner", "request_timeout", "max_calls", "mandatory
 
 
 def avatar_auth(avatar: Avatar) -> dict[str, Any]:
-    """The bus auth record, with the data as TYTX json only when the avatar has any."""
-    auth: dict[str, Any] = {"identity": avatar.identity, "tags": list(avatar.tags)}
+    """The bus auth record ``{identity, group, tags}``, plus the data as TYTX json
+    only when the avatar has any."""
+    auth: dict[str, Any] = {
+        "identity": avatar.identity, "group": avatar.group, "tags": list(avatar.tags)}
     if avatar.data:
         auth["data"] = to_tytx(avatar.data.as_dict(recursive=True), "json")
     return auth
 
 
 def avatar_from_auth(auth: dict[str, Any] | None) -> Avatar | None:
-    """Rebuild the bus caller; a record without data leaves its data Bag empty."""
+    """Rebuild the bus caller with its group; a record without data leaves its data Bag empty."""
     if auth is None:
         return None
-    avatar = Avatar(auth["identity"], auth["tags"])
+    avatar = Avatar(auth["identity"], auth["tags"], group=auth["group"])
     if "data" in auth:
         avatar.data.update(from_tytx(auth["data"], "json"))
     return avatar
@@ -137,7 +153,8 @@ def raised_failure(record: dict[str, Any]) -> Exception:
 
 
 class RemoteApplication(BaseApplication):
-    """Forward one mounted application to the member named after its code."""
+    """The mount of an application hosted in a spawned process, forwarding to
+    the member named after its code."""
 
     #: Read by ``WsxConnection``: the answers this mount hands back were
     #: already adapted at the endpoint that produced them, so they travel on
@@ -163,21 +180,92 @@ class RemoteApplication(BaseApplication):
         super().__init__(
             code=app_kwargs.get("code", app_class.code) or app_class.__name__.lower(),
             mount=app_kwargs.get("mount", app_class.mount), mandatory=mandatory)
+        self.app_class = app_class
         self.spawner = spawner
         self.request_timeout = request_timeout
         self.max_calls = max_calls
         self._slots = asyncio.Semaphore(max_calls)
         self._joined = asyncio.Event()
+        self._declared_tags: list[dict[str, Any]] = []
+        self._system_users: list[dict[str, Any]] = []
         if hasattr(app_class, "serve_websocket"):
             self.serve_websocket = self._forward_websocket
 
-    def mark_joined(self) -> None:
-        """Record that the spawned process sent ``joined``."""
+    @property
+    def declared_tags(self) -> list[dict[str, Any]]:
+        """The ``declared_tags`` the spawned process presented at its last ``joined``."""
+        return self._declared_tags
+
+    @property
+    def system_users(self) -> list[dict[str, Any]]:
+        """The ``system_users`` the spawned process presented at its last ``joined``."""
+        return self._system_users
+
+    def mark_joined(
+        self, declared_tags: list[dict[str, Any]], system_users: list[dict[str, Any]]
+    ) -> None:
+        """Record that the spawned process sent ``joined``, with its declarations."""
+        self._declared_tags = declared_tags
+        self._system_users = system_users
         self._joined.set()
 
     async def on_startup(self) -> None:
         """Return once the spawned process has joined: then the server sends ``ready``."""
         await self._joined.wait()
+
+    def on_shutdown(self) -> None:
+        """Do nothing: the spawned process runs ``on_shutdown`` in its own lifespan."""
+
+    def plugin_configuration(self) -> None:
+        """Do nothing: the spawned process runs ``plugin_configuration`` in its own lifespan."""
+
+    def _broadcast_callable(self, name: str) -> Callable[..., Any] | None:
+        """The callable the broadcast runs for the hook ``name``, or ``None``.
+
+        A name this class defines itself stays local: its bound method when it
+        is a broadcast hook (``on_shutdown``), else ``None``. Otherwise a
+        ``@broadcast_hook`` of ``app_class`` answers with a coroutine function
+        that runs it in the spawned process through ``remote_call``; any other
+        name answers ``None``.
+        """
+        own = type(self).__mro__[:type(self).__mro__.index(BaseApplication)]
+        if any(name in vars(klass) for klass in own):
+            return super()._broadcast_callable(name)
+        if not is_broadcast_hook(self.app_class, name):
+            return None
+
+        async def remote(*args: Any, **kwargs: Any) -> Any:
+            return await self.remote_call(name, *args, **kwargs)
+
+        return remote
+
+    async def remote_call(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+        """Run ``method_name`` on the application hosted in the spawned process.
+
+        The spawned process is the one this mount forwards to, where the real
+        ``app_class`` is built. A kbus call with the ``"remote_call"`` label
+        carries the name in ``meta["method"]`` and ``args``/``kwargs`` as TYTX
+        json; the process calls the method, sync or async, on its application
+        and answers with the result, which comes back decoded from TYTX json.
+
+        Returns:
+            The result of the method in the spawned process.
+
+        Raises:
+            TimeoutError: no answer within ``request_timeout``; counted in
+                ``server.event_metrics`` as a ``remote_call`` timeout.
+            kbus.Error: the process is not reachable, or the method raised
+                there (``kbus.RemoteError``).
+        """
+        payload = to_tytx({"args": list(args), "kwargs": kwargs}, "json").encode()
+        try:
+            async with asyncio.timeout(self.request_timeout):
+                reply = await self.server.kbus_member.call(
+                    f"{self.code}.remote_call", kbus.Message({"method": method_name}, payload))
+        except TimeoutError:
+            self.server.event_metrics.record_kbus_timeout(self.code, "remote_call")
+            raise
+        return from_tytx(reply.payload.decode(), "json")
 
     async def __call__(self, scope, receive, send) -> None:
         """Forward one request to the member and write its answer as it streams.
@@ -185,7 +273,8 @@ class RemoteApplication(BaseApplication):
         A body over the policy ceiling or the kbus frame limit answers 413, an
         error reply answers 502, a process that has not joined, a lost link, a
         process that dies before its first message or a first message slower
-        than ``request_timeout`` answers 503. Once the
+        than ``request_timeout`` answers 503; that timeout is also counted in
+        ``server.event_metrics`` as an ``http_forward`` timeout. Once the
         answer started, a failure ends it without its terminal body.
         A client that disconnects while the body is being read ends the call
         silently. An exception the application raised before its answer
@@ -203,7 +292,10 @@ class RemoteApplication(BaseApplication):
             return
         except (kbus.FrameTooLarge, HttpBodyTooLarge):
             status, text = 413, "Request too large"
-        except (kbus.NoSuchMember, kbus.LinkLost, TimeoutError):
+        except (kbus.NoSuchMember, kbus.LinkLost):
+            status, text = 503, "Remote application unavailable"
+        except TimeoutError:
+            self.server.event_metrics.record_kbus_timeout(self.code, "http_forward")
             status, text = 503, "Remote application unavailable"
         except kbus.Error:
             status, text = 502, "Remote application failed"
@@ -214,6 +306,8 @@ class RemoteApplication(BaseApplication):
 
         ``request_timeout`` bounds the wait for a ``max_calls`` slot and for
         the first message of the answer, together; never the length of the answer.
+        The ``route_name`` of the first message, ``""`` when absent, is written
+        under ``"kajenn.route"`` in ``scope``, read by the server's ``http_metrics``.
         """
         held = False
         try:
@@ -234,7 +328,7 @@ class RemoteApplication(BaseApplication):
                     if not message.get("more_body", False):
                         break
                 meta: dict[str, Any] = {"format": "http"}
-                avatar = self._trusted_avatar(scope)
+                avatar = await self._trusted_avatar(scope)
                 if avatar is not None:
                     meta["auth"] = avatar_auth(avatar)
                 if "kajenn.channel" in scope:
@@ -257,6 +351,7 @@ class RemoteApplication(BaseApplication):
                         head = await anext(stream, None)
                         if head is None:
                             raise kbus.LinkLost("the answer ended before it started")
+                        scope[ROUTE_SCOPE_KEY] = head.meta.get("route_name", "")
                         if "failure" in head.meta:
                             raise raised_failure(head.meta["failure"])
                         deadline.reschedule(None)
@@ -373,21 +468,20 @@ class RemoteApplication(BaseApplication):
             if client_open and not application_closed:
                 await send({"type": "websocket.close", "code": 1011})
 
-    def _trusted_avatar(self, scope) -> Any:
+    async def _trusted_avatar(self, scope) -> Any:
         """The identity this process vouches for, or ``None``.
 
         An avatar already on the scope (a stamping middleware) or, without an
-        ``Authorization`` header, the root avatar of the session: the session
-        store lives here and the child cannot read it. A header is never
-        verified here: it travels in the record and the child verifies it on
-        its own face.
+        ``Authorization`` header, the avatar of the session's root identity
+        (``server.authenticate``): the session store lives here and the child
+        cannot read it. A header is never verified here: it travels in the
+        record and the child verifies it on its own face.
         """
         if scope.get("auth") is not None:
             return scope["auth"]
         if headers_dict(scope).get("authorization"):
             return None
-        session = self.server.session(scope)
-        return session.avatar() if session is not None else None
+        return await self.server.authenticate(scope)
 
     async def _send_local_response(self, status, text, scope, receive, send) -> None:
         """Write an answer this mount built itself, as a JSON string.

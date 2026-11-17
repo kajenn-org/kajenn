@@ -4,99 +4,87 @@
 
 Verified against source revision `63fb326` (develop baseline). Test references
 below identify the executable contracts; they are not a new coverage percentage.
+Authentication passages updated against `dfc3941`.
 
-## Credential precedence
+## Credential precedence and application boundary
 
-`AuthMixin.authenticate` verifies a presented `Authorization` header through
-`authenticate_credential`. Without a header, the session's root avatar answers.
-Without a session avatar, the answer is `None`. A present invalid header raises
-`HTTPUnauthorized` on any route; it does not fall back to a logged-in session.
-A scope without `kajenn.channel` is read as the `api` channel.
+`AuthMixin.authenticate` checks a presented `Authorization` header first.
+An invalid credential raises `HTTPUnauthorized`, without falling back to the
+session. Without a header, the server asks `/_auth/avatar` for the session's
+root identity and group. A 401/404 answer deletes the session and returns `None`.
+Without a root avatar or an authentication application, it returns `None`.
+A scope without `kajenn.channel` uses `api`.
 
-`RoutedApplication.authenticate_scope` calls `server.authenticate(scope)` when
-`scope["auth"]` is missing or `None`. `execute` and `discover` call it before
-resolution. No middleware layer authenticates.
+The site must mount `AuthApplicationBase` with code `_auth`. The server does
+not add it. `authenticate_credential` calls `/_auth/authenticate` over the
+bus with the credential and channel. The base application does not use the
+channel. Its answer contains `identity`, `group`, `tags`, `data` and
+`valid_until`. The authenticate, avatar and forget-credential routes refuse
+HTTP callers with 403. A missing authentication application or a 401/404
+answer produces 401 with `WWW-Authenticate: Bearer`; an unreachable or failing
+service produces 503.
 
-Claim anchors: [`AuthMixin`](../../../src/kajenn/auth/mixin.py#AuthMixin), [`authenticate`](../../../src/kajenn/auth/mixin.py#AuthMixin.authenticate), [`authenticate_scope`](../../../src/kajenn/routed_application.py#RoutedApplication.authenticate_scope).
+Claim anchors: [`authenticate`](../../../src/kajenn/auth/mixin.py#AuthMixin.authenticate), [`authenticate_credential`](../../../src/kajenn/auth/mixin.py#AuthMixin.authenticate_credential), [`AuthApplicationBase`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationBase).
 
-Behavior evidence: tests `test_an_invalid_bearer_is_401_even_on_a_public_route`, `test_the_session_avatar_wins_without_header`, `test_no_auth_middleware_anywhere` (tests/core/test_authentication_on_demand.py).
+## Cached answers
 
-## Credential verification through the channel's authentication route
+The cache holds answers, not shared avatar objects. Credential keys are
+`("credential", sha256(credential), channel)`; session keys are
+`("session", identity, group or "")`. Each request receives a new avatar.
+The TTL comes from the mounted application's `cache_ttl`, default 300 seconds;
+0 disables caching. A dedicated application process reads the `_auth` recipe
+entry instead. `valid_until` caps the lifetime. Failures are not cached.
 
-`authenticate_credential` sends the credential with a `kbus_call` to the
-channel's `authentication_route`. The default route is
-`/_server/auth/authenticate` (`DEFAULT_AUTHENTICATION_ROUTE`, auth/mixin.py:78).
-A route answer of 401 or 404 becomes `HTTPUnauthorized` with
-`WWW-Authenticate: Bearer`. An unreachable route, or a status of 500 and above,
-becomes a 503 (auth/mixin.py:112-159).
+`forget_credential` evicts that credential on every channel and all session
+entries. `forget_all_credentials` clears the cache. Revoking or deleting a
+token clears the whole cache through `forget_credentials_everywhere`.
+`/_auth/forget_credential` calls that method with one credential. It evicts in
+the server and every joined process; a process that cannot confirm is
+relaunched.
 
-`AuthSection.authenticate` serves the default route. It runs
-`AuthCore.verify_with_validity` and answers `{identity, tags, data,
-valid_until}`. It serves the bus only: an HTTP caller gets 403
-(auth_section.py:107-140; test `test_the_server_auth_routes_serve_the_bus_only`).
+Claim anchors: [`_ask_avatar`](../../../src/kajenn/auth/mixin.py#AuthMixin._ask_avatar), [`forget_credential`](../../../src/kajenn/auth/mixin.py#AuthMixin.forget_credential), [`forget_credentials_everywhere`](../../../src/kajenn/kbus_mixin.py#KBusMixin.forget_credentials_everywhere).
 
-`AuthCore` verifies configured Basic, static Bearer and JWT credentials.
-`gak_` API keys use the API-key store and never fall through to JWT on a miss.
+## Store, configuration and login
 
-Claim anchors: [`authenticate_credential`](../../../src/kajenn/auth/mixin.py#AuthMixin.authenticate_credential), [`AuthCore`](../../../src/kajenn/auth/core.py#AuthCore), [`verify_with_validity`](../../../src/kajenn/auth/core.py#AuthCore.verify_with_validity), [`AuthSection.authenticate`](../../../src/kajenn/server_app/server_sections/auth_section.py#AuthSection.authenticate).
+`AuthStore` holds users, groups, tags, tokens and login failures. `FileAuthStore` writes one
+encrypted JSON file per record under `site:auth` by default. The application
+builds the store on first use with `store_class(server.storage, **params)`.
+Its grammar provides `store`, `login`, `oidc`/`provider` and
+`self_registration`. `cache_ttl` is an application attribute.
 
-## Verified-credential cache
+`verify_credential` accepts Basic passwords and Bearer `gak_` tokens.
+Password checks and `/_auth/login` share a separate `login_failures` record
+keyed by identity, containing `failed_attempts` and `last_failed_at`. Login
+never writes the user record. User management saves leave counters unchanged;
+`/_auth/users/delete` also deletes the counter record.
+After 5 failures by default, the backoff is
+`30 * 2**(failed_attempts - 5)` seconds. The `login` word changes both defaults.
+Success deletes the counter record; attempts during lockout leave it unchanged.
+A password requires a confirmed, non-system user.
 
-A verified avatar is cached under the key `(sha256(credential), channel)`. The
-lifetime is `credential_cache_ttl`, default 300 seconds. A `valid_until` in the
-route answer caps it at that instant. `0` disables the cache. Failures are not
-cached (auth/mixin.py:127-159; tests in tests/core/test_credential_validity.py).
+Login attaches the avatar to the existing session without changing its id.
+The selected group defaults to the user's primary group. `/_auth/logout`
+deletes the supplied session id. `/_auth/login_methods` returns public
+method descriptors. At startup, `_auth` creates declared records and, when
+no confirmed non-system administrator other than `_temporary_admin` exists,
+writes `_temporary_admin` with `AUTH_ADMIN` and logs its new password. User and group management remove that
+account and clear cached answers once a real administrator exists.
 
-`forget_credential` and `forget_all_credentials` evict entries in the current
-process. `forget_credentials_everywhere` evicts here and calls
-`<code>.forget_credentials` on every joined process. A process that does not
-confirm within `FORGET_CREDENTIALS_TIMEOUT` is relaunched
-(kbus_mixin.py:161-183). Revoking or deleting an api key calls it
-(tokens_section.py:115, 125). The route `POST /_server/auth/forget_credential`
-calls it too, bus only (auth_section.py:141-150).
+Claim anchors: [`AuthStore`](../../../src/kajenn/auth_app/auth_store.py#AuthStore), [`FileAuthStore`](../../../src/kajenn/auth_app/auth_store.py#FileAuthStore), [`build_store`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationBase.build_store), [`AuthApplicationGrammar`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationGrammar), [`verify_credential`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationBase.verify_credential), [`login`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationBase.login), [`refresh_temporary_admin`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationBase.refresh_temporary_admin).
 
-Behavior evidence: test `test_a_process_that_does_not_confirm_the_revocation_is_relaunched` (tests/core/test_revocation_across_processes.py).
+## OIDC
 
-## Configuration of channels and cache
+Each configured provider registers `oidc:<code>` on `_auth`, with `start`
+and `callback` routes under `/_auth/oidc:<code>/`. A provider requires the
+server's `external_url`: both routes declare `env_requires="external_links"`,
+so on a server without `external_url` the server boots and the routes are not
+available (`404`). Discovery is lazy; authorization uses PKCE S256.
+The callback finds a user by verified `iss` and `sub`, then by verified email,
+or registers one under `self_registration`. It refuses a user that is not
+confirmed or is a system user. Tags and the primary group come from the
+store, not the provider configuration.
 
-The recipe element `authentication(cache_ttl)` sets `credential_cache_ttl`
-(config/elements.py:275; config/handler.py:181-183). The collection
-`channels` holds one `channel(name, authentication_route)` per channel
-(config/elements.py:393-404). A channel without `authentication_route` is
-refused when the server is built (config/handler.py:200-202).
-
-## Identity stores and login surface
-
-The server's local user and token stores are optional. Configured store
-descriptors name a `store_class` and its kwargs, built on the server storage.
-No built store can be supplied: `_build_user_store` and `_build_api_key_store`
-take a descriptor only (auth/mixin.py:189-210). The server creates no user at
-boot: there is no bootstrap admin (auth/mixin.py:33-36).
-
-Password login and OIDC methods live on `ServerApplication` and attach an
-avatar in place. OIDC configuration requires a declared `external_url` at
-server construction (asgi_server.py:148, 265-284).
-
-`login` enforces a lockout per identity. After `max_attempts` consecutive
-failures the identity is refused for `backoff * 2**(failed - max_attempts)`
-seconds. The defaults are 5 attempts and 30 seconds (`LOCKOUT_MAX_ATTEMPTS`,
-`LOCKOUT_BACKOFF_SECONDS`, server_app.py:106-107). The application element
-`login(max_attempts, backoff)` tunes it (server_app.py:155). Tests:
-`test_max_attempts_failures_lock_even_the_correct_password`,
-`test_window_expiry_re_allows_and_success_resets` (tests/server_app/test_login_flow.py).
-
-Each OIDC provider is registered as the method `oidc:<code>`, with the routes
-`/_server/auth/oidc:<code>/start` and `/_server/auth/oidc:<code>/callback`
-(server_app.py:243-245, 390; oidc_method.py:165). `start` uses PKCE S256
-(oidc_method.py:203). The provider metadata is fetched on first use, never at
-construction (`discovery`, oidc_method.py:114-130). The application element
-`oidc()` holds one `provider(code, issuer, client_id, ...)` per provider
-(server_app.py:159-172).
-
-`GET /_server/login_methods` answers the descriptors of the registered methods.
-It declares no `auth_rule` (server_app.py:554-570).
-
-Claim anchors: [`ServerApplication`](../../../src/kajenn/server_app/server_app.py#ServerApplication), [`login_methods`](../../../src/kajenn/server_app/server_app.py#ServerApplication.login_methods), [`OidcMethod.discovery`](../../../src/kajenn/server_app/oidc_method.py#OidcMethod.discovery).
+Claim anchors: [`authenticate_claims`](../../../src/kajenn/auth_app/oidc_method.py#OidcMethod.authenticate_claims), [`link_user`](../../../src/kajenn/auth_app/oidc_method.py#OidcMethod.link_user).
 
 ## Identity carried by a bus message
 
@@ -113,9 +101,9 @@ identity and any tags. Test: `test_a_frame_with_auth_is_trusted_as_it_is`
 receives 401, insufficient tags receive 403. The 401 of a ruled entry carries
 `WWW-Authenticate: Bearer` (`_ChallengedUnauthorized`, routed_application.py:120-122).
 `ErrorMiddleware` forwards the exception's header pairs onto the response; it
-does not negotiate a login page (errors.py:128-131). The monitor and the
-databases section declare `SERVER_ADMIN`; users, tokens and tasks declare
-`SUPERADMIN`. Login endpoints are public.
+does not negotiate a login page (errors.py:128-131). The monitor,
+databases and tasks sections declare `SERVER_ADMIN`; users, groups, tags and
+tokens on `_auth` declare `AUTH_ADMIN`. Login endpoints are public.
 
 The separately recorded return-path conversion — a hosted site's own identity
 becoming a core session avatar with server-configured tags — is not
@@ -123,15 +111,13 @@ implemented. It remains a distinct target.
 
 Claim anchors: [`RoutedApplication`](../../../src/kajenn/routed_application.py#RoutedApplication).
 
-Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection), [`UsersSection`](../../../src/kajenn/server_app/server_sections/users_section.py#UsersSection), [`TokensSection`](../../../src/kajenn/server_app/server_sections/tokens_section.py#TokensSection), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection).
+Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sections/monitor_section.py#MonitorSection), [`DatabasesSection`](../../../src/kajenn/server_app/server_sections/databases_section.py#DatabasesSection), [`TasksSection`](../../../src/kajenn/server_app/server_sections/tasks_section.py#TasksSection).
 
 ## Source and test evidence
 
-- [src/kajenn/auth/core.py](../../../src/kajenn/auth/core.py)
 - [src/kajenn/auth/mixin.py](../../../src/kajenn/auth/mixin.py)
 - [src/kajenn/server_app/server_app.py](../../../src/kajenn/server_app/server_app.py)
-- [src/kajenn/server_app/server_sections/auth_section.py](../../../src/kajenn/server_app/server_sections/auth_section.py)
-- [src/kajenn/server_app/oidc_method.py](../../../src/kajenn/server_app/oidc_method.py)
+- [src/kajenn/auth_app/oidc_method.py](../../../src/kajenn/auth_app/oidc_method.py)
 - [src/kajenn/routed_application.py](../../../src/kajenn/routed_application.py)
 - [src/kajenn/kbus_mixin.py](../../../src/kajenn/kbus_mixin.py)
 - [tests/core/test_auth.py](../../../tests/core/test_auth.py)
@@ -139,6 +125,4 @@ Behavior evidence: [`MonitorSection`](../../../src/kajenn/server_app/server_sect
 - [tests/core/test_authentication_precedence.py](../../../tests/core/test_authentication_precedence.py)
 - [tests/core/test_credential_validity.py](../../../tests/core/test_credential_validity.py)
 - [tests/core/test_revocation_across_processes.py](../../../tests/core/test_revocation_across_processes.py)
-- [tests/server_app/test_login_flow.py](../../../tests/server_app/test_login_flow.py)
-- [tests/server_app/test_oidc.py](../../../tests/server_app/test_oidc.py)
-- [tests/core/test_api_key_store.py](../../../tests/core/test_api_key_store.py)
+- [tests/auth_app/test_oidc.py](../../../tests/auth_app/test_oidc.py)

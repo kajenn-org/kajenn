@@ -27,8 +27,15 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from genro_bag.resolvers import EnvResolver
 
-from kajenn import AsgiServer, BaseApplication, ConfigError, ConfigurationHandler
+from kajenn import (
+    AsgiServer,
+    AuthApplicationBase,
+    BaseApplication,
+    ConfigError,
+    ConfigurationHandler,
+)
 from kajenn.config.templates import (
     CONFIGURATION_TEMPLATES,
     DEFAULT_TEMPLATE,
@@ -39,6 +46,7 @@ from kajenn.middleware.base import BaseMiddleware
 from kajenn.session.store import MemorySessionStore
 from kajenn.middleware.cors import CORSMiddleware
 from kajenn.types import Receive, Scope, Send
+from tests.storage_support import MemoryAuthStore
 
 
 class ShopApp(BaseApplication):
@@ -64,7 +72,6 @@ class ApiApp(BaseApplication):
         await send({"type": "http.response.body", "body": b"api"})
 
 
-BASIC_ADA = {"headers": [(b"authorization", b"Basic YWRhOmxvdmVsYWNl")]}
 
 
 class TestTheConfigurationAlwaysExists:
@@ -179,22 +186,14 @@ class TestNoLiveObjectReachesTheConstructor:
         assert mounts[0].attr["name"] == "data"
         assert server.storage.get_mount_names() == ["data", "home"]
 
-    def test_the_identity_store_classes_reach_the_tree(self) -> None:
+    def test_the_auth_store_class_reaches_the_tree(self) -> None:
         server = AsgiServer(
-            applications=[(ShopApp, {"mount": ""})],
-            users={"store_class": MemorySessionStore},
+            applications=[(ShopApp, {"mount": ""}),
+                          (AuthApplicationBase, {"store": {"store_class": MemoryAuthStore}})],
         )
-        assert server.config("authentication.users.store_class") is MemorySessionStore
-
-    def test_the_header_credentials_reach_the_tree(self) -> None:
-        server = AsgiServer(
-            applications=[(ShopApp, {"mount": ""})],
-            auth={"basic": {"ada": {"password": "lovelace", "tags": "admin"}}},
-        )
-        written = list(server.config.node("authentication.credentials").value)
-        assert [child.node_tag for child in written] == ["basic_user"]
-        assert written[0].attr["username"] == "ada"
-        assert server.auth_core.authenticate(BASIC_ADA) is not None
+        written = server.config.node("applications._auth").attr["store"]
+        assert written["store_class"] is MemoryAuthStore
+        assert isinstance(server.applications["_auth"].store, MemoryAuthStore)
 
 
 class TestTheShortcutTreeMatchesARecipe:
@@ -210,7 +209,9 @@ class TestTheShortcutTreeMatchesARecipe:
                 apps.application(code="shopapp", mount="", app_class=ShopApp)
 
             def server_section(self, cfg: Any) -> None:
-                cfg.server(host="0.0.0.0", port=9101)
+                cfg.server(
+                    external_url=EnvResolver("KAJENN_EXTERNAL_URL", default=""), host="0.0.0.0", port=9101
+                )
 
         by_recipe = AsgiServer(config=HandWritten)
         by_kwargs = AsgiServer(

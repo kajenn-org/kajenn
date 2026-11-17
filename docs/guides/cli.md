@@ -9,7 +9,7 @@ named servers so you can start, list and stop them from any shell.
 ```
 kajenn serve <source> [--home D] [--host H] [--port P] [--reload] [--name N] [--debug [PARAMETERS]]
     <source> = ./config.py | template=<name> | application=<target> | <site name>
-kajenn configure <name> [--home D] [--template T] [--applications T1,T2] [--host H] [--port P]
+kajenn configure <name> [--home D] [--template T] [--applications T1,T2] [--host H] [--port P] [--external-url URL]
 kajenn sites
 kajenn stop <name>
 kajenn remove <name>
@@ -183,6 +183,12 @@ $ kajenn configure demo --home /srv/demo --template default \
       --applications myshop.app:Shop --host 0.0.0.0 --port 8080
 demo: configured in /srv/demo
 ```
+
+`--external-url` is optional and never asked. Given, the value is written
+literally into the recipe's `server` element. Absent, the recipe writes
+`external_url=EnvResolver("KAJENN_EXTERNAL_URL", default="")`: the server reads its public
+address from that variable, and with the variable unset it has none. See
+[The public address](configuration.md#the-public-address).
 
 It lays the home out, writes its `config.py` from the named template, and files
 the card. Then the name is a source of its own:

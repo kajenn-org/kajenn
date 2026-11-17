@@ -20,7 +20,10 @@ methods on subclasses, and external ``RoutingClass`` instances mount as
 sub-trees via ``add_branches({"name": ..., "instance": child})``. The constructor
 plugs the ``auth`` plugin on the app router, so
 entries declaring ``auth_rule`` are filtered by the request's authorization
-tags — attached children inherit the plug.
+tags — attached children inherit the plug. It also plugs the ``env`` plugin
+and sets ``capabilities`` to a ``ServerCapabilities`` bound to the app, so an
+entry declaring ``env_requires`` (``"external_links"``) resolves only while the
+server has that capability; a missing capability is ``not_available``.
 
 The config-driven plugins (the ``openapi`` dialect) are armed LAZILY:
 on the first ``route`` access made after the app is attached to a server, the
@@ -78,16 +81,21 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from genro_routes import Router, RoutingClass, is_result_wrapper
 
-from .application import BaseApplication
+from .application import BaseApplication, is_broadcast_hook
 from .applications.mcp import McpTransport
 from .applications.openapi import ApplicationMeta
 from .exceptions import ROUTER_ERRORS, HTTPBadRequest, HTTPException
+from ._exposition import families_text
+from ._http_metrics import ROUTE_SCOPE_KEY
 from .plugins.openapi.plugin import METHOD_NOT_ALLOWED, OpenAPIPlugin
 from .request import Request
+from .server_capabilities import ServerCapabilities
 from .streaming import StreamingResponse
 
 if TYPE_CHECKING:
     from genro_routes import RouterNode
+
+    from .server import BaseServer
 
     from .types import Receive, Scope, Send
 
@@ -182,6 +190,8 @@ class RoutedApplication(BaseApplication, RoutingClass):
         router.channel.configure(channels=cls.http_channel)
         router.plug("pydantic")
         router.plug(OpenAPIPlugin.plugin_code)
+        router.plug("env")
+        self.capabilities = ServerCapabilities(self)
         # A branch of the same name is refused by ``add_branches`` itself. Only a
         # route declared under that name clashes: a catch-all route resolves
         # every segment without naming it (kajenn-org/kajenn#123).
@@ -220,9 +230,48 @@ class RoutedApplication(BaseApplication, RoutingClass):
         """The MCP engine driving this application's tools."""
         return self.mcp_transport.engine
 
+    def prometheus_metrics(self) -> str:
+        """This application's own families, as exposition text: the MCP ones,
+        then the base's.
+
+        The calls answered on ``_meta/mcp`` by method, tool and outcome, and
+        the ``tools/call`` duration, counted by ``mcp_transport.metrics``,
+        followed by ``BaseApplication.prometheus_metrics`` (the families of a
+        dedicated process). A spawned application's text reaches
+        ``_server/metrics`` through the forwarded hook. An application that
+        overrides the hook includes ``super().prometheus_metrics()`` in its
+        text, or these families leave ``_server/metrics``.
+        """
+        return (families_text(self.mcp_transport.metrics.collect())
+                + super().prometheus_metrics())
+
     def meta_url(self, path: str) -> str:
         """The public URL of ``_meta/<path>`` of this application."""
         return f"/{self.mount}/{META_SEGMENT}/{path}" if self.mount else f"/{META_SEGMENT}/{path}"
+
+    @property
+    def server(self) -> BaseServer | None:
+        """The server that owns this app (``None`` until attached)."""
+        return super().server
+
+    @server.setter
+    def server(self, value: BaseServer) -> None:
+        """Assign the owning server once, after checking that no route is a broadcast hook.
+
+        The server assigns it when it registers the application: a route whose
+        method has the name of a ``@broadcast_hook`` raises ``ValueError``
+        naming it, and the application stays unowned.
+        """
+        entries = super().route.nodes(lazy=True, forbidden=True).get("entries", {})
+        for entry in entries.values():
+            method = entry["callable"]
+            if (getattr(method, "__self__", None) is self
+                    and is_broadcast_hook(type(self), method.__name__)):
+                raise ValueError(
+                    f"application {self.code!r}: route {entry['name']!r} is the broadcast "
+                    f"hook {method.__name__!r}"
+                )
+        vars(BaseApplication)["server"].__set__(self, value)
 
     @property
     def route(self) -> Router:
@@ -238,6 +287,40 @@ class RoutedApplication(BaseApplication, RoutingClass):
             self._armed = True
             arm_router(router)
         return router
+
+    def plugin_configuration(self) -> None:
+        """Give the routes the plugin options the configuration declares.
+
+        Each ``configure`` line of this application's ``plugin_configuration``
+        blocks is applied to every route it names, in the order written: the
+        value replaces what ``@route(...)`` wrote for that route. Nothing is
+        read when the application has no configured server.
+        """
+        handler = getattr(self.server, "config", None)
+        if handler is None:
+            return
+        for plugin, routes, options in handler.plugin_configuration(self.code):
+            for path in routes.split(","):
+                self.configure_route_plugin(plugin, path.strip(), options)
+
+    def configure_route_plugin(self, plugin: str, path: str, options: dict[str, Any]) -> None:
+        """Write ``options`` of ``plugin`` on the route at ``path``.
+
+        ``path`` is relative to the application (``"products/list"``). The
+        write is one ``routing.configure`` of genro-routes on the routing
+        class that owns the route. A write genro-routes refuses — no such
+        route, no such plugin on the router, an option the plugin does not
+        accept — is logged as a warning and nothing else happens.
+        """
+        parent, _, name = path.rpartition("/")
+        branch = self.route.router_at_path(parent)
+        try:
+            if branch is None:
+                raise KeyError(f"No routing class at {parent!r}")
+            branch.instance.routing.configure(f"{plugin}/{name}", **options)
+        except (KeyError, AttributeError, ValueError) as refused:
+            logger.warning("application %r: %s options of route %r not applied: %s",
+                           self.code, plugin, path, refused)
 
     def active_well_known(self) -> dict[str, str]:
         """The declared well-known paths, each route checked against the router.
@@ -284,7 +367,13 @@ class RoutedApplication(BaseApplication, RoutingClass):
         gives the answer of its new address, with a ``Deprecation`` header and
         a log line; ``mcp`` moves only while the application has no route of
         that name.
+
+        The route name ``execute`` writes under ``"kajenn.route"`` ends up in
+        the scope this call received, also for a URL of 0.8.0 answered on a
+        copy of it; ``_meta/mcp`` writes ``"_meta/mcp"`` there. The server's
+        ``http_metrics`` reads it.
         """
+        served = scope
         path = str(scope.get("path", "/")).strip("/")
         moved = self.moved_url(path)
         if moved is not None:
@@ -294,12 +383,17 @@ class RoutedApplication(BaseApplication, RoutingClass):
             path = moved
             scope = {**scope, "path": "/" + moved, "raw_path": ("/" + moved).encode()}
         if path == META_MCP:
+            served[ROUTE_SCOPE_KEY] = META_MCP
             await self.mcp_transport.handle(scope, receive, send)
             return
         scope.setdefault("kajenn.channel", self.http_channel)
         request = Request(scope, receive, server=self.server, application=self)
         await request.init()
-        result = await self.execute(request)
+        try:
+            result = await self.execute(request)
+        finally:
+            if scope is not served and ROUTE_SCOPE_KEY in scope:
+                served[ROUTE_SCOPE_KEY] = scope[ROUTE_SCOPE_KEY]
         if isinstance(result, StreamingResponse):
             await result(scope, receive, send)
             return
@@ -337,7 +431,10 @@ class RoutedApplication(BaseApplication, RoutingClass):
         The single execution point every face reaches (#37): REST through
         ``__call__``, an MCP ``tools/call`` through the transport, WSX and the
         KajennBus through ``__call__``. The resolved node is left on
-        ``request.node``. An async handler runs on the loop, a sync one through
+        ``request.node`` and, when the path matches a route (refused or not:
+        every ``node.error`` but ``not_found``), its path on
+        ``request.scope["kajenn.route"]``: the route name, never the request
+        path with its parameters. An async handler runs on the loop, a sync one through
         ``server.run_sync`` with ``route_cleanup`` after it on the same thread.
         A scope without ``auth`` is authenticated before resolution
         (``authenticate_scope``, the step ``discover`` shares): an invalid
@@ -364,6 +461,8 @@ class RoutedApplication(BaseApplication, RoutingClass):
             **self.auth_filters(request.scope),
             **self.method_filters(request.scope),
         )
+        if node.error != "not_found":
+            request.scope[ROUTE_SCOPE_KEY] = node.path
         if node.error and node.error.startswith(METHOD_NOT_ALLOWED):
             allow = node.error.removeprefix(METHOD_NOT_ALLOWED)
             raise HTTPException(405, "Method Not Allowed", headers=[(b"allow", allow.encode())])

@@ -42,7 +42,7 @@ them off the tree exactly as it does for a written recipe.
 
 Its cooperative ``__init__`` peels the kwargs ``BaseServer`` does not accept —
 ``site_name``/``site_home``/``host``/``port``/``external_url`` — and forwards
-everything else (``applications``, ``auth``, ``session_store``/``session_ttl``,
+everything else (``applications``, ``session_store``/``session_ttl``,
 ``middleware``/``middleware_registry``, ``plugins``/``plugin_registry``,
 ``storage``/``storage_key``, ``role``, ``kbus``) down the D16 chain. The peeled
 ``host``/``port`` become the defaults of ``serve``, so a configured server
@@ -51,20 +51,23 @@ serves on its configured address unless the caller overrides it.
 ``host``/``port`` are the LISTENER; ``external_url`` is the server's PUBLIC
 base address — the two differ behind a proxy and answer different questions.
 The listener says where to bind; the public address is what the server calls
-itself when it hands its own URL to a third party. Its one consumer is the
-OIDC flow (a provider is given an absolute ``redirect_uri``, RFC 6749
-§3.1.2), and it is DECLARED rather than derived from a request: the URI must
-match the one registered with the provider — a deployment fact known to
+itself when it hands its own URL to a third party, for example the absolute
+``redirect_uri`` of an OIDC provider declared in the ``_auth`` application
+(RFC 6749 §3.1.2). It is DECLARED rather than derived from a request: the URI
+must match the one registered with the provider — a deployment fact known to
 whoever installs — and deriving it from the client-supplied ``Host`` would
-build a value the provider then rejects. Missing it with a provider
-configured is a boot error (``_check_oidc_external_url``), not an opaque
-provider error at the first login.
+build a value the provider then rejects. It is optional: a server without it
+(not given, or a value that resolves empty) has ``external_url`` ``None`` and
+its applications lack the ``external_links`` capability, so a route that
+requires it (the OIDC routes of ``_auth``) is not available.
 
 The management application ``_server`` (``ServerApplication``) exists in every
 server: when no application of code ``_server`` reached the merged kwargs,
 ``__init__`` appends one with its defaults, on the kwargs road and on the
 configuration road alike. The configuration only customises it
-(``application(code="_server", ...)``: login policy, OIDC, a subclass). An
+(``application(code="_server", ...)``: its well-known words, a subclass). The
+authentication application ``_auth`` is never added: a server that does not
+declare it does not authenticate (``AuthMixin``). An
 application mounted with ``spawner="subprocess"`` runs in its own dedicated
 process, which hosts that application alone and mounts no ``_server``: its
 ``/_server/...`` calls go to the parent. The configured databases are
@@ -76,6 +79,7 @@ dedicated process, its application's alone.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from pathlib import Path
 from typing import Any
@@ -83,6 +87,7 @@ from typing import Any
 from genro_builders.builder import BuilderBase
 
 from .auth import AuthMixin
+from .auth.mixin import AUTHENTICATION_CODE
 from .kbus_mixin import KBusMixin
 from .config.elements import AsgiServerGrammar
 from .config.default_config import DefaultConfig
@@ -111,6 +116,9 @@ MANAGEMENT_CODE = "_server"
 
 #: The branch of the configuration that lists the applications.
 APPLICATIONS_BRANCH = "applications"
+
+#: The tags of the nodes an application's plugin configuration is made of.
+PLUGIN_CONFIGURATION_TAGS = frozenset({"plugin_configuration", "configure"})
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +164,6 @@ class AsgiServer(
         external_url: str | None = kwargs.pop("external_url", None)
         self._external_url: str | None = external_url.rstrip("/") if external_url else None
         super().__init__(**kwargs)
-        self._check_oidc_external_url()
         self._register_configured_databases(self.config)
         self._removals: dict[str, asyncio.Task[None]] = {}
         self._failed_removals: set[str] = set()
@@ -168,8 +175,10 @@ class AsgiServer(
 
         A node written there builds its application, registers it disabled and,
         once the lifespan started, activates it; a node taken away removes its
-        application. The subscription starts after the boot: the declared
-        applications are already registered.
+        application. A ``plugin_configuration`` block or one of its lines
+        written or changed under an application runs that application's
+        ``plugin_configuration`` hook again. The subscription starts after the
+        boot: the declared applications are already registered.
         """
         node = self.config.node(APPLICATIONS_BRANCH)
         if node is None:
@@ -179,19 +188,25 @@ class AsgiServer(
             builder = self.config.builder
             node.value = type(builder.source)(builder=builder)
         node.value.subscribe(MANAGEMENT_CODE, insert=self._application_written,
-                             delete=self._application_taken)
+                             delete=self._application_taken,
+                             update=self._application_changed)
 
     @property
     def application_nodes(self) -> Any:
         """The ``applications`` branch of the live configuration, one node per application."""
         return self.config.node(APPLICATIONS_BRANCH).value
 
-    def _application_written(self, node: Any, **_: Any) -> None:
+    def _application_written(self, node: Any, pathlist: Any = (), **_: Any) -> None:
         """Build, register and activate the application of a node written at runtime.
 
         A refusal (an unknown keyword, a claimed code or mount) raises to the
-        writer, which takes the node away again.
+        writer, which takes the node away again. A node written inside an
+        application (``pathlist`` starts with its code) is no application: it
+        counts only as a change of that application's plugin configuration.
         """
+        if pathlist:
+            self._plugin_configuration_changed(pathlist[0], node)
+            return
         app_class, app_kwargs = self.config.application_entry(node)
         app = (RemoteApplication(app_class=app_class, **app_kwargs) if "spawner" in app_kwargs
                else app_class(**app_kwargs))
@@ -208,10 +223,43 @@ class AsgiServer(
                 logger.exception("application %r: its process did not start", app.code)
                 await self.remove_application(app.code, failed=True)
                 return
+        await self._run_plugin_configuration(app)
         self.lifespan.start_activation(app)
 
-    def _application_taken(self, node: Any, **_: Any) -> None:
-        """Remove the application of a node taken away from the configuration."""
+    def _application_changed(self, node: Any, pathlist: Any = (), **_: Any) -> None:
+        """A value or an attribute changed under the application ``pathlist[0]``."""
+        self._plugin_configuration_changed(pathlist[0], node)
+
+    def _plugin_configuration_changed(self, code: str, node: Any) -> None:
+        """Run the ``plugin_configuration`` hook of ``code`` when ``node`` is part of its blocks.
+
+        Nothing runs before the lifespan started: the startup broadcast
+        applies what the configuration holds by then.
+        """
+        app = self.applications.get(code)
+        if (app is None or not self.lifespan.started
+                or node.node_tag not in PLUGIN_CONFIGURATION_TAGS):
+            return
+        asyncio.get_running_loop().create_task(self._run_plugin_configuration(app))
+
+    async def _run_plugin_configuration(self, app: Any) -> None:
+        """Call the ``plugin_configuration`` hook of ``app`` alone; a raise is logged."""
+        method = app._broadcast_callable("plugin_configuration")
+        try:
+            if inspect.iscoroutinefunction(method):
+                await method()
+            else:
+                method()
+        except Exception:
+            logger.exception("application %r: plugin_configuration raised", app.code)
+
+    def _application_taken(self, node: Any, pathlist: Any = (), **_: Any) -> None:
+        """Remove the application of a node taken away from the configuration.
+
+        A node taken away inside an application removes nothing.
+        """
+        if pathlist:
+            return
         code = node.attr.get("code") or node.label
         if code not in self.applications or code in self._removals:
             return
@@ -297,11 +345,8 @@ class AsgiServer(
         """
         kwargs: dict[str, Any] = config.site_kwargs()
         kwargs.update(config.server_kwargs())
-        kwargs.update(config.identity_kwargs())
         for name, value in (
             ("middleware", config.middleware_config()),
-            ("auth", config.auth_entries()),
-            ("channels", config.channels()),
             ("plugins", config.plugins_config()),
         ):
             if value is not None:
@@ -370,6 +415,10 @@ class AsgiServer(
         """``_server`` is the management application."""
         return bool(app.code == MANAGEMENT_CODE)
 
+    def answers_when_public_closed(self, app: Any) -> bool:
+        """``_server`` and ``_auth``: ``_server`` verifies every credential with ``_auth``."""
+        return bool(app.code in (MANAGEMENT_CODE, AUTHENTICATION_CODE))
+
     async def application_ready(self, app: Any) -> None:
         """Send ``ready`` for ``app`` to ``_server`` over the KajennBus.
 
@@ -380,29 +429,6 @@ class AsgiServer(
             f"/{MANAGEMENT_CODE}/applications/ready", {"code": app.code},
             auth=Avatar(f"application:{app.code}", [SERVER_ADMIN_TAG]),
         )
-
-    def _check_oidc_external_url(self) -> None:
-        """Refuse to boot when a provider is configured without ``external_url``.
-
-        Runs once the applications are registered, the first moment both facts
-        are known — the app carries the configured providers, the server carries
-        its public address — and covers the configured and the hand-built server
-        with one check. The check reads an attribute (``oidc_providers``) off
-        whatever application answers to ``_server``: the core imports no class
-        to ask the question. An OIDC provider is handed the ABSOLUTE ``redirect_uri`` it
-        must send the browser back to; without a public base address that URI
-        cannot be built, so the configuration is incomplete and the server says
-        so loudly instead of failing at the first login attempt with a
-        provider-side error.
-        """
-        providers = getattr(self.applications.get(MANAGEMENT_CODE), "oidc_providers", None)
-        if providers and self.external_url is None:
-            codes = ", ".join(sorted(providers))
-            raise ValueError(
-                f"oidc provider(s) {codes} configured but the server has no "
-                "external_url: OIDC needs the public base URL to build the "
-                "absolute redirect_uri (set server(external_url=...))"
-            )
 
     @property
     def site_name(self) -> str | None:
@@ -435,8 +461,10 @@ class AsgiServer(
 
         What the server calls ITSELF when it hands its own address to a third
         party — distinct from the ``host``/``port`` it binds to, which differ
-        behind a proxy. Declared in the config's ``server`` section; its one
-        consumer is the OIDC ``redirect_uri``, which must be absolute.
+        behind a proxy. Declared in the config's ``server`` section; the OIDC
+        ``redirect_uri`` of the ``_auth`` application is built on it. ``None``
+        when not given or when the declared value resolves empty: the
+        ``external_links`` capability (``ServerCapabilities``) is then off.
         """
         return self._external_url
 

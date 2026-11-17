@@ -77,7 +77,7 @@ explains itself**: the grammar documents what CAN be written, a recipe docstring
 documents what THIS instance chose and why. `main` reads as a table of contents.
 
 Every section is a singleton, so its label is its tag and every path below it is
-stable and hand-writable: `server.host`, `authentication.credentials`,
+stable and hand-writable: `server.host`, `applications._auth.store`,
 `applications.<code>.parameters.<name>`.
 
 ## Values that come from outside: resolvers in place
@@ -270,6 +270,60 @@ The attributes of the `application` envelope itself (`code`, `mount`,
 `app_class`, plus the app's constructor kwargs) belong to the site grammar; only
 the children live in the mounted one. An undeclared child is a boot error.
 
+## Plugin options of the routes
+
+The code of an application writes the plugin options of each route in
+`@route(...)`: the `auth` rule, the `channel` channels, the `openapi` method.
+An installation gives its own values in the recipe, under the application,
+with `plugin_configuration`: one block per plugin, one `configure` line per
+value.
+
+```python
+shop = cfg.applications().application(code="shop", app_class=Shop)
+
+shop_plugin_auth = shop.plugin_configuration(plugin="auth")
+shop_plugin_auth.configure(route="products/list,products/insert", rule="staff")
+shop_plugin_auth.configure(route="products/delete", rule="boss")
+
+shop_plugin_channel = shop.plugin_configuration(plugin="channel")
+shop_plugin_channel.configure(route="products/list", channels="api,mcp")
+```
+
+- `plugin` names a plugin of the application router: `auth`, `channel`,
+  `pydantic`, `openapi`, or one armed by the `plugins` section.
+- `route` is the path of a route relative to the application, as in the URL
+  after the mount and without a leading slash. Several paths are separated by
+  commas.
+- The other keywords are the parameters of that plugin's `configure`: `rule`
+  for `auth`, `channels` for `channel`, `requires` for `env`, `method` and the
+  others for `openapi`.
+- The value replaces what `@route(...)` wrote for that route; `rule=""` opens a
+  route the code closes. A route no line names keeps the value of the code.
+  Two lines on the same route: the later one wins.
+- A line that cannot be applied (no such route, no such plugin on the router,
+  an option the plugin does not accept) is logged as a warning and left out.
+  The server starts and the other lines are applied.
+- `_server` is configured the same way, under
+  `application(code="_server", app_class=ServerApplication)`.
+
+The lines are applied by the application hook `plugin_configuration`, which the
+server calls on every application before any `on_startup`. A subclass
+overrides it to refuse the recipe (it does not call the base) or to read its
+router before the recipe is applied:
+
+```python
+class Shop(RoutedApplication):
+    def plugin_configuration(self) -> None:
+        self.code_configuration = self.routing.configure("?")
+        super().plugin_configuration()
+```
+
+A block or a line written or changed in the configuration of a running server
+runs the hook of that application again. An application added to a running
+server receives the hook before its `on_startup`. An application declared with
+`spawner` applies its lines in its own process, at its own startup; a change
+made later in the main process does not reach that process.
+
 ## The sections
 
 One line each; the deep dives live in their own guides.
@@ -282,29 +336,25 @@ One line each; the deep dives live in their own guides.
   card written on the first `serve <path>`. See
   [the site home](cli.md#the-site-home).
 - **`server`** — `host`, `port`, `external_url` (the PUBLIC address, not the
-  listener), `max_threads`, `shutdown_timeout_seconds` (default 5.0), plus `websocket`
+  listener; optional, see [The public address](#the-public-address)), `max_threads`, `shutdown_timeout_seconds` (default 5.0), plus `websocket`
   (`origins`, `max_concurrent`), `session` (its `ttl`) and `tasks` (see [Background tasks](tasks.md)).
 - **`middleware`** — one `{name: bool | dict}` switch per middleware; a dict
   enables it and becomes its options (see [Middleware](middleware.md)).
-- **`authentication`** — the whole identity surface in one section:
-  the `users`/`tokens` stores, the `login` lockout policy, the
-  `oidc` providers and the header `credentials`. The grammar of each is in
-  [Authentication](authentication.md). `cache_ttl` sets the seconds a
-  verified credential stays cached.
-- **`channels`** — one `channel(name, authentication_route)` per face
-  (`rest`, `mcp`, `wsx`, ...): the route verifying a credential presented on
-  it. A channel not listed uses `/_server/auth/authenticate`.
 - **`storage`** — the mount point of [genro-storage](https://pypi.org/project/genro-storage/)'s
   own grammar: `storage_key` plus one child per mount, written in genro-storage's
   words (see [The storage section](#the-storage-section)).
 - **`applications`** — the app collection keyed by `code` (an identifier:
   letters, digits, underscore, not empty; the grammar refuses anything else), with the optional
   `default` naming who `/` redirects to. `application(code="_server", ...)`
-  customises the management application every server mounts — its `login`
-  policy, its `oidc` providers, or a `ServerApplication` subclass as
-  `app_class` — and never declares it: a recipe naming no `_server` still has
-  one. Without `app_class` it means `ServerApplication`; a class that does not
-  subclass it is a `ValueError` at boot.
+  customises the management application every server mounts — a
+  `ServerApplication` subclass as `app_class` — and never declares it: a
+  recipe naming no `_server` still has one. Without `app_class` it means
+  `ServerApplication`; a class that does not subclass it is a `ValueError` at
+  boot. `application(code="_auth", app_class=AuthApplicationBase)` mounts the
+  authentication application: the whole identity surface, with its `cache_ttl`
+  attribute and its own words `store`, `login`, `oidc` and `self_registration`
+  (see [Authentication](authentication.md)). A recipe without it mounts no
+  authentication.
 - **`databases`** — the default `handler_class` (a `DbHandlerBase` subclass)
   and one `database(code=...)` per database, which may name its own
   `handler_class`; every other keyword is a param handed to the handler's
@@ -314,6 +364,48 @@ One line each; the deep dives live in their own guides.
 - **`openapi`** — accepted by the grammar but not consumed by the core. Set
   schema title, version and description with the `RoutedApplication`
   `openapi_info` class attribute instead (see [OpenAPI & Swagger](openapi.md)).
+
+## The public address
+
+`external_url` is the public base address of the server. A route that gives a
+link of the server to the outside builds it from this value: the OIDC
+`redirect_uri` is one. It is not the listener: behind a proxy the server binds
+`127.0.0.1:8000` and is reached at `https://shop.example.com`. It is read as
+`server.external_url`, with a trailing slash stripped.
+
+It is optional, on every road: a recipe, a server built by hand, `kajenn
+configure`. Without it — not given, or a resolver that yields nothing —
+`server.external_url` is `None`. Nothing is derived from the host, the port or
+a request.
+
+The value drives one capability of every routed application, `external_links`:
+
+- `external_url` set → `external_links` is on.
+- `external_url` `None` → `external_links` is off.
+
+A route that builds an external link declares it:
+
+```python
+from genro_routes import route
+from kajenn import RoutedApplication
+
+
+class Shop(RoutedApplication):
+    @route(env_requires="external_links")
+    def share(self) -> str:
+        return f"{self.server.external_url}/shop/item"
+```
+
+The capability is read at each request. With it off the route is not
+available and answers `404`; the OpenAPI document leaves it out. The OIDC
+routes of `_auth` declare it.
+
+The `default` template writes
+`cfg.server(external_url=EnvResolver("KAJENN_EXTERNAL_URL", default=""))`. A server built
+from it, or by hand on top of it, has the variable's value; with the variable
+unset it has no public address. `kajenn configure --external-url URL` writes the
+value literally into the recipe; without the option the recipe reads
+`KAJENN_EXTERNAL_URL`.
 
 ## The storage section
 
@@ -344,9 +436,9 @@ in, on the folder the [site home](cli.md#the-site-home) names, and with no home
 declared on the folder of `site:`. Both must already exist — a recipe naming a
 missing directory is a boot error.
 
-`site:` is where the server's own state lands, all in one tree: `site:users` and
-`site:api_keys` (written `encrypted=True`), `site:tasks` and `site:batches`
-(plain). Sessions are not on `site:`: they live in a `MemorySessionStore`, and
+`site:` is where the server's own state lands, all in one tree: `site:auth`,
+the records of `FileAuthStore` (written `encrypted=True`), `site:tasks` and
+`site:batches` (plain). Sessions are not on `site:`: they live in a `MemorySessionStore`, and
 a pickle snapshot is written on the session's `save_path` when one is set. Encryption is declared per **write**, not per mount, and
 what lands on disk is self-describing — an envelope whose first line starts
 `#GNRE1:` — so reads declare nothing.
@@ -375,7 +467,7 @@ the earlier examples, which declare alternative recipe classes. The storage
 directory and environment prerequisites are described below.
 
 ```python
-from kajenn import AsgiServer, RoutedApplication
+from kajenn import AsgiServer, AuthApplicationBase, RoutedApplication
 from kajenn.application import ApplicationGrammar
 from kajenn.config import AsgiConfigBuilder
 from genro_bag.resolvers import EnvResolver
@@ -403,7 +495,6 @@ class ServerConfiguration(AsgiConfigBuilder):
         cfg = root.configuration()
         self.server_section(cfg)
         cfg.middleware(cors=True, logging=True)
-        self.authentication_section(cfg)
         self.storage_section(cfg)
         self.applications_section(cfg)
 
@@ -422,17 +513,18 @@ class ServerConfiguration(AsgiConfigBuilder):
             storage_key=EnvResolver("SHOP_STORAGE_KEY"),
         ).local(name="site", base_path="/srv/shop")
 
-    def authentication_section(self, cfg):
-        """The identity store: where the records live, and who keeps them."""
-        cfg.authentication().users(mount="site", prefix="users")
-
     def applications_section(self, cfg):
-        """One app on the site root, declaring its own catalog block."""
-        app = cfg.applications(default="shop").application(
-            code="shop", mount="", app_class=Shop
-        )
+        """One app on the site root, declaring its own catalog block, and _auth."""
+        apps = cfg.applications(default="shop")
+        app = apps.application(code="shop", mount="", app_class=Shop)
         app.parameters(currency="EUR")
         app.catalog(title="Outlet")
+        self.auth_section(apps)
+
+    def auth_section(self, apps):
+        """The authentication application: where its records live, and who keeps them."""
+        auth = apps.application(code="_auth", app_class=AuthApplicationBase)
+        auth.store(mount="site", prefix="auth")
 ```
 
 ## How to verify it
@@ -472,15 +564,16 @@ True
 ## Gotchas
 
 - **A secret is a resolver, not a string.** The secret-bearing attributes
-  (`storage_key`, `client_secret`, `password`, `token`, `secret`) accept a
+  (`storage_key`, `client_secret`) accept a
   literal, and should not get one — a recipe is code you commit.
 - **`dtype=` or you get a string.** `port=EnvResolver("SHOP_PORT")` without
   `dtype="L"` hands the server `"8123"`.
-- **The identity store needs a key, not just somewhere to write.** Its records
-  land under `site:users` written `encrypted=True`, so a recipe declaring
-  `authentication.users(...)` and no `storage_key` fails at the first write with
+- **The identity store needs a key, not just somewhere to write.** The records
+  of `FileAuthStore` land under `site:auth` written `encrypted=True`, so a
+  recipe mounting `_auth` with no `storage_key` fails at the first write with
   genro-storage's `Cannot encrypt for encryption domain '': it requires
-  installed key material`.
+  installed key material`. At startup `_auth` logs a warning and writes
+  nothing; the first write gets the error.
 - **`storage_key` lives on `storage`, not on `server`.** It is meaningless
   without the mounts it unlocks; a recipe still passing it to `cfg.server(...)`
   is a boot error naming the attribute.

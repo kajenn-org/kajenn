@@ -30,6 +30,7 @@ import asyncio
 import contextvars
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -114,11 +115,16 @@ class WorkPool:
         ``CancelledError``: the call's cleanups never overlap the thread still
         using its resources, and ``busy`` keeps counting it until it ends. The
         cancellation wins: the worker's result is dropped, its exception logged.
+
+        Every call whose function starts is observed in
+        ``server.process_metrics``: the time from the submit to the start in a
+        pool thread, and the time the function runs. Work withdrawn before it
+        started is not observed.
         """
         ctx = contextvars.copy_context()
         self._busy += 1
         try:
-            work = self.executor.submit(ctx.run, fn, *args)
+            work = self.executor.submit(ctx.run, self._timed, time.perf_counter(), fn, *args)
             outcome = asyncio.wrap_future(work)
             # asyncio.wait, not asyncio.shield: a cancelled wait leaves the
             # work running like shield does, but since Python 3.14 shield also
@@ -144,6 +150,15 @@ class WorkPool:
             return outcome.result()
         finally:
             self._busy -= 1
+
+    def _timed(self, submitted: float, fn: Callable[..., Any], *args: Any) -> Any:
+        """Run ``fn`` in the pool thread and observe its queue and run time."""
+        started = time.perf_counter()
+        try:
+            return fn(*args)
+        finally:
+            self.server.process_metrics.record_pool_call(
+                started - submitted, time.perf_counter() - started)
 
     def shutdown(self, wait: bool = True) -> None:
         """Tear the executor down — a no-op if it was never provisioned.

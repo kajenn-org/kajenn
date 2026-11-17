@@ -109,7 +109,7 @@ class TestDemux:
         async def send(message: dict[str, object]) -> None:
             sent.append(message)
 
-        await server({"type": "http", "path": "//api/x"}, receive, send)
+        await server({"type": "http", "method": "GET", "path": "//api/x"}, receive, send)
 
         body = next(m["body"] for m in sent if m["type"] == "http.response.body")
         assert body == b"api:/x"
@@ -128,7 +128,7 @@ class TestServerOfMountsOnly:
         async def send(message: dict[str, object]) -> None:
             sent.append(message)
 
-        scope = {"type": "http", "path": path, "query_string": query}
+        scope = {"type": "http", "method": "GET", "path": path, "query_string": query}
         await server(scope, receive, send)
         return next(m for m in sent if m["type"] == "http.response.start")
 

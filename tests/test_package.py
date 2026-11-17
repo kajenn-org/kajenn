@@ -29,13 +29,13 @@ def test_version():
 def test_root_exports_public_api():
     expected = [
         "ASGIApp",
-        "ApiKeyStore",
         "ApplicationGrammar",
         "AsgiConfigBuilder",
         "AsgiServer",
         "AsgiServerGrammar",
-        "AuthCore",
+        "AuthApplicationBase",
         "AuthMixin",
+        "AuthStore",
         "Avatar",
         "BaseApplication",
         "BaseConfiguration",
@@ -47,8 +47,7 @@ def test_root_exports_public_api():
         "ConfigurationHandler",
         "DbHandlerBase",
         "DefaultConfig",
-        "FileApiKeyStore",
-        "FileUserStore",
+        "FileAuthStore",
         "HTTPBadRequest",
         "HTTPException",
         "HTTPForbidden",
@@ -80,9 +79,9 @@ def test_root_exports_public_api():
         "StorageMixin",
         "TaskGrammar",
         "UploadedFile",
-        "UserStore",
         "WebSocketDisconnect",
         "__version__",
+        "broadcast_hook",
         "router_openapi",
     ]
     assert kajenn.__all__ == expected

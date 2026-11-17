@@ -4,6 +4,7 @@
 
 Verified against source revision `63fb326` (develop baseline). Test references
 below identify the executable contracts; they are not a new coverage percentage.
+Authentication passages updated against `dfc3941`.
 
 ## Synchronous storage capability
 
@@ -70,14 +71,13 @@ Claim anchors: [`StorageMixin`](../../../src/kajenn/storage_mixin.py#StorageMixi
 
 ## Storage consumers
 
-- The user store writes every record with `encrypted=True`
-  (auth/user_store.py:229-233).
-- The API-key store writes every record with `encrypted=True`
-  (auth/api_key_store.py:236-240).
-- `AuthMixin._require_storage` hands a `{mount, prefix}` store the server's
-  storage, and raises `RuntimeError` when the server has none
-  (auth/mixin.py:212-223). The store is built with that storage
-  (auth/mixin.py:200-201).
+- `FileAuthStore` writes users, groups, tags and tokens with `encrypted=True`,
+  under `<mount>:<prefix>/<kind>/<key>.json`; the defaults are `site` and `auth`.
+- `AuthApplicationBase.build_store` builds the configured store class over
+  `server.storage` on first use. It raises `RuntimeError` without storage.
+
+Claim anchors: [`_write`](../../../src/kajenn/auth_app/auth_store.py#FileAuthStore._write), [`build_store`](../../../src/kajenn/auth_app/auth_app.py#AuthApplicationBase.build_store).
+
 - The task spool writes plain on the `site` mount under `batches/`
   (tasks/spool.py:62-63, 134-139). `LocalTaskExecutor` builds it over
   `server.storage` (tasks/executor.py:82).
@@ -85,7 +85,7 @@ Claim anchors: [`StorageMixin`](../../../src/kajenn/storage_mixin.py#StorageMixi
   mount of `tasks(mount=...)` (tasks/store.py:127, 157-165;
   tasks/manager.py:92).
 
-Claim anchors: [`_require_storage`](../../../src/kajenn/auth/mixin.py#AuthMixin._require_storage), [`FileTaskStore`](../../../src/kajenn/tasks/store.py#FileTaskStore).
+Claim anchors: [`FileTaskStore`](../../../src/kajenn/tasks/store.py#FileTaskStore).
 
 ## Existing direct filesystem consumers
 
