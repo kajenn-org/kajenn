@@ -174,8 +174,10 @@ implements only persistence:
   the record first, then calls it;
 - `save_group(record)`, `save_tag(record)`, `save_token(record)`;
 - `delete_user`, `delete_group`, `delete_tag`, `delete_token` — `True` when a
-  record was removed. `delete_group` raises `ValueError` while a user has the
-  group among its `groups`;
+  record was removed. `delete_user` also deletes every token whose `user` is
+  that identity. `delete_group` raises `ValueError` while a user has the
+  group among its `groups`. Each backend enforces both constraints with its
+  own means;
 - `get_login_failures(identity)`, `save_login_failures(record)`,
   `delete_login_failures(identity)` — read, write and remove a login counter.
 
@@ -309,7 +311,8 @@ none. Its questions go to the server process over the bus.
 
 A change of the status, the tags or the groups of a user reaches a live session
 and a token within `cache_ttl`. It reaches them at once when the cache is
-emptied. Revoking or deleting a token, and
+emptied. A successful write of the `users` or `groups` management section,
+revoking or deleting a token, and
 `await server.forget_credentials_everywhere()` without an argument, empty the
 whole cache. `/_auth/forget_credential` empties the entries of the credential
 it names and the entries of every session; the other tokens of the same user

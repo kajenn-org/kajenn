@@ -1160,6 +1160,69 @@ class TestTokensSection:
             await server.authenticate_credential(credential, "api")
 
 
+class TestImmediateEffect:
+    @pytest.mark.parametrize(
+        "identity, password, path, body",
+        [
+            ("boss", "bosspw", "/_auth/users/save?identity=boss", {"tags": ["OWN"]}),
+            ("chief", "chiefpw", "/_auth/groups/save?code=bosses", {"tags": []}),
+        ],
+    )
+    async def test_a_removed_auth_admin_is_refused_on_the_next_request(
+        self, tmp_path: Path, identity: str, password: str, path: str, body: dict[str, Any]
+    ) -> None:
+        server = await started(tmp_path)
+        store = auth_store(server)
+        store.save_tag({"code": "OWN", "description": "", "owner": "", "reserved": False})
+        store.save_group({"code": "bosses", "tags": ["AUTH_ADMIN"]})
+        store.save_user(user(store, "boss", "bosspw", tags=["OWN", "AUTH_ADMIN"]))
+        store.save_user(
+            user(store, "chief", "chiefpw", groups=["bosses"], primary_group="bosses", tags=["OWN"])
+        )
+        root = await admin(server)
+        # a first management write removes the temporary administrator of the boot
+        await drive(server, "/_auth/users/save?identity=root", "POST", body={}, cookie=root)
+        cookie = await session_cookie(server, identity, password)
+        assert status(await drive(server, "/_auth/users/list", cookie=cookie)) == 200
+        sent = await drive(server, path, "POST", body=body, cookie=root)
+        assert "error" not in payload(sent)
+        assert status(await drive(server, "/_auth/users/list", cookie=cookie)) == 403
+
+    async def test_a_deleted_users_token_stays_refused_when_the_identity_returns(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        cookie = await admin(server)
+        # a first management write removes the temporary administrator of the boot
+        await drive(server, "/_auth/users/save?identity=root", "POST", body={}, cookie=cookie)
+        issued = payload(
+            await drive(
+                server,
+                "/_auth/tokens/issue",
+                "POST",
+                body={"user": "alice", "tags": "*"},
+                cookie=cookie,
+            )
+        )
+        bearer = f"Bearer {issued['key']}"
+        assert status(await drive(server, "/_auth/users/list", authorization=bearer)) == 403
+        sent = await drive(server, "/_auth/users/delete?identity=alice", "POST", cookie=cookie)
+        assert payload(sent) == {"identity": "alice", "deleted": True}
+        assert status(await drive(server, "/_auth/users/list", authorization=bearer)) == 401
+        auth_store(server).save_tag(
+            {"code": "OWN", "description": "", "owner": "", "reserved": False}
+        )
+        sent = await drive(
+            server,
+            "/_auth/users/create_user?identity=alice",
+            "POST",
+            body={"tags": ["OWN"]},
+            cookie=cookie,
+        )
+        assert "error" not in payload(sent)
+        assert status(await drive(server, "/_auth/users/list", authorization=bearer)) == 401
+
+
 class TestAvatarGroup:
     def test_the_group_field(self) -> None:
         assert Avatar("ann", ["x"], group="staff").group == "staff"

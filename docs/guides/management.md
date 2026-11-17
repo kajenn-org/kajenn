@@ -153,9 +153,13 @@ Every route asks `AUTH_ADMIN`. Errors answer status 200 with
   `revoke(key_id)`, `delete(key_id)`. `revoke` and `delete` empty the
   credential cache of the server and of every joined process.
 
-`save` on a user or a group changes the tags of a live session and of a token
-within the `cache_ttl` of `_auth` (see
-[authentication](authentication.md#authentication-on-demand)).
+A successful write of `/_auth/users/` (`create_user`, `save`, `set_password`,
+`delete`) or of `/_auth/groups/` (`create_group`, `save`, `delete`) empties the
+credential cache of the server and of every joined process: a changed status,
+tag or group applies from the next request (see
+[authentication](authentication.md#authentication-on-demand)). A refused write
+empties nothing. `delete` on a user also deletes its tokens and its login
+failures.
 
 ## Monitor and permissions
 
