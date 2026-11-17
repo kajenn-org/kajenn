@@ -149,9 +149,13 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
         calls itself when it hands its own URL to a third party
         (``https://shop.example.com``; a trailing slash is stripped). It is not
         the listener: behind a proxy the bind address and the public address
-        differ, and only the latter is meaningful to an outside caller. Required
-        when an application declares OIDC providers — the provider is given an
-        absolute ``redirect_uri`` — and a boot error when missing there.
+        differ, and only the latter is meaningful to an outside caller.
+        Optional: without it (or with a resolver that yields nothing) the
+        server's ``external_url`` is ``None`` and the ``external_links``
+        capability is off, so a route declaring
+        ``env_requires="external_links"`` — the OIDC routes of ``_auth``, whose
+        ``redirect_uri`` is absolute — is not available. The ``default``
+        template writes ``EnvResolver("KAJENN_EXTERNAL_URL", default="")``.
 
         ``max_threads`` sizes the server's thread pool: ``BaseServer`` peels it
         and hands it to ``WorkPool`` (omitted, the stdlib default

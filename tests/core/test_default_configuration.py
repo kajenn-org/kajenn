@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from genro_bag.resolvers import EnvResolver
 
 from kajenn import (
     AsgiServer,
@@ -208,7 +209,9 @@ class TestTheShortcutTreeMatchesARecipe:
                 apps.application(code="shopapp", mount="", app_class=ShopApp)
 
             def server_section(self, cfg: Any) -> None:
-                cfg.server(host="0.0.0.0", port=9101)
+                cfg.server(
+                    external_url=EnvResolver("KAJENN_EXTERNAL_URL", default=""), host="0.0.0.0", port=9101
+                )
 
         by_recipe = AsgiServer(config=HandWritten)
         by_kwargs = AsgiServer(

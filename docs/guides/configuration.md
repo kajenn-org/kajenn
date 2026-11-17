@@ -336,7 +336,7 @@ One line each; the deep dives live in their own guides.
   card written on the first `serve <path>`. See
   [the site home](cli.md#the-site-home).
 - **`server`** — `host`, `port`, `external_url` (the PUBLIC address, not the
-  listener), `max_threads`, `shutdown_timeout_seconds` (default 5.0), plus `websocket`
+  listener; optional, see [The public address](#the-public-address)), `max_threads`, `shutdown_timeout_seconds` (default 5.0), plus `websocket`
   (`origins`, `max_concurrent`), `session` (its `ttl`) and `tasks` (see [Background tasks](tasks.md)).
 - **`middleware`** — one `{name: bool | dict}` switch per middleware; a dict
   enables it and becomes its options (see [Middleware](middleware.md)).
@@ -364,6 +364,48 @@ One line each; the deep dives live in their own guides.
 - **`openapi`** — accepted by the grammar but not consumed by the core. Set
   schema title, version and description with the `RoutedApplication`
   `openapi_info` class attribute instead (see [OpenAPI & Swagger](openapi.md)).
+
+## The public address
+
+`external_url` is the public base address of the server. A route that gives a
+link of the server to the outside builds it from this value: the OIDC
+`redirect_uri` is one. It is not the listener: behind a proxy the server binds
+`127.0.0.1:8000` and is reached at `https://shop.example.com`. It is read as
+`server.external_url`, with a trailing slash stripped.
+
+It is optional, on every road: a recipe, a server built by hand, `kajenn
+configure`. Without it — not given, or a resolver that yields nothing —
+`server.external_url` is `None`. Nothing is derived from the host, the port or
+a request.
+
+The value drives one capability of every routed application, `external_links`:
+
+- `external_url` set → `external_links` is on.
+- `external_url` `None` → `external_links` is off.
+
+A route that builds an external link declares it:
+
+```python
+from genro_routes import route
+from kajenn import RoutedApplication
+
+
+class Shop(RoutedApplication):
+    @route(env_requires="external_links")
+    def share(self) -> str:
+        return f"{self.server.external_url}/shop/item"
+```
+
+The capability is read at each request. With it off the route is not
+available and answers `404`; the OpenAPI document leaves it out. The OIDC
+routes of `_auth` declare it.
+
+The `default` template writes
+`cfg.server(external_url=EnvResolver("KAJENN_EXTERNAL_URL", default=""))`. A server built
+from it, or by hand on top of it, has the variable's value; with the variable
+unset it has no public address. `kajenn configure --external-url URL` writes the
+value literally into the recipe; without the option the recipe reads
+`KAJENN_EXTERNAL_URL`.
 
 ## The storage section
 

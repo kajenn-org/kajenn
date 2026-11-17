@@ -481,11 +481,12 @@ the `client_secret`, the `client_id` or the `issuer`.
 the provider: the `redirect_uri` the browser is sent back to must be absolute,
 and must match the one you registered for the client in the provider's console —
 here `https://shop.example.com/_auth/oidc:google/callback`. It is distinct from
-the `host`/`port` the server binds to. A provider declared on a server
-**without** `external_url` is a boot error: building the server raises
-`ValueError`. In a recipe `external_url` is an attribute of the `server`
-section, and each provider is addressed by its `code`:
-`applications._auth.oidc.google`.
+the `host`/`port` the server binds to. Both routes declare
+`env_requires="external_links"`: on a server **without** `external_url` the
+server starts, the `external_links` capability is off, both routes answer
+`404` and `/_auth/login_methods` leaves the provider out. In a recipe `external_url` is an attribute of the `server` section, and
+each provider is addressed by its `code`: `applications._auth.oidc.google`. See
+[The public address](configuration.md#the-public-address).
 
 The user of a provider login is found in the store from the verified
 `id_token`:
@@ -618,7 +619,8 @@ HTTP/1.1 401 Unauthorized
   request that only reads answers `401`.
 - An OIDC provider needs `external_url`, and the resulting callback URL must be
   registered verbatim with the provider — a mismatch is refused by the provider,
-  not by us. A missing `external_url` stops the server at boot.
+  not by us. Without `external_url` the server starts and the OIDC routes
+  answer `404`; the provider is still listed in `/_auth/login_methods`.
 - `AuthApplicationBase`, `AuthStore`, `FileAuthStore`, `AuthMixin` and `Avatar`
   import from `kajenn`. The login methods `AuthMethod`, `PasswordMethod` and
   `OidcMethod` import from `kajenn.auth_app`.

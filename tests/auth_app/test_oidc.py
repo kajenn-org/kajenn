@@ -668,9 +668,29 @@ class TestFlowErrors:
 
 
 class TestConfiguration:
-    def test_a_provider_without_external_url_refuses_the_boot(self, tmp_path: Path) -> None:
-        with pytest.raises(ValueError, match="external_url"):
-            make_server(tmp_path, external_url=None)
+    async def test_without_external_url_the_oidc_routes_are_not_available(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The server boots; start and callback answer 404 (kajenn's mapping
+        # of not_available) and the provider is never contacted.
+        monkeypatch.delenv("KAJENN_EXTERNAL_URL", raising=False)
+        server = make_server(tmp_path, external_url=None)
+        await start_server(server)
+        assert server.external_url is None
+        session = server.session_store.create()
+        cookie = f"session_id={session.id}"
+        assert status(await drive(server, f"{START}?next=/app/page", cookie=cookie)) == 404
+        assert status(await drive(server, f"{CALLBACK}?state=x&code=y", cookie=cookie)) == 404
+        assert FakeAsyncClient.fetched == []
+
+    async def test_without_external_url_login_methods_leaves_the_providers_out(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("KAJENN_EXTERNAL_URL", raising=False)
+        server = make_server(tmp_path, external_url=None)
+        await start_server(server)
+        methods = payload(await drive(server, "/_auth/login_methods"))["methods"]
+        assert [method["kind"] for method in methods] == ["form"]
 
     async def test_the_boot_does_not_fetch_the_discovery(self, tmp_path: Path) -> None:
         # An unreachable issuer does not stop the boot: the metadata is fetched
@@ -713,7 +733,9 @@ class TestConfiguration:
         avatar = avatar_of(server, cookie)
         assert (avatar.identity, avatar.tags) == ("bob@example.com", ["GUEST"])
 
-    def test_a_recipe_provider_without_external_url_refuses_the_boot(self, tmp_path: Path) -> None:
+    async def test_a_recipe_provider_without_external_url_is_not_available(
+        self, tmp_path: Path
+    ) -> None:
         class SiteWithOidc(AsgiConfigBuilder):
             def main(self, root: Any) -> None:
                 apps = root.configuration().applications()
@@ -721,9 +743,13 @@ class TestConfiguration:
                 auth_app = apps.application(code="_auth", app_class=AuthApplicationBase)
                 auth_app.oidc().provider(code="google", issuer=ISSUER, client_id=CLIENT_ID)
 
-        with pytest.raises(ValueError, match="external_url"):
-            AsgiServer(
-                SiteWithOidc,
-                storage=site_mounts(tmp_path),
-                storage_key=Fernet.generate_key().decode(),
-            )
+        server = AsgiServer(
+            SiteWithOidc,
+            storage=site_mounts(tmp_path),
+            storage_key=Fernet.generate_key().decode(),
+        )
+        await start_server(server)
+        session = server.session_store.create()
+        sent = await drive(server, START, cookie=f"session_id={session.id}")
+        assert status(sent) == 404
+        assert FakeAsyncClient.fetched == []
