@@ -24,14 +24,29 @@ from typing import Any
 
 from genro_routes import RoutingClass, route
 
-from kajenn import AsgiServer, RoutedApplication
+from kajenn import AsgiServer, AuthApplicationBase, RoutedApplication
 from kajenn.asgi_endpoint import BufferedAsgiEndpoint
 from kajenn.config import AsgiConfigBuilder
 from kajenn.server_app.server_app import ServerApplication
 from tests.conftest import start_server
+from tests.storage_support import MemoryAuthStore
 
 STAFF = [(b"authorization", b"Bearer staff_token")]
 BOSS = [(b"authorization", b"Bearer boss_token")]
+
+#: The fixed bearers ``Tokens`` verifies: identity and tag of each.
+BEARERS = {"Bearer staff_token": ("staff_user", "staff"), "Bearer boss_token": ("boss_user", "boss")}
+
+
+class Tokens(AuthApplicationBase):
+    """An authentication application verifying the two fixed bearers of ``BEARERS``."""
+
+    def verify_credential(self, credential: str) -> dict[str, Any]:
+        if credential not in BEARERS:
+            return super().verify_credential(credential)
+        identity, tag = BEARERS[credential]
+        return {"identity": identity, "group": None, "tags": [tag], "data": {},
+                "valid_until": None}
 
 
 class Products(RoutingClass):
@@ -75,7 +90,7 @@ class WatchingShop(Shop):
 
 
 class ShopRecipe(AsgiConfigBuilder):
-    """One application ``shop`` and two bearer tokens, tags ``staff`` and ``boss``."""
+    """One application ``shop`` and ``_auth`` verifying two bearers, tags ``staff`` and ``boss``."""
 
     default_config = False
     app_class: type = Shop
@@ -83,10 +98,8 @@ class ShopRecipe(AsgiConfigBuilder):
     def main(self, root: Any) -> None:
         cfg = root.configuration()
         cfg.server(host="127.0.0.1", port=0)
-        credentials = cfg.authentication().credentials()
-        credentials.bearer_token(identity="staff_user", token="staff_token", tags="staff")
-        credentials.bearer_token(identity="boss_user", token="boss_token", tags="boss")
         apps = cfg.applications()
+        apps.application(code="_auth", app_class=Tokens).store(store_class=MemoryAuthStore)
         self.shop_configuration(apps.application(code="shop", app_class=self.app_class))
         self.other_applications(apps)
 
@@ -252,7 +265,7 @@ async def test_a_block_written_on_a_running_server_is_applied(http_request: Any)
     await settle()
     assert await status(http_request, server, "/shop/info") == 401
     assert await status(http_request, server, "/shop/info", BOSS) == 200
-    assert sorted(server.applications) == ["_server", "shop"]
+    assert sorted(server.applications) == ["_auth", "_server", "shop"]
 
 
 async def test_another_word_written_inside_an_application_adds_no_application(
@@ -261,7 +274,7 @@ async def test_another_word_written_inside_an_application_adds_no_application(
     server = await start_server(AsgiServer(config=ShopRecipe))
     server.config.node("applications.shop").value.parameters(currency="EUR")
     await settle()
-    assert sorted(server.applications) == ["_server", "shop"]
+    assert sorted(server.applications) == ["_auth", "_server", "shop"]
     assert server.applications["shop"].config("parameters.currency") == "EUR"
     assert await status(http_request, server, "/shop/products/delete") == 200
 

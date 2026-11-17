@@ -76,7 +76,7 @@ method and the body survive the hop.
 
 ### The `_server` app
 
-The management surface — login, monitoring, OpenAPI of system endpoints, task
+The management surface — monitoring, OpenAPI of system endpoints, task
 management — is `ServerApplication`, and every server mounts it under the code
 `_server`. The configuration customises it (`application(code="_server", ...)`)
 and never declares it. Its endpoints live under `/_server/...` and never leak into your own
@@ -114,7 +114,8 @@ A route carrying `auth_rule="admin"` is protected: the caller's avatar must carr
 the matching tag. Protection is **default-deny**: an anonymous caller gets `401`, including when
 no credential is presented; an authenticated caller with insufficient
 tags gets `403`. The [authentication
-guide](guides/authentication.md) covers the credential side.
+guide](guides/authentication.md) covers the credential side: the
+authentication application `_auth`, which a server must mount to authenticate.
 
 ## Requests and responses
 
@@ -151,7 +152,6 @@ and provide your application class before running it.
 ```python
 server = AsgiServer(
     applications=[App],
-    auth={...},          # configures header credentials
     middleware={...},    # arms other middleware
     tasks=True,          # default; False disables the task backbone
     plugins={...},       # tunes fixed OpenAPI / pydantic plugins and adds extras

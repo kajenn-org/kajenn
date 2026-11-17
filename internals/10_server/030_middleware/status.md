@@ -110,5 +110,4 @@ Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#WsxConnection), [`ge
 - [src/kajenn/wsx.py](../../../src/kajenn/wsx.py)
 - [tests/core/test_middleware.py](../../../tests/core/test_middleware.py)
 - [tests/core/test_middleware_std.py](../../../tests/core/test_middleware_std.py)
-- [tests/server_app/test_login_flow.py](../../../tests/server_app/test_login_flow.py)
 - [tests/core/test_wsx_connection.py](../../../tests/core/test_wsx_connection.py)

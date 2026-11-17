@@ -16,8 +16,8 @@
 
 Real objects, no mocks: a real ``AsgiServer`` (storage on tmp_path) whose
 primary declares a scheduled task, driven at the ASGI level. Auth is stamped by
-the same test middleware ``test_tokens_section.py`` uses (a fixed ``Avatar`` on
-``scope["auth"]``) — SUPERADMIN passes, everyone else is 403. The disabled
+a test middleware (a fixed ``Avatar`` on ``scope["auth"]``) — SERVER_ADMIN
+passes, everyone else is 403. The disabled
 server (``tasks=False``) answers every endpoint with the ``{"error": ...}``
 document at HTTP 200 (D26 fixed structure).
 """
@@ -69,10 +69,10 @@ class StampAuthMiddleware(BaseMiddleware):
         await self.app(scope, receive, send)
 
 
-SUPERADMIN = Avatar("root", ["SUPERADMIN"])
+SERVER_ADMIN = Avatar("root", ["SERVER_ADMIN"])
 
 
-def make_server(tmp_path: Path, avatar: Avatar | None = SUPERADMIN,
+def make_server(tmp_path: Path, avatar: Avatar | None = SERVER_ADMIN,
                 tasks: Any = True) -> AsgiServer:
     """A real server: TaskApp primary, stamped auth, storage on tmp_path."""
     return AsgiServer(
@@ -120,7 +120,7 @@ def stage(server: AsgiServer, task_id: str, owner: str = "alice") -> None:
 
 
 class TestAuthGate:
-    """SUPERADMIN passes; an anonymous caller is 401, a plain user 403."""
+    """SERVER_ADMIN passes; an anonymous caller is 401, a plain user 403."""
 
     async def test_anonymous_is_401(self, tmp_path: Path) -> None:
         sent = await drive(make_server(tmp_path, avatar=None), "/_server/tasks/list")
@@ -131,7 +131,7 @@ class TestAuthGate:
         sent = await drive(server, "/_server/tasks/list")
         assert status(sent) == 403
 
-    async def test_superadmin_passes(self, tmp_path: Path) -> None:
+    async def test_server_admin_passes(self, tmp_path: Path) -> None:
         sent = await drive(make_server(tmp_path), "/_server/tasks/list")
         assert status(sent) == 200
         assert payload(sent) == {"schedules": []}

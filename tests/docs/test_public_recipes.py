@@ -179,12 +179,17 @@ def test_request_bodies_and_multipart(recipes, serve_recipe):
         assert server.get_response("/raw/count")[0] == 400
 
 
-def test_authentication_statuses(recipes, serve_recipe):
+def test_authentication_statuses(recipes, serve_recipe, monkeypatch):
+    # A fixed, disposable Fernet key for this isolated test directory only.
+    monkeypatch.setenv("DEMO_STORAGE_KEY", base64.urlsafe_b64encode(bytes(range(32))).decode())
     with serve_recipe(recipes.get_code("guides/authentication.md", "class App")) as server:
         assert server.get_response("/secret", headers={"Accept": "application/json"})[0] == 401
         credential = base64.b64encode(b"alice:wonderland").decode()
         assert server.get_response("/secret", headers={"Authorization": f"Basic {credential}"})[0] == 200
-        assert server.get_response("/secret", headers={"Authorization": "Bearer sk_live_xyz"})[0] == 403
+        credential = base64.b64encode(b"bob:builder").decode()
+        assert server.get_response("/secret", headers={"Authorization": f"Basic {credential}"})[0] == 403
+        assert server.get_response("/public")[0] == 200
+        assert server.get_response("/public", headers={"Authorization": "Bearer gak_unknown"})[0] == 401
 
 
 def test_openapi_and_argument_errors(recipes, serve_recipe):
@@ -325,47 +330,70 @@ def test_streaming_and_sse_routes(recipes, serve_recipe):
 def test_management_login_tokens_and_permissions(recipes, serve_recipe, monkeypatch):
     # A fixed, disposable Fernet key for this isolated test directory only.
     monkeypatch.setenv("DEMO_STORAGE_KEY", base64.urlsafe_b64encode(bytes(range(32))).decode())
-    monkeypatch.setenv("DEMO_ADMIN_PASSWORD", "local-test-password")
-    operator = {"Authorization": "Basic " + base64.b64encode(b"operator:local-test-password").decode()}
+
+    def basic(identity, password):
+        return {"Authorization": "Basic " + base64.b64encode(f"{identity}:{password}".encode()).decode()}
+
     with serve_recipe(recipes.get_code("guides/management.md", "class Members")) as server:
+        found = re.search(r"temporary administrator _temporary_admin, password (\S+)", server.get_log())
+        assert found, server.get_log()
+        temporary = basic("_temporary_admin", found[1])
+        operator = basic("operator", "local-test-password")
         assert server.get_response("/_server/monitor/snapshot")[0] == 401
+        payload = json.dumps({"password": "local-test-password", "password_confirm": "local-test-password",
+                              "tags": ["AUTH_ADMIN", "SERVER_ADMIN"]}).encode()
+        status, body = server.get_response("/_auth/users/create_user?identity=operator", payload,
+                                          {**temporary, "Content-Type": "application/json"})
+        assert status == 200 and json.loads(body)["identity"] == "operator", body
+        assert "password_hash" not in json.loads(body)
+        assert server.get_response("/_auth/users/list", headers=temporary)[0] == 401
         assert server.get_response("/_server/monitor/snapshot", headers=operator)[0] == 200
-        payload = json.dumps({"password": "demo-password", "password_confirm": "demo-password", "tags": ["member"]}).encode()
-        status, body = server.get_response("/_server/users/create_user?identity=alice", payload,
+        status, body = server.get_response("/_auth/groups/create_group?code=members",
+                                          json.dumps({"tags": ["members_reader"]}).encode(),
+                                          {**operator, "Content-Type": "application/json"})
+        assert status == 200 and json.loads(body)["tags"] == ["members_reader"], body
+        payload = json.dumps({"password": "demo-password", "password_confirm": "demo-password",
+                              "groups": ["members"], "primary_group": "members"}).encode()
+        status, body = server.get_response("/_auth/users/create_user?identity=alice", payload,
                                           {**operator, "Content-Type": "application/json"})
         assert status == 200 and json.loads(body)["identity"] == "alice", body
-        assert "password_hash" not in json.loads(body)
-        assert len(json.loads(server.get_response("/_server/users/list", headers=operator)[1])["users"]) == 1
+        users = json.loads(server.get_response("/_auth/users/list", headers=operator)[1])["users"]
+        assert {user["identity"] for user in users} == {"alice", "operator"}
+        status, body = server.get_response("/_auth/groups/create_group?code=other",
+                                          json.dumps({"tags": ["unknown_tag"]}).encode(),
+                                          {**operator, "Content-Type": "application/json"})
+        assert status == 200 and json.loads(body) == {"error": "Unknown tags: unknown_tag"}
         client = build_opener(HTTPCookieProcessor(CookieJar()))
         url = f"http://127.0.0.1:{server.port}"
-        request = Request(url + "/_server/login", json.dumps({"identity": "alice", "password": "demo-password"}).encode(),
+        request = Request(url + "/_auth/login", json.dumps({"identity": "alice", "password": "demo-password"}).encode(),
                           {"Content-Type": "application/json"})
         with client.open(request, timeout=4) as response:
             login = json.load(response)
-        assert login["identity"] == "alice"
+        assert (login["identity"], login["group"], login["tags"], login["groups"]) == (
+            "alice", "members", ["members_reader"], ["members"])
         with client.open(url + "/private", timeout=4) as response:
             assert json.load(response) == {"identity": "alice"}
         with pytest.raises(HTTPError) as denied:
             client.open(url + "/_server/monitor/snapshot", timeout=4)
         assert denied.value.code == 403
         denied.value.close()
-        request = Request(url + "/_server/logout?session_id=" + login["session_id"], b"")
+        request = Request(url + "/_auth/logout?session_id=" + login["session_id"], b"")
         with client.open(request, timeout=4) as response:
             assert json.load(response)["status"] == "ok"
         with pytest.raises(HTTPError) as denied:
             client.open(url + "/private", timeout=4)
         assert denied.value.code == 401
         denied.value.close()
-        status, body = server.get_response("/_server/tokens/issue", json.dumps({"label": "local-client", "tags": ["member"]}).encode(),
+        status, body = server.get_response("/_auth/tokens/issue", json.dumps({"user": "alice", "tags": ["members_reader"]}).encode(),
                                           {**operator, "Content-Type": "application/json"})
         assert status == 200
         key = json.loads(body)["key"]
         bearer = {"Authorization": "Bearer " + key}
         assert server.get_response("/private", headers=bearer)[0] == 200
-        records = json.loads(server.get_response("/_server/tokens/list", headers=operator)[1])["tokens"]
+        records = json.loads(server.get_response("/_auth/tokens/list", headers=operator)[1])["tokens"]
         assert len(records) == 1 and "secret_hash" not in records[0]
         key_id = records[0]["key_id"]
-        status, body = server.get_response("/_server/tokens/revoke?key_id=" + key_id, b"", operator)
+        status, body = server.get_response("/_auth/tokens/revoke?key_id=" + key_id, b"", operator)
         assert status == 200 and json.loads(body)["revoked"] is True
         assert server.get_response("/private", headers=bearer)[0] == 401
 

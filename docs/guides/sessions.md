@@ -3,7 +3,8 @@
 ## What it does
 
 Prerequisite: [access the current request](requests.md#access-the-request-and-session).
-An Avatar is kajenn’s identity object: an identity name plus authorization tags.
+An Avatar is kajenn’s identity object: an identity name, the group it entered
+with, and authorization tags.
 
 Gives a caller continuity across requests: a session cookie identifies a stored
 `Session` that can hold an `Avatar` and arbitrary data, reconnected on every
@@ -122,22 +123,46 @@ A `Session` carries:
 - `.attach_avatar(avatar, key="root")` — bind an `Avatar` to the session under
   `key`; the default root key is what a login does.
 
+`dump`/`restore` of the store keep the identity and the group of each avatar,
+never its tags and never the `data` Bag.
+
 ## Attaching an avatar at login
 
-At the point a caller proves who they are, attach their avatar to the session so
-subsequent requests carry the identity:
+`POST /_auth/login`, served by the [authentication application](authentication.md),
+verifies a password and attaches the caller's avatar to the root slot of the
+existing session. A handler of your own can do the same after it has verified
+the caller:
 
 ```python
 from kajenn import Avatar
 
 # inside a handler that has verified the credentials:
-_request.session.attach_avatar(Avatar("alice", tags=["admin", "ops"]))
+_request.session.attach_avatar(Avatar("alice", group="staff"))
 ```
+
+The session remembers the identity and the group of the root avatar, not its
+tags. At every request without an `Authorization` header the server asks
+`/_auth/avatar` for that identity and group, and the answer becomes the root
+avatar of the request, with the tags of the store. So the identity must be a
+user of the `_auth` store, and the group one of its groups (`None` means its
+primary group). A change of the user's status, tags or groups reaches the
+session within the `cache_ttl` of `_auth`. When `_auth` refuses the identity
+(an unknown or banned user, a group the user no longer has) the session is
+deleted, with its `data`, and the request is anonymous. A server that does not
+mount `_auth` resolves no identity from a session.
 
 From then on, requests bearing the session cookie resolve to that avatar — no
 `Authorization` header needed. (Remember from the [auth
 guide](authentication.md) that a valid `Authorization` header still takes
 precedence over the session.)
+
+An avatar is a new object at every request: what a handler writes on
+`avatar.data` lives for that request only. Data that must last for the session
+goes in `session.data`.
+
+An avatar attached under another key than the root one is not asked to `_auth`:
+it keeps the tags it was attached with. `dump`/`restore` keep its identity and
+group, without tags.
 
 ## How to verify it
 

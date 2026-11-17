@@ -44,7 +44,7 @@ from kajenn import AsgiServer, Avatar, RoutedApplication
 from kajenn.db import DbHandlerBase
 from kajenn.tasks import new_descriptor
 from tests.conftest import LifespanRunner, call, read_samples, running, start_server
-from tests.storage_support import MemoryApiKeyStore, site_mounts
+from tests.storage_support import auth_application, site_mounts
 
 PROCESS_FAMILIES = {
     "kajenn_build_info",
@@ -72,6 +72,13 @@ def total(samples: list[Any], name: str, **labels: str) -> float:
     wanted = {"app": "_server", **labels}
     return sum(sample.value for sample in samples
                if sample.name == name and wanted.items() <= sample.labels.items())
+
+
+async def auth_enabled(server: AsgiServer) -> None:
+    """Wait until ``_auth`` answers: it is enabled on its ``ready``, after the startup."""
+    async with asyncio.timeout(10):
+        while not server.is_enabled("_auth"):
+            await asyncio.sleep(0.05)
 
 
 async def eventually(server: AsgiServer, check: Any, seconds: float = 10) -> list[Any]:
@@ -105,8 +112,8 @@ class Desk(RoutedApplication):
 
 async def desk_server(tmp_path: Path, **kwargs: Any) -> AsgiServer:
     return await start_server(AsgiServer(
-        applications=[(Desk, {"code": "desk"})], storage=site_mounts(tmp_path),
-        tokens={"store_class": MemoryApiKeyStore}, **kwargs))
+        applications=[auth_application(), (Desk, {"code": "desk"})], storage=site_mounts(tmp_path),
+        **kwargs))
 
 
 async def test_a_session_created_for_a_request_is_counted(tmp_path) -> None:
@@ -167,8 +174,8 @@ class Clock(RoutedApplication):
 async def test_the_scheduler_counts_ticks_launches_and_delay(tmp_path) -> None:
     tick = 0.05
     server = await start_server(AsgiServer(
-        applications=[(Clock, {"code": "clock"})], storage=site_mounts(tmp_path),
-        tokens={"store_class": MemoryApiKeyStore}, tasks={"tick_seconds": tick}))
+        applications=[auth_application(), (Clock, {"code": "clock"})], storage=site_mounts(tmp_path),
+        tasks={"tick_seconds": tick}))
     launches = "kajenn_scheduler_launches_total"
     samples = await eventually(server, lambda samples: (
         total(samples, launches, task="chime", outcome="ok") >= 1
@@ -191,13 +198,14 @@ class Unopenable(DbHandlerBase):
 
 
 async def test_a_fatal_boot_error_with_the_server_kept_up_is_counted() -> None:
-    server = AsgiServer(tokens={"store_class": MemoryApiKeyStore},
+    server = AsgiServer(applications=[auth_application()],
                         abort_on_fatal_boot_error=False)
     server.add_database("main", {}, Unopenable)
     runner = LifespanRunner(server)
     await runner.startup()
     try:
         assert runner.sent[-1]["type"] == "lifespan.startup.complete"
+        await auth_enabled(server)
         samples = await read_samples(server)
         assert total(samples, "kajenn_fatal_boot_errors_total") == 1
     finally:
@@ -216,9 +224,9 @@ import os
 
 from genro_routes import route
 
-from kajenn import RoutedApplication
+from kajenn import AuthApplicationBase, RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import MemoryAuthStore
 
 
 class Billing(RoutedApplication):
@@ -246,8 +254,9 @@ class Billing(RoutedApplication):
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
-        cfg.authentication().tokens(store_class=MemoryApiKeyStore)
         apps = cfg.applications()
+        auth = apps.application(code="_auth", app_class=AuthApplicationBase)
+        auth.store(store_class=MemoryAuthStore)
         apps.application(code="billing", app_class=Billing, spawner="subprocess",
                          request_timeout=1)
 '''
@@ -255,9 +264,9 @@ class Recipe(CONFIGURATION_TEMPLATES["default"]):
 FAILING_RECIPE = '''
 import os
 
-from kajenn import RoutedApplication
+from kajenn import AuthApplicationBase, RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import MemoryAuthStore
 
 
 class Doomed(RoutedApplication):
@@ -267,9 +276,11 @@ class Doomed(RoutedApplication):
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
-        cfg.authentication().tokens(store_class=MemoryApiKeyStore)
-        cfg.applications().application(code="doomed", app_class=Doomed,
-                                       spawner="subprocess", request_timeout=1)
+        apps = cfg.applications()
+        auth = apps.application(code="_auth", app_class=AuthApplicationBase)
+        auth.store(store_class=MemoryAuthStore)
+        apps.application(code="doomed", app_class=Doomed,
+                         spawner="subprocess", request_timeout=1)
 '''
 
 
@@ -320,11 +331,12 @@ async def test_a_killed_spawned_process_is_counted_as_a_restart(tmp_path) -> Non
 
 @asynccontextmanager
 async def in_lifespan(config: str):
-    """A server built from ``config`` inside its lifespan, without waiting for its applications."""
+    """A server built from ``config`` inside its lifespan, waiting for ``_auth`` only."""
     server = AsgiServer(config=config)
     runner = LifespanRunner(server)
     await runner.startup()
     try:
+        await auth_enabled(server)
         yield server
     finally:
         await runner.shutdown()
@@ -375,12 +387,12 @@ async def test_a_process_that_does_not_confirm_forget_credentials_is_unresponsiv
         samples = await read_samples(server)
         [pid] = [int(sample.value) for sample in samples if sample.name == "kajenn_process_pid"
                  and sample.labels["app"] == "billing"]
-        key_id = server.api_key_store.load_all()[0]["key_id"]
+        key_id = server.applications["_auth"].store.token_list[0]["key_id"]
         os.kill(pid, signal.SIGSTOP)
         try:
             began = time.monotonic()
-            answer = await server.kbus_call("/_server/tokens/revoke", {"key_id": key_id},
-                                            auth=Avatar("root", ["SUPERADMIN"]))
+            answer = await server.kbus_call("/_auth/tokens/revoke", {"key_id": key_id},
+                                            auth=Avatar("root", ["AUTH_ADMIN"]))
             # The revocation waits for the forget_credentials timeout of 5 seconds.
             assert time.monotonic() - began >= 5
             assert answer["revoked"] is True

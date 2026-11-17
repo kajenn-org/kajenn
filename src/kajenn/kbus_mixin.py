@@ -22,7 +22,9 @@ has each external process started with ONE URL in the environment variable
 ``KAJENN_KBUS_PARENT``: ``<scheme>://<code>:<token>@<location>``, a fresh
 token per spawn. The process connects a ``kbus.Member`` named after its code,
 runs its application's ``on_startup``, then calls ``server.joined`` with the
-discovery names it answers and its pid. A mount answers 503 until then.
+discovery names it answers, the tags and system users its application
+declares, and its pid. A mount answers 503 until then. The ``joined`` call
+crosses a process boundary: the server checks the shape of what it carries.
 
 Composed BEFORE the server class (``class MyServer(KBusMixin, BaseServer)``)
 the mixin peels its own kwargs, forwards the rest, and hooks the lifespan
@@ -51,6 +53,7 @@ import kbus
 from genro_tytx import from_tytx, to_tytx
 
 from .asgi_endpoint import BufferedAsgiEndpoint
+from .auth.mixin import AUTHENTICATION_CODE
 from .exceptions import HTTPException, KBusCallError, failure_text
 from ._http_metrics import ROUTE_SCOPE_KEY
 from .http_record import HttpRecord
@@ -348,6 +351,11 @@ class KBusMixin:
         route — replace the paths a previous process presented. A value that is
         not a dict of non-empty strings, and a path another application holds
         in the same dict, are refused with ``kbus.Refused``.
+
+        ``meta["declared_tags"]`` and ``meta["system_users"]`` — the
+        declarations of its application — are kept on the mount; a value that
+        is not a list of dicts is refused with ``kbus.Refused``. When the
+        authentication application is mounted, it creates their missing records.
         """
         presented = {name: meta.get(name) for name in ("well_known", "default_well_known")}
         for name, routes in presented.items():
@@ -356,6 +364,12 @@ class KBusMixin:
                             for pair in routes.items() for item in pair)):
                 raise kbus.Refused(
                     f"application {code!r} refused: {name} is not a dict of non-empty strings")
+        declarations = {name: meta.get(name) for name in ("declared_tags", "system_users")}
+        for name, records in declarations.items():
+            if not (
+                isinstance(records, list) and all(isinstance(record, dict) for record in records)
+            ):
+                raise kbus.Refused(f"application {code!r} refused: {name} is not a list of dicts")
         app = self.external_applications[code]
         try:
             self.claim_well_known(app, presented["well_known"], presented["default_well_known"])
@@ -363,7 +377,10 @@ class KBusMixin:
             raise kbus.Refused(f"application {code!r} refused: {exc}") from exc
         self.kbus_spawners[app.spawner].joined(f"application:{code}")
         self.kbus_pids[code] = meta["pid"]
-        app.mark_joined()
+        app.mark_joined(declarations["declared_tags"], declarations["system_users"])
+        authentication = self.applications.get(AUTHENTICATION_CODE)
+        if authentication is not None:
+            authentication.create_declared_records(app)
 
     async def serve_kbus_call(self, message: kbus.Message, reply: Any) -> None:
         """The handler of the member: an http or websocket stream, ``joined``
@@ -431,7 +448,7 @@ class KBusMixin:
         application's ``on_startup`` returned, then calls ``server.joined``
         with the well-known paths that application answers and gives as default
         (``active_well_known()`` and ``active_default_well_known()``, public path
-        → route) and the pid.
+        → route), its ``declared_tags`` and ``system_users``, and the pid.
         SIGTERM, SIGINT or the loss of the connection to the server closes the
         member and runs the shutdown.
         """
@@ -456,9 +473,12 @@ class KBusMixin:
             await member.connect(f"{scheme}://{location}", ssl=ssl.create_default_context(
                 cafile=self.kbus_options.get("cafile")) if scheme == "wss" else None)
             self._kbus_member = member
+            app = self.applications[code]
             await member.call(f"{SERVER_MEMBER}.joined", kbus.Message({
-                "well_known": self.applications[code].active_well_known(),
-                "default_well_known": self.applications[code].active_default_well_known(),
+                "well_known": app.active_well_known(),
+                "default_well_known": app.active_default_well_known(),
+                "declared_tags": app.declared_tags,
+                "system_users": app.system_users,
                 "pid": os.getpid()}))
             ended = asyncio.create_task(member.connected.wait_closed())
             stopped = asyncio.create_task(stop.wait())
@@ -545,7 +565,7 @@ class KBusMixin:
         The scope is a ``POST`` of
         ``meta["path"]`` with the TYTX json payload as body and the
         ``x-tytx-transport: json`` header, so the route answers in TYTX json;
-        the avatar rebuilt from ``meta["auth"]``, no session,
+        the avatar rebuilt from ``meta["auth"]`` with its group, no session,
         ``"kajenn.kbus": True`` and ``"kajenn.channel"`` when ``meta`` carries
         one. The answer has ``meta={"status", "format": "json"}`` and the
         response body as payload; an ``HTTPException`` becomes its status with

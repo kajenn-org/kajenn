@@ -37,7 +37,7 @@ from kajenn.application import BaseApplication
 from kajenn.exceptions import Redirect
 from kajenn.streaming import StreamingResponse
 from tests.conftest import call, exchange, json_body, read_samples, running, start_server, value
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import auth_application
 
 
 class Orders(RoutedApplication):
@@ -81,7 +81,7 @@ class Silent(BaseApplication):
 
 async def metrics_server(*applications: Any) -> AsgiServer:
     return await start_server(AsgiServer(
-        applications=list(applications), tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), *applications]))
 
 
 async def test_requests_to_a_route_are_counted_with_sizes_and_duration() -> None:
@@ -140,9 +140,9 @@ async def test_a_switched_off_application_counts_its_refusal() -> None:
 RECIPE = '''
 from genro_routes import route
 
-from kajenn import RoutedApplication
+from kajenn import AuthApplicationBase, RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import MemoryAuthStore
 
 
 class Billing(RoutedApplication):
@@ -157,9 +157,11 @@ class Billing(RoutedApplication):
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
-        cfg.authentication().tokens(store_class=MemoryApiKeyStore)
-        cfg.applications().application(code="billing", app_class=Billing,
-                                       spawner="subprocess", request_timeout=5)
+        apps = cfg.applications()
+        apps.application(code="_auth", app_class=AuthApplicationBase).store(
+            store_class=MemoryAuthStore)
+        apps.application(code="billing", app_class=Billing,
+                         spawner="subprocess", request_timeout=5)
 '''
 
 

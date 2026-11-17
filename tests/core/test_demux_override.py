@@ -17,7 +17,7 @@ from typing import Any
 from kajenn import AsgiServer, BaseApplication
 from kajenn.types import Message, Receive, Scope, Send
 from tests.conftest import call, read_samples, start_server, value
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import auth_application
 
 
 class Named(BaseApplication):
@@ -46,8 +46,7 @@ class Rerouting(AsgiServer):
 
 async def rerouting_server() -> AsgiServer:
     return await start_server(Rerouting(
-        applications=[(Named, {"code": "alpha"}), (Named, {"code": "beta"})],
-        tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), (Named, {"code": "alpha"}), (Named, {"code": "beta"})]))
 
 
 async def test_an_overridden_demux_changes_where_a_request_goes() -> None:

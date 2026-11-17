@@ -14,9 +14,9 @@
 
 """Authentication on demand in the execution point; ``AuthMiddleware`` retired.
 
-``execute`` resolves the identity before resolving the route: the session's
-avatar if any, else the ``Authorization`` header verified through the channel's
-route, else nobody. A credential presented is always verified — an invalid one
+``execute`` resolves the identity before resolving the route: the
+``Authorization`` header verified by ``/_auth/authenticate``, else the
+session's root identity asked to ``/_auth/avatar``, else nobody. A credential presented is always verified — an invalid one
 is a 401 on any route — and absence is not an error: a public route answers
 anonymously, a ruled one answers a bare 401.
 """
@@ -32,14 +32,29 @@ import pytest
 from genro_routes import route
 
 import kajenn
-from kajenn import AsgiServer, Avatar, BaseApplication, BaseServer, RoutedApplication
+from kajenn import AsgiServer, AuthApplicationBase, Avatar, BaseApplication, BaseServer
+from kajenn import RoutedApplication
 from kajenn.middleware import default_registry
 from kajenn.types import Message, Scope
 from kajenn.wsx import WsxConnection, WsxEnvelope
-from kajenn.server_app import ServerApplication
 from tests.conftest import start_server
+from tests.storage_support import MemoryAuthStore, add_user, auth_application, issue_token
 
-BEARER = {"bearer": {"svc": {"token": "sk_live_xyz", "tags": "admin"}}}
+
+class Idp(AuthApplicationBase):
+    """An authentication application whose verification answers any credential."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.calls = 0
+
+    def verify_credential(self, credential: str) -> dict[str, Any]:
+        self.calls += 1
+        return {"identity": "idp-user", "group": None, "tags": ["admin"],
+                "data": {"tenant": "t1"}, "valid_until": None}
+
+
+IDP = (Idp, {"store": {"store_class": MemoryAuthStore}})
 
 
 class Api(RoutedApplication):
@@ -62,11 +77,17 @@ class Api(RoutedApplication):
 
 def api_server(**extra: Any) -> AsgiServer:
     return AsgiServer(
-        applications=[ServerApplication, (BaseApplication, {"mount": ""}), (Api, {"code": "api"})],
-        auth=BEARER,
+        applications=[auth_application(), (BaseApplication, {"mount": ""}), (Api, {"code": "api"})],
         plugins={"openapi": True},
         **extra,
     )
+
+
+async def svc_token(server: AsgiServer) -> str:
+    """Start ``server``, write the user svc (tag admin) in ``_auth`` and return a token of it."""
+    await start_server(server)
+    add_user(server, "svc", ["admin"], system=True)
+    return issue_token(server, "svc")
 
 
 async def drive(
@@ -123,9 +144,11 @@ class TestTheMiddlewareIsGone:
 
 class TestRest:
     async def test_a_valid_bearer_opens_a_ruled_route(self) -> None:
-        # wf:contract: a Bearer the default route (AuthCore via _server) knows gives the
-        # wf:contract: avatar to the execution point: the ruled route answers 200.
-        status, _, data = await drive(api_server(), "/api/secret", headers=bearer("sk_live_xyz"))
+        # wf:contract: a token _auth knows gives the avatar to the execution point: the
+        # wf:contract: ruled route answers 200.
+        server = api_server()
+        token = await svc_token(server)
+        status, _, data = await drive(server, "/api/secret", headers=bearer(token))
         assert (status, data) == (200, {"identity": "svc"})
 
     async def test_an_invalid_bearer_is_401_even_on_a_public_route(self) -> None:
@@ -152,29 +175,20 @@ class TestRest:
         # wf:contract: a session carrying an avatar (cookie session_id) authenticates the
         # wf:contract: request without any header; the ruled route answers 200.
         server = api_server()
-        session = server.session_store.create(Avatar("sess", ["admin"]))
+        await start_server(server)
+        add_user(server, "sess", ["admin"])
+        session = server.session_store.create(Avatar("sess"))
         cookie = [(b"cookie", f"session_id={session.id}".encode())]
         status, _, data = await drive(server, "/api/secret", headers=cookie)
         assert (status, data) == (200, {"identity": "sess"})
 
     async def test_the_cache_serves_the_second_request(self) -> None:
-        # wf:contract: two requests with the same Bearer reach the authentication route
-        # wf:contract: once; forget_credential makes the third reach it again.
-        class Idp(RoutedApplication):
-            def __init__(self, **kwargs: Any) -> None:
-                super().__init__(**kwargs)
-                self.calls = 0
-
-            @route()
-            def check(self, credential: str = "", channel: str = "") -> dict[str, Any]:
-                self.calls += 1
-                return {"identity": "idp-user", "tags": ["admin"], "data": {"tenant": "t1"}}
-
+        # wf:contract: two requests with the same Bearer reach /_auth/authenticate once;
+        # wf:contract: forget_credential makes the third reach it again.
         server = AsgiServer(
-            applications=[(BaseApplication, {"mount": ""}), (Idp, {"code": "idp"}), (Api, {"code": "api"})],
-            channels={"api": {"authentication_route": "/idp/check"}},
+            applications=[IDP, (BaseApplication, {"mount": ""}), (Api, {"code": "api"})],
         )
-        idp = server.applications["idp"]
+        idp = server.applications["_auth"]
         for _ in range(2):
             status, _, data = await drive(server, "/api/open", headers=bearer("tok"))
             assert (status, data) == (200, {"identity": "idp-user"})
@@ -194,30 +208,22 @@ class TestMcp:
             "method": "tools/call",
             "params": {"name": "secret", "arguments": {}},
         }
+        server = api_server()
+        token = await svc_token(server)
         status, _, data = await drive(
-            api_server(),
+            server,
             "/api/_meta/mcp",
             method="POST",
             body=json.dumps(envelope).encode(),
-            headers=bearer("sk_live_xyz"),
+            headers=bearer(token),
         )
         assert status == 200
         assert data["result"]["structuredContent"] == {"identity": "svc"}
 
-    async def test_a_channel_route_authenticates_the_mcp_face(self) -> None:
-        # wf:contract: channels={"mcp": {"authentication_route": "/idp/check"}} makes a
-        # wf:contract: tools/call verify its Bearer through /idp/check, and the avatar's
-        # wf:contract: data is readable by the tool through _request.avatar().data.
-        class Idp(RoutedApplication):
-            def __init__(self, **kwargs: Any) -> None:
-                super().__init__(**kwargs)
-                self.calls = 0
-
-            @route()
-            def check(self, credential: str = "", channel: str = "") -> dict[str, Any]:
-                self.calls += 1
-                return {"identity": "idp-user", "tags": ["admin"], "data": {"tenant": "t1"}}
-
+    async def test_a_subclass_of_the_auth_application_authenticates_the_mcp_face(self) -> None:
+        # wf:contract: an AuthApplicationBase subclass overriding verify_credential makes a
+        # wf:contract: tools/call verify its Bearer through it, and the avatar's data is
+        # wf:contract: readable by the tool through _request.avatar().data.
         class Tools(RoutedApplication):
             @route(channel_channels="mcp")
             def whoami(self, _request=None) -> dict[str, Any]:
@@ -225,8 +231,7 @@ class TestMcp:
                 return {"identity": avatar.identity, "data": dict(avatar.data)}
 
         server = AsgiServer(
-            applications=[(BaseApplication, {"mount": ""}), (Idp, {"code": "idp"}), (Tools, {"code": "api"})],
-            channels={"mcp": {"authentication_route": "/idp/check"}},
+            applications=[IDP, (BaseApplication, {"mount": ""}), (Tools, {"code": "api"})],
             plugins={"openapi": True},
         )
         envelope = {
@@ -243,7 +248,7 @@ class TestMcp:
         assert data["result"]["structuredContent"] == {
             "identity": "idp-user", "data": {"tenant": "t1"},
         }
-        assert server.applications["idp"].calls == 1
+        assert server.applications["_auth"].calls == 1
 
 
 class TestTheBus:
@@ -270,11 +275,13 @@ class TestWsx:
                     seen.append(scope["kajenn.channel"])
                 return await super().authenticate(scope)
 
-        async def handshake(token: str) -> tuple[WsxConnection, list[Message]]:
+        async def handshake(token: str | None) -> tuple[WsxConnection, list[Message]]:
             server = Watching(
-                applications=[ServerApplication, (BaseApplication, {"mount": ""}), (Api, {"code": "api"})],
-                auth=BEARER,
+                applications=[auth_application(), (BaseApplication, {"mount": ""}),
+                              (Api, {"code": "api"})],
             )
+            if token is None:
+                token = await svc_token(server)
             incoming: list[Message] = [
                 {"type": "websocket.connect"},
                 {"type": "websocket.disconnect", "code": 1000},
@@ -303,7 +310,7 @@ class TestWsx:
         assert {"type": "websocket.close", "code": 1008} in [
             {"type": m["type"], "code": m.get("code")} for m in sent
         ]
-        connection, _ = await handshake("sk_live_xyz")
+        connection, _ = await handshake(None)
         assert seen == ["wsx", "wsx"]
         message_scope = connection._request_scope(WsxEnvelope(WsxEnvelope(method="WSK", path="/api/secret").encode()))
         assert message_scope["auth"].identity == "svc"

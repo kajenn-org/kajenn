@@ -36,34 +36,16 @@ What the suite pins:
 
 from __future__ import annotations
 
+import base64
 import json
 from typing import Any
 
-from kajenn import AsgiServer, Avatar, BaseApplication, UserStore
+from kajenn import AsgiServer, Avatar, BaseApplication
 from kajenn.server_app import ServerApplication
 from kajenn.middleware.base import BaseMiddleware
 from kajenn.types import Message, Scope
-
-
-class MemoryUserStore(UserStore):
-    """In-memory ``UserStore`` backend: the contract suite over a dict."""
-
-    __slots__ = ("_records",)
-
-    def __init__(self, storage: object = None) -> None:
-        self._records: dict[str, dict[str, Any]] = {}
-
-    def load_all(self) -> list[dict[str, Any]]:
-        return list(self._records.values())
-
-    def get(self, identity: str) -> dict[str, Any] | None:
-        return self._records.get(identity)
-
-    def save(self, record: dict[str, Any]) -> None:
-        self._records[record["identity"]] = record
-
-    def delete(self, identity: str) -> bool:
-        return self._records.pop(identity, None) is not None
+from tests.conftest import start_server
+from tests.storage_support import add_user, auth_application
 
 
 class StampAuthMiddleware(BaseMiddleware):
@@ -172,7 +154,7 @@ class TestMonitorGate:
             assert response_status(await http_request(server, path)) == 401
 
     async def test_wrong_tags_are_forbidden(self, http_request, response_status) -> None:
-        server = make_server(Avatar("bob", ["SUPERADMIN"]))
+        server = make_server(Avatar("bob", ["AUTH_ADMIN"]))
         for path in MONITOR_ROUTES:
             assert response_status(await http_request(server, path)) == 403
 
@@ -302,26 +284,28 @@ class TestPanelModule:
 
 
 class TestTheAdministratorReachesTheMonitor:
-    """An administrator declared by the store reaches the monitor (#91: the
-    server seeds nobody — the store the configuration names carries him)."""
+    """A user of ``_auth`` with ``SERVER_ADMIN`` reaches the monitor (the server
+    seeds nobody — the authentication application carries the user)."""
 
     async def test_the_declared_admin_carries_the_monitor_tag(self) -> None:
-        class AdminStore(MemoryUserStore):
-            """The store the configuration names, born with its administrator."""
+        server = AsgiServer(applications=[auth_application(), ServerApplication])
+        await start_server(server)
+        add_user(server, "admin", ["SERVER_ADMIN"], password="opspassword")
+        credential = base64.b64encode(b"admin:opspassword").decode()
+        scope: Scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/_server/monitor/snapshot",
+            "query_string": b"",
+            "headers": [(b"authorization", f"Basic {credential}".encode())],
+        }
+        sent: list[Message] = []
 
-            def __init__(self, storage: object = None) -> None:
-                super().__init__(storage)
-                self.save(
-                    {
-                        "identity": "admin",
-                        "password_hash": self.hash_password("opspassword"),
-                        "tags": ["SUPERADMIN", "SERVER_ADMIN"],
-                        "enabled": True,
-                    }
-                )
+        async def receive() -> Message:
+            return {"type": "http.request"}
 
-        server = AsgiServer(
-            applications=[ServerApplication],
-            users={"store_class": AdminStore},
-        )
-        assert "SERVER_ADMIN" in server.user_store.get("admin")["tags"]
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        await server(scope, receive, send)
+        assert next(m["status"] for m in sent if m["type"] == "http.response.start") == 200

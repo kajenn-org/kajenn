@@ -14,11 +14,12 @@
 
 """The credential cache never outlives the credential.
 
-``server.authenticate_credential(credential, channel)`` caches the avatar the
-channel's route answered. The route reports ``valid_until`` (a POSIX timestamp)
-when the credential carries an expiry — the ``exp`` of a JWT, the ``expires_at``
-of an api key — and the cache entry ends at the earlier of the TTL and that
-instant. A route that reports no ``valid_until`` keeps the TTL alone.
+``server.authenticate_credential(credential, channel)`` caches the avatar
+``/_auth/authenticate`` answered. The answer reports ``valid_until`` (a POSIX
+timestamp) when the credential carries an expiry — the ``expires_at`` of a
+token — and the cache entry ends at the earlier of the TTL and that instant.
+An answer that reports no ``valid_until`` keeps the TTL alone. ``Idp`` is a
+subclass of ``AuthApplicationBase`` whose ``verify_credential`` answers.
 """
 
 from __future__ import annotations
@@ -27,165 +28,83 @@ import asyncio
 import time
 from typing import Any
 
-import jwt
 import pytest
 
-from genro_routes import route
-
-from kajenn import ApiKeyStore, AsgiServer, BaseApplication, RoutedApplication
+from kajenn import AsgiServer, AuthApplicationBase, BaseApplication
 from kajenn.exceptions import HTTPUnauthorized
-from kajenn.server_app import ServerApplication
 from tests.conftest import start_server
-
-JWT_SECRET = "sign-me-please"
-
-
-class MemoryApiKeyStore(ApiKeyStore):
-    """In-memory ``ApiKeyStore`` backend: the shared issue/verify logic over a dict."""
-
-    __slots__ = ("_records",)
-
-    def __init__(self, storage: object = None) -> None:
-        self._records: dict[str, dict[str, Any]] = {}
-
-    def load_all(self) -> list[dict[str, Any]]:
-        return list(self._records.values())
-
-    def get(self, key_id: str) -> dict[str, Any] | None:
-        return self._records.get(key_id)
-
-    def save(self, record: dict[str, Any]) -> None:
-        self._records[record["key_id"]] = record
-
-    def delete(self, key_id: str) -> bool:
-        return self._records.pop(key_id, None) is not None
+from tests.storage_support import MemoryAuthStore, add_user, issue_token
 
 
-class Idp(RoutedApplication):
-    """The authentication route of the ``mcp`` channel; ``valid_until`` is configurable."""
+class Idp(AuthApplicationBase):
+    """``verify_credential`` answers ``Bearer good``; ``valid_until`` is configurable."""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.calls: list[str] = []
         self.valid_until: float | None = None
 
-    @route()
-    def check(self, credential: str = "", channel: str = "") -> dict[str, Any]:
+    def verify_credential(self, credential: str) -> dict[str, Any]:
         self.calls.append(credential)
         if credential != "Bearer good":
-            raise HTTPUnauthorized("unknown token")
-        answer: dict[str, Any] = {"identity": "ann", "tags": ["dev"], "data": {}}
-        if self.valid_until is not None:
-            answer["valid_until"] = self.valid_until
-        return answer
+            return super().verify_credential(credential)
+        return {
+            "identity": "ann",
+            "group": None,
+            "tags": ["dev"],
+            "data": {},
+            "valid_until": self.valid_until,
+        }
 
 
 def make_server() -> AsgiServer:
     return AsgiServer(
-        applications=[ServerApplication, (BaseApplication, {"mount": ""}), (Idp, {"code": "idp"})],
-        auth={"jwt": [{"secret": JWT_SECRET, "algorithm": "HS256"}]},
-        tokens={"store_class": MemoryApiKeyStore},
-        channels={"mcp": {"authentication_route": "/idp/check"}},
-        credential_cache_ttl=300.0,
+        applications=[
+            (Idp, {"store": {"store_class": MemoryAuthStore}, "cache_ttl": 300.0}),
+            (BaseApplication, {"mount": ""}),
+        ],
     )
 
 
-async def test_an_expired_jwt_is_refused_even_when_cached() -> None:
-    # wf:contract: a JWT whose exp lies one to two seconds ahead is authenticated and cached under a
-    # wf:contract: long TTL; once exp has passed, authenticate_credential refuses it with
-    # wf:contract: HTTPUnauthorized instead of answering the cached avatar.
-    server = make_server()
-    token = jwt.encode({"sub": "carol", "exp": int(time.time()) + 2}, JWT_SECRET, algorithm="HS256")
-    credential = f"Bearer {token}"
-    await start_server(server)
-    avatar = await server.authenticate_credential(credential, "api")
-    assert avatar.identity == "carol"
-    await asyncio.sleep(2.5)
-    with pytest.raises(HTTPUnauthorized):
-        await start_server(server)
-        await server.authenticate_credential(credential, "api")
-
-
-async def judged_like_pyjwt(exp: Any, expires: int) -> None:
-    """Authenticate a JWT carrying ``exp``, then check it just past ``expires``.
-
-    ``expires`` is the instant PyJWT reads in ``exp``: at that moment PyJWT
-    refuses the token, and the cache refuses it as well.
-    """
-    server = make_server()
-    token = jwt.encode({"sub": "carol", "exp": exp}, JWT_SECRET, algorithm="HS256")
-    credential = f"Bearer {token}"
-    await start_server(server)
-    avatar = await server.authenticate_credential(credential, "api")
-    assert avatar.identity == "carol"
-    await asyncio.sleep(expires + 0.2 - time.time())
-    with pytest.raises(jwt.ExpiredSignatureError):
-        jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-    with pytest.raises(HTTPUnauthorized):
-        await start_server(server)
-        await server.authenticate_credential(credential, "api")
-
-
-async def test_a_jwt_with_a_string_exp_is_cached_until_pyjwt_expires_it() -> None:
-    # wf:contract: a JWT whose exp is the string of an instant three seconds ahead is
-    # wf:contract: authenticated and cached; just past that instant PyJWT refuses it and
-    # wf:contract: authenticate_credential refuses it with HTTPUnauthorized.
-    expires = int(time.time()) + 3
-    await judged_like_pyjwt(str(expires), expires)
-
-
-async def test_a_jwt_with_a_fractional_exp_is_cached_until_pyjwt_expires_it() -> None:
-    # wf:contract: a JWT whose exp is an integer instant three seconds ahead plus 0.9 is
-    # wf:contract: authenticated and cached; 0.2 seconds past the integer instant PyJWT
-    # wf:contract: refuses it and authenticate_credential refuses it with HTTPUnauthorized,
-    # wf:contract: although the fraction has not elapsed.
-    expires = int(time.time()) + 3
-    await judged_like_pyjwt(expires + 0.9, expires)
-
-
 async def test_an_expired_api_key_is_refused_even_when_cached() -> None:
-    # wf:contract: an api key issued with expires_at one second ahead is authenticated and
+    # wf:contract: a token issued with expires_at one second ahead is authenticated and
     # wf:contract: cached under a long TTL; once expires_at has passed,
     # wf:contract: authenticate_credential refuses it with HTTPUnauthorized.
     server = make_server()
-    key = server.api_key_store.issue("ci-deploy", ["admin"], expires_at=time.time() + 1)
-    credential = f"Bearer {key}"
     await start_server(server)
+    add_user(server, "ci-deploy", ["admin"], system=True)
+    key = issue_token(server, "ci-deploy", ["admin"], expires_at=time.time() + 1)
+    credential = f"Bearer {key}"
     avatar = await server.authenticate_credential(credential, "api")
     assert avatar.identity == "ci-deploy"
     await asyncio.sleep(1.5)
     with pytest.raises(HTTPUnauthorized):
-        await start_server(server)
         await server.authenticate_credential(credential, "api")
 
 
-async def test_a_channel_route_reporting_valid_until_bounds_the_cache() -> None:
-    # wf:contract: a channel route answering {identity, tags, data, valid_until} with
-    # wf:contract: valid_until one second ahead is called again after that instant although the
-    # wf:contract: TTL has not elapsed: the cache entry ends at valid_until.
+async def test_an_answer_reporting_valid_until_bounds_the_cache() -> None:
+    # wf:contract: an answer {identity, group, tags, data, valid_until} with valid_until one
+    # wf:contract: second ahead is asked again after that instant although the TTL has not
+    # wf:contract: elapsed: the cache entry ends at valid_until.
     server = make_server()
-    idp: Idp = server.applications["idp"]
+    idp: Idp = server.applications["_auth"]
     idp.valid_until = time.time() + 1
     await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
-    await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
     assert len(idp.calls) == 1
     await asyncio.sleep(1.5)
-    await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
     assert len(idp.calls) == 2
 
 
-async def test_a_channel_route_without_valid_until_keeps_the_ttl() -> None:
-    # wf:contract: a channel route answering {identity, tags, data} with no valid_until is
-    # wf:contract: called once: the second authentication 1.5 s later is served by the cache
-    # wf:contract: (TTL 300 s).
+async def test_an_answer_without_valid_until_keeps_the_ttl() -> None:
+    # wf:contract: an answer whose valid_until is None is asked once: the second
+    # wf:contract: authentication 1.5 s later is served by the cache (TTL 300 s).
     server = make_server()
-    idp: Idp = server.applications["idp"]
+    idp: Idp = server.applications["_auth"]
     await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
     await asyncio.sleep(1.5)
-    await start_server(server)
     await server.authenticate_credential("Bearer good", "mcp")
     assert len(idp.calls) == 1

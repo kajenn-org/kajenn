@@ -4,6 +4,7 @@
 
 Verified against source revision `63fb326` (develop baseline). Test references
 below identify the executable contracts; they are not a new coverage percentage.
+Authentication passages updated against `dfc3941`.
 
 ## Recipe, grammar and precedence
 
@@ -40,10 +41,9 @@ Behavior evidence: `tests/core/test_site_home.py::test_a_homeless_server_has_no_
 
 ## Server and application vocabulary
 
-The grammar declares ten sections: `site`, `server`, `middleware`,
-`authentication`, `channels`, `storage`, `applications`, `databases`,
-`plugins` and `openapi`. The OpenAPI root section has no current core
-consumer; open issue kajenn-org/kajenn#6 "Wire or drop the openapi
+The grammar declares eight sections: `site`, `server`, `middleware`,
+`storage`, `applications`, `databases`, `plugins` and `openapi`. The OpenAPI
+root section has no current core consumer; open issue kajenn-org/kajenn#6 "Wire or drop the openapi
 configuration section" covers it. `server` includes `shutdown_timeout_seconds`
 and `debug`; its children are `session`, `tasks`, `websocket` and `kbus`.
 `websocket.origins` is a comma-separated recipe value converted to a list;
@@ -52,9 +52,6 @@ and `debug`; its children are `session`, `tasks`, `websocket` and `kbus`.
 - **`site`** carries `name` and `home`. `site_kwargs` turns them into the
   `site_name` and `site_home` kwargs; `AsgiServer` wraps `site_home` in a
   `SiteHome`.
-- **`channels`** is a collection of `channel(name, authentication_route)`.
-  `channels()` refuses a channel without `authentication_route` with
-  `ValueError` when the server is built.
 - **`server.kbus`** carries `address`, `certfile`, `keyfile`, `cafile` and six
   limits: `max_frame`, `max_meta`, `max_route`, `max_pending`, `stream_window`
   and `write_buffer`. The limits build a `kbus.Limits`. An address that is not
@@ -79,14 +76,14 @@ mounts its own `app_class.grammar` under `applications.<code>`, so whatever an
 application adds to the vocabulary is read from its own subtree and never from
 a server-level section. That is what lets an application arrive with words the
 core has never heard of.
-The `authentication` section declares the `users`/`tokens` store descriptors
-(their `store_class` is the class the server builds), `cache_ttl` and the
-`credentials` children; it carries no bootstrap password, because the server
-creates no user.
+Authentication is configured on `application(code="_auth",
+app_class=AuthApplicationBase, cache_ttl=...)`. Its grammar declares `store`,
+`login`, `oidc`/`provider` and `self_registration`. The application builds its
+store on first use and manages its temporary administrator at startup.
 
-Claim anchors: [`configuration`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.configuration), [`site`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.site), [`server`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.server), [`websocket`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.websocket), [`kbus`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.kbus), [`authentication`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.authentication), [`channels`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.channels), [`channel`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.channel), [`site_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.site_kwargs), [`server_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.server_kwargs), [`identity_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.identity_kwargs), [`channels()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.channels), [`applications()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.applications), [`databases()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.databases), [`orchestration_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.orchestration_kwargs), [`_server` default class](../../../src/kajenn/config/builder.py#AsgiConfigBuilder.__getattr__), [`RemoteApplication` built](../../../src/kajenn/asgi_server.py#AsgiServer._configured_kwargs).
+Claim anchors: [`configuration`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.configuration), [`site`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.site), [`server`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.server), [`websocket`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.websocket), [`kbus`](../../../src/kajenn/config/elements.py#AsgiServerGrammar.kbus), [`site_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.site_kwargs), [`server_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.server_kwargs), [`applications()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.applications), [`databases()`](../../../src/kajenn/config/handler.py#ConfigurationHandler.databases), [`orchestration_kwargs`](../../../src/kajenn/config/handler.py#ConfigurationHandler.orchestration_kwargs), [`_server` default class](../../../src/kajenn/config/builder.py#AsgiConfigBuilder.__getattr__), [`RemoteApplication` built](../../../src/kajenn/asgi_server.py#AsgiServer._configured_kwargs).
 
-Behavior evidence: `tests/core/test_config.py::test_a_second_channels_element_is_rejected_by_the_grammar`, `tests/core/test_server_app_always_present.py::test_the_recipe_customises_without_app_class`, `test_a_class_that_is_not_a_server_application_is_refused`, `tests/core/test_external_application_streaming.py::test_an_answer_larger_than_one_frame_streams_through`.
+Behavior evidence: `tests/core/test_server_app_always_present.py::test_the_recipe_customises_without_app_class`, `test_a_class_that_is_not_a_server_application_is_refused`, `tests/core/test_external_application_streaming.py::test_an_answer_larger_than_one_frame_streams_through`.
 
 ## The tree is read-only at runtime
 
@@ -103,10 +100,6 @@ Claim anchors: [`ConfigurationHandler`](../../../src/kajenn/config/handler.py#Co
 
 ## Remaining design distance
 
-- **Bootstrap administrator password.** design.md §1 describes a bootstrap
-  administrator password declared in a way that rejects a literal. No such
-  word exists: the `authentication` element and `identity_kwargs` state that
-  there is no bootstrap password ([elements.py](../../../src/kajenn/config/elements.py#AsgiServerGrammar.authentication), [handler.py](../../../src/kajenn/config/handler.py#ConfigurationHandler.identity_kwargs)).
 - **Survivable application failure.** design.md §5 describes an application
   that declares a failure of its own survivable, so that the server starts
   without it. `BaseApplication` has no such declaration

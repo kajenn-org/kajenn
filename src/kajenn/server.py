@@ -465,8 +465,12 @@ class BaseServer:
         """Whether only the management application answers (a fatal boot kept the server up)."""
         return self._public_closed
 
+    def answers_when_public_closed(self, app: BaseApplication) -> bool:
+        """Whether ``app`` keeps answering with the public part closed: the management application."""
+        return self.is_management(app)
+
     def close_public(self) -> None:
-        """Answer 503 for every application except the management one."""
+        """Answer 503 for every application but those of ``answers_when_public_closed``."""
         self._public_closed = True
 
     def refusal(self, app: BaseApplication) -> Response | None:
@@ -474,10 +478,10 @@ class BaseServer:
 
         An application being mounted answers 503 with ``Retry-After``; one
         switched off or being removed answers 503 without it. With the public
-        part closed every application but the management one answers 503
-        without it.
+        part closed every application but those of
+        ``answers_when_public_closed`` answers 503 without it.
         """
-        if self._public_closed and not self.is_management(app):
+        if self._public_closed and not self.answers_when_public_closed(app):
             return Response(content="Service Unavailable", status_code=503,
                             media_type="text/plain")
         if app.code not in self._enabled:

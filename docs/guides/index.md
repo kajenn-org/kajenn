@@ -41,7 +41,7 @@ configuration
 
 - [Storage](storage.md): named paths, file operations and encryption.
 - [Databases](databases.md): registration, selection and connection cleanup.
-- [Management application](management.md): first login, users, tokens and monitoring.
+- [Management application](management.md): first login, users, groups, tags, tokens and monitoring.
 
 ## Add interfaces and background work
 

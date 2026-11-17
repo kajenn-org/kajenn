@@ -42,7 +42,7 @@ them off the tree exactly as it does for a written recipe.
 
 Its cooperative ``__init__`` peels the kwargs ``BaseServer`` does not accept —
 ``site_name``/``site_home``/``host``/``port``/``external_url`` — and forwards
-everything else (``applications``, ``auth``, ``session_store``/``session_ttl``,
+everything else (``applications``, ``session_store``/``session_ttl``,
 ``middleware``/``middleware_registry``, ``plugins``/``plugin_registry``,
 ``storage``/``storage_key``, ``role``, ``kbus``) down the D16 chain. The peeled
 ``host``/``port`` become the defaults of ``serve``, so a configured server
@@ -51,20 +51,20 @@ serves on its configured address unless the caller overrides it.
 ``host``/``port`` are the LISTENER; ``external_url`` is the server's PUBLIC
 base address — the two differ behind a proxy and answer different questions.
 The listener says where to bind; the public address is what the server calls
-itself when it hands its own URL to a third party. Its one consumer is the
-OIDC flow (a provider is given an absolute ``redirect_uri``, RFC 6749
-§3.1.2), and it is DECLARED rather than derived from a request: the URI must
-match the one registered with the provider — a deployment fact known to
+itself when it hands its own URL to a third party, for example the absolute
+``redirect_uri`` of an OIDC provider declared in the ``_auth`` application
+(RFC 6749 §3.1.2). It is DECLARED rather than derived from a request: the URI
+must match the one registered with the provider — a deployment fact known to
 whoever installs — and deriving it from the client-supplied ``Host`` would
-build a value the provider then rejects. Missing it with a provider
-configured is a boot error (``_check_oidc_external_url``), not an opaque
-provider error at the first login.
+build a value the provider then rejects.
 
 The management application ``_server`` (``ServerApplication``) exists in every
 server: when no application of code ``_server`` reached the merged kwargs,
 ``__init__`` appends one with its defaults, on the kwargs road and on the
 configuration road alike. The configuration only customises it
-(``application(code="_server", ...)``: login policy, OIDC, a subclass). An
+(``application(code="_server", ...)``: its well-known words, a subclass). The
+authentication application ``_auth`` is never added: a server that does not
+declare it does not authenticate (``AuthMixin``). An
 application mounted with ``spawner="subprocess"`` runs in its own dedicated
 process, which hosts that application alone and mounts no ``_server``: its
 ``/_server/...`` calls go to the parent. The configured databases are
@@ -84,6 +84,7 @@ from typing import Any
 from genro_builders.builder import BuilderBase
 
 from .auth import AuthMixin
+from .auth.mixin import AUTHENTICATION_CODE
 from .kbus_mixin import KBusMixin
 from .config.elements import AsgiServerGrammar
 from .config.default_config import DefaultConfig
@@ -160,7 +161,6 @@ class AsgiServer(
         external_url: str | None = kwargs.pop("external_url", None)
         self._external_url: str | None = external_url.rstrip("/") if external_url else None
         super().__init__(**kwargs)
-        self._check_oidc_external_url()
         self._register_configured_databases(self.config)
         self._removals: dict[str, asyncio.Task[None]] = {}
         self._failed_removals: set[str] = set()
@@ -342,11 +342,8 @@ class AsgiServer(
         """
         kwargs: dict[str, Any] = config.site_kwargs()
         kwargs.update(config.server_kwargs())
-        kwargs.update(config.identity_kwargs())
         for name, value in (
             ("middleware", config.middleware_config()),
-            ("auth", config.auth_entries()),
-            ("channels", config.channels()),
             ("plugins", config.plugins_config()),
         ):
             if value is not None:
@@ -415,6 +412,10 @@ class AsgiServer(
         """``_server`` is the management application."""
         return bool(app.code == MANAGEMENT_CODE)
 
+    def answers_when_public_closed(self, app: Any) -> bool:
+        """``_server`` and ``_auth``: ``_server`` verifies every credential with ``_auth``."""
+        return bool(app.code in (MANAGEMENT_CODE, AUTHENTICATION_CODE))
+
     async def application_ready(self, app: Any) -> None:
         """Send ``ready`` for ``app`` to ``_server`` over the KajennBus.
 
@@ -425,29 +426,6 @@ class AsgiServer(
             f"/{MANAGEMENT_CODE}/applications/ready", {"code": app.code},
             auth=Avatar(f"application:{app.code}", [SERVER_ADMIN_TAG]),
         )
-
-    def _check_oidc_external_url(self) -> None:
-        """Refuse to boot when a provider is configured without ``external_url``.
-
-        Runs once the applications are registered, the first moment both facts
-        are known — the app carries the configured providers, the server carries
-        its public address — and covers the configured and the hand-built server
-        with one check. The check reads an attribute (``oidc_providers``) off
-        whatever application answers to ``_server``: the core imports no class
-        to ask the question. An OIDC provider is handed the ABSOLUTE ``redirect_uri`` it
-        must send the browser back to; without a public base address that URI
-        cannot be built, so the configuration is incomplete and the server says
-        so loudly instead of failing at the first login attempt with a
-        provider-side error.
-        """
-        providers = getattr(self.applications.get(MANAGEMENT_CODE), "oidc_providers", None)
-        if providers and self.external_url is None:
-            codes = ", ".join(sorted(providers))
-            raise ValueError(
-                f"oidc provider(s) {codes} configured but the server has no "
-                "external_url: OIDC needs the public base URL to build the "
-                "absolute redirect_uri (set server(external_url=...))"
-            )
 
     @property
     def site_name(self) -> str | None:
@@ -480,8 +458,8 @@ class AsgiServer(
 
         What the server calls ITSELF when it hands its own address to a third
         party — distinct from the ``host``/``port`` it binds to, which differ
-        behind a proxy. Declared in the config's ``server`` section; its one
-        consumer is the OIDC ``redirect_uri``, which must be absolute.
+        behind a proxy. Declared in the config's ``server`` section; the OIDC
+        ``redirect_uri`` of the ``_auth`` application is built on it.
         """
         return self._external_url
 

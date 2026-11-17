@@ -30,9 +30,8 @@ The shortcut writes every option it receives — the ``site`` identity (``site_n
 and ``site_home``, the folder the site owns), the ``server`` scalars (``debug``
 among them), the session and websocket options, the ``middleware`` and
 ``plugins`` switches (both elements have an OPEN signature, so a name registered
-from outside is an attribute like any other), the storage mounts and key, the
-identity stores and header credentials, and one ``application`` node per
-declared class — and POPS each one, so the value is read back from the tree and
+from outside is an attribute like any other), the storage mounts and key, and
+one ``application`` node per declared class — and POPS each one, so the value is read back from the tree and
 from nowhere else.
 """
 
@@ -123,9 +122,6 @@ class ShortcutConfiguration(AsgiConfigBuilder):
         self.websocket_options = kwargs.pop("websocket", None)
         self.storage_mounts_declared = kwargs.pop("storage", None)
         self.storage_key = kwargs.pop("storage_key", None)
-        self.user_store = kwargs.pop("users", None)
-        self.api_key_store = kwargs.pop("tokens", None)
-        self.credentials = kwargs.pop("auth", None)
         self.app_entries = self.application_entries(kwargs.pop("applications", ()))
 
     def application_entries(
@@ -154,7 +150,6 @@ class ShortcutConfiguration(AsgiConfigBuilder):
         self.middleware_section(cfg)
         self.plugins_section(cfg)
         self.storage_section(cfg)
-        self.authentication_section(cfg)
         self.applications_section(cfg)
 
     def server_section(self, cfg: Any) -> None:
@@ -217,27 +212,6 @@ class ShortcutConfiguration(AsgiConfigBuilder):
         for mount in self.storage_mounts_declared:
             attrs = dict(mount)
             getattr(section, attrs.pop("protocol"))(**attrs)
-
-    def authentication_section(self, cfg: Any) -> None:
-        """The identity stores and the header credentials, each in its own element."""
-        declared = (self.user_store, self.api_key_store, self.credentials)
-        if all(item is None for item in declared):
-            return
-        section = cfg.authentication()
-        for tag, declared in (("users", self.user_store), ("tokens", self.api_key_store)):
-            if declared is not None:
-                getattr(section, tag)(**declared)
-        if self.credentials:
-            self.credentials_section(section.credentials())
-
-    def credentials_section(self, credentials: Any) -> None:
-        """One child per header credential: the three tags key differently."""
-        for username, entry in (self.credentials.get("basic") or {}).items():
-            credentials.basic_user(username=username, **entry)
-        for identity, entry in (self.credentials.get("bearer") or {}).items():
-            credentials.bearer_token(identity=identity, **entry)
-        for entry in self.credentials.get("jwt") or ():
-            credentials.jwt(**entry)
 
     def class_and_params(self, declared: Any) -> tuple[Any, dict[str, Any]]:
         """A declared class, or a ``(class, params)`` pair, as the pair it is.

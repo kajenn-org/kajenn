@@ -96,15 +96,15 @@ class TestSessionStoreContract:
 
     def test_dump_restore_keeps_avatar_drops_data(self, store_factory) -> None:
         store = store_factory()
-        session = store.create(avatar=Avatar("bob", ["user"]))
+        session = store.create(avatar=Avatar("bob", ["user"], group="staff"))
         session.data["k"] = "v"
         dumped = store.dump()
         fresh = store_factory()
         fresh.restore(dumped)
         restored = fresh.get(session.id)
         assert restored is not None
-        assert restored.avatar().identity == "bob"
-        assert restored.avatar().tags == ["user"]
+        assert (restored.avatar().identity, restored.avatar().group) == ("bob", "staff")
+        assert restored.avatar().tags == []   # identity and group persist, never the tags
         assert len(restored.data) == 0
 
     def test_save_is_in_the_contract(self, store_factory) -> None:
@@ -387,15 +387,19 @@ class TestSessionAvatars:
 
     def test_memory_store_roundtrips_every_keyed_avatar(self) -> None:
         store = MemorySessionStore(default_ttl=3600)
-        session = store.create(avatar=Avatar("alice", ["admin"]))
+        session = store.create(avatar=Avatar("alice", ["admin"], group="staff"))
         session.attach_avatar(Avatar("alice@erp", ["operator"]), "erp")
+        assert store.dump()[session.id]["avatars"] == {
+            "root": {"identity": "alice", "group": "staff"},
+            "erp": {"identity": "alice@erp", "group": None},
+        }
         fresh = MemorySessionStore(default_ttl=3600)
         fresh.restore(store.dump())
         restored = fresh.get(session.id)
-        assert restored.avatar().identity == "alice"
-        assert restored.avatar().tags == ["admin"]
+        assert (restored.avatar().identity, restored.avatar().group) == ("alice", "staff")
+        assert restored.avatar().tags == []
         assert restored.avatar("erp").identity == "alice@erp"
-        assert restored.avatar("erp").tags == ["operator"]
+        assert restored.avatar("erp").tags == []
         assert restored.dirty is False
 
     def test_anonymous_session_serializes_an_empty_wardrobe(self) -> None:

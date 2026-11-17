@@ -36,8 +36,6 @@ Section → constructor kwarg:
 - ``server`` → ``host``/``port``/``external_url``/``max_threads``/``shutdown_timeout_seconds``/``debug``/``abort_on_fatal_boot_error``, its
   ``session`` child → ``session_ttl``, its ``tasks`` child → ``tasks``.
 - ``middleware`` → ``middleware`` ({name: bool | dict} switches).
-- ``authentication`` → ``users``/``tokens`` (the store descriptors ``AuthMixin``
-  peels) and ``auth`` (the ``AuthCore`` entries folded from ``credentials``).
 - ``storage`` → ``storage`` (genro-storage's own ``list[dict]`` of mounts) and
   ``storage_key`` (the section's at-rest key material).
 - ``applications`` → ``applications``/``default`` (each entry an
@@ -163,78 +161,6 @@ class ConfigurationHandler(ConfigHandler):
         if node is None:
             return None
         return self.open_attrs(node)
-
-    def identity_kwargs(self) -> dict[str, Any]:
-        """The identity STORE kwargs of ``authentication`` and its ``cache_ttl``
-        as ``credential_cache_ttl`` (``AuthMixin`` peels them).
-
-        ``users``/``tokens`` are the store descriptors: every attribute the
-        section carries — ``mount``/``prefix``, the optional ``store_class`` and
-        its own kwargs. Nothing else: the server creates no user, so there is no
-        bootstrap password to read.
-        """
-        kwargs: dict[str, Any] = {}
-        for tag in ("users", "tokens"):
-            node = self.node(f"authentication.{tag}")
-            if node is not None:
-                kwargs[tag] = self.open_attrs(node)
-        if self.node("authentication") is not None:
-            cache_ttl = self.closed_attrs("authentication", "cache_ttl").get("cache_ttl")
-            if cache_ttl is not None:
-                kwargs["credential_cache_ttl"] = cache_ttl
-        return kwargs
-
-    def channels(self) -> dict[str, dict[str, str]] | None:
-        """The ``channels`` collection as ``{name: {"authentication_route": path}}``,
-        or ``None`` when the section is absent.
-
-        A channel without ``authentication_route`` is refused here, so the
-        error surfaces when the server is built.
-        """
-        node = self.node("channels")
-        if node is None:
-            return None
-        channels: dict[str, dict[str, str]] = {}
-        for child in node.value or ():
-            attrs = self.open_attrs(child)
-            name = attrs["name"]
-            route = attrs.get("authentication_route")
-            if not route:
-                raise ValueError(f"channel {name!r} declares no authentication_route")
-            channels[name] = {"authentication_route": route}
-        return channels
-
-    def auth_entries(self) -> dict[str, Any] | None:
-        """The ``credentials`` children folded into the ``AuthCore`` sections.
-
-        ``basic_user`` entries are keyed by ``username`` and ``bearer_token``
-        entries by ``identity`` — the keys ``AuthCore`` reads back as the
-        authenticated identity — while ``jwt`` entries stay an ORDERED list (the
-        first verifier that verifies wins). ``None`` when nothing is configured:
-        the server then arms no header backend.
-        """
-        node = self.node("authentication.credentials")
-        if node is None:
-            return None
-        basic: dict[str, Any] = {}
-        bearer: dict[str, Any] = {}
-        jwt: list[dict[str, Any]] = []
-        for child in node.value:
-            path = f"authentication.credentials.{child.label}"
-            if child.node_tag == "basic_user":
-                attrs = self.closed_attrs(path, "username", "password", "tags")
-                basic[attrs.pop("username")] = attrs
-            elif child.node_tag == "bearer_token":
-                attrs = self.closed_attrs(path, "identity", "token", "tags")
-                bearer[attrs.pop("identity")] = attrs
-            else:
-                jwt.append(
-                    self.closed_attrs(
-                        path, "name", "secret", "public_key", "algorithm", "tags"
-                    )
-                )
-        entries = {"basic": basic, "bearer": bearer, "jwt": jwt}
-        return {name: value for name, value in entries.items() if value} or None
 
     def storage_config(self) -> tuple[list[dict[str, Any]], str | None] | None:
         """The ``storage`` section as ``(mounts, storage_key)``, or ``None`` when it

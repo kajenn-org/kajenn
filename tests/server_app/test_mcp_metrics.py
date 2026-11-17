@@ -33,7 +33,7 @@ from prometheus_client import CollectorRegistry, Counter, generate_latest
 
 from kajenn import AsgiServer, RoutedApplication
 from tests.conftest import call, read_samples, running, start_server, value
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import auth_application
 
 CALLS = "kajenn_mcp_calls_total"
 DURATION_COUNT = "kajenn_mcp_tool_call_duration_seconds_count"
@@ -95,7 +95,7 @@ def assert_counted(samples: list[Any], code: str) -> None:
 
 async def test_calls_of_an_in_process_application_are_counted() -> None:
     server = await start_server(AsgiServer(
-        applications=[(Shop, {"code": "shop"})], tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), (Shop, {"code": "shop"})]))
     await drive_calls(server, "shop")
     samples = await read_samples(server)
     assert_counted(samples, "shop")
@@ -103,7 +103,7 @@ async def test_calls_of_an_in_process_application_are_counted() -> None:
 
 async def test_protocol_methods_count_with_their_name_and_others_as_other() -> None:
     server = await start_server(AsgiServer(
-        applications=[(Shop, {"code": "shop"})], tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), (Shop, {"code": "shop"})]))
     for ident, method in enumerate(("initialize", "ping", "resources/list"), start=1):
         await mcp(server, "shop", {"jsonrpc": "2.0", "id": ident, "method": method,
                                    "params": {}})
@@ -117,7 +117,7 @@ async def test_protocol_methods_count_with_their_name_and_others_as_other() -> N
 
 async def test_an_override_with_super_keeps_the_mcp_families() -> None:
     server = await start_server(AsgiServer(
-        applications=[(Shop, {"code": "shop"})], tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), (Shop, {"code": "shop"})]))
     assert (json.loads((await mcp(server, "shop", tools_call(1, "price", {"item": 1})))["body"])
             ["result"]["structuredContent"]["price"]) == 10
     samples = await read_samples(server)
@@ -129,9 +129,9 @@ async def test_an_override_with_super_keeps_the_mcp_families() -> None:
 RECIPE = '''
 from genro_routes import route
 
-from kajenn import RoutedApplication
+from kajenn import AuthApplicationBase, RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import MemoryAuthStore
 
 
 class Shop(RoutedApplication):
@@ -142,9 +142,11 @@ class Shop(RoutedApplication):
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
-        cfg.authentication().tokens(store_class=MemoryApiKeyStore)
-        cfg.applications().application(code="shop", app_class=Shop,
-                                       spawner="subprocess", request_timeout=5)
+        apps = cfg.applications()
+        auth = apps.application(code="_auth", app_class=AuthApplicationBase)
+        auth.store(store_class=MemoryAuthStore)
+        apps.application(code="shop", app_class=Shop,
+                         spawner="subprocess", request_timeout=5)
 '''
 
 

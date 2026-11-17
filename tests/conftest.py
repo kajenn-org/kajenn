@@ -61,6 +61,7 @@ from prometheus_client.parser import text_string_to_metric_families
 from kajenn import AsgiServer
 from kajenn.config import HOME_ENV
 from kajenn.types import Message, Scope
+from tests.storage_support import add_user, issue_token
 
 # D22 (core 1b): the server's storage API is SYNCHRONOUS — StorageMixin pins
 # ``set_sync()`` at construction and every task inherits it. The suite runs
@@ -398,7 +399,8 @@ async def exchange(server: AsgiServer, method: str, path: str, body: bytes = b""
 
 async def read_samples(server: AsgiServer) -> list[Any]:
     """Every sample of ``/_server/metrics``, read with an API key holding only SERVER_METRICS."""
-    key = server.api_key_store.issue("prometheus", ["SERVER_METRICS"])
+    add_user(server, "prometheus", ["SERVER_METRICS"], system=True)
+    key = issue_token(server, "prometheus")
     answer = await call(server, "GET", "/_server/metrics",
                         headers=[(b"authorization", f"Bearer {key}".encode())])
     assert answer["status"] == 200

@@ -29,21 +29,15 @@ import sys
 import pytest
 
 EXPORTS = (
-    "AuthMethod",
-    "AuthSection",
     "MonitorSection",
-    "OidcMethod",
-    "PasswordMethod",
     "ServerApplication",
     "TasksSection",
-    "TokensSection",
-    "UsersSection",
-    "safe_next_path",
 )
 
 
 def test_the_package_is_a_subpackage_of_the_core() -> None:
-    # wf:contract: kajenn.server_app imports and exports every name the old package did.
+    # wf:contract: kajenn.server_app imports and exports the management application and
+    # wf:contract: its sections; the login surface left it for kajenn.auth_app.
     module = importlib.import_module("kajenn.server_app")
     for name in EXPORTS:
         assert hasattr(module, name), name
@@ -57,7 +51,7 @@ def test_the_old_package_is_gone() -> None:
 
 def test_the_sections_keep_their_module_path() -> None:
     # wf:contract: the sections stay under server_sections inside the moved package.
-    for section in ("auth_section", "tokens_section", "tasks_section", "monitor_section", "users_section"):
+    for section in ("tasks_section", "monitor_section"):
         importlib.import_module(f"kajenn.server_app.server_sections.{section}")
 
 

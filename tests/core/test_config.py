@@ -23,7 +23,6 @@ uvicorn), the same style as ``test_session.py``.
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 from typing import Any
 
@@ -35,14 +34,15 @@ from genro_storage import StorageManager
 from kajenn import (
     AsgiConfigBuilder,
     AsgiServer,
+    AuthApplicationBase,
     BaseApplication,
     ConfigError,
     ConfigurationHandler,
     DbHandlerBase,
+    FileAuthStore,
 )
 from kajenn.__main__ import SitesRegistry
 from kajenn.config import HOME_ENV, BaseConfiguration, DefaultConfig
-from kajenn.exceptions import HTTPUnauthorized
 from kajenn.middleware.base import BaseMiddleware
 from kajenn.storage_mixin import DEFAULT_HOME_MOUNT, DEFAULT_SITE_MOUNT
 from kajenn.types import Message, Receive, Scope, Send
@@ -67,25 +67,20 @@ class ApiApp(BaseApplication):
 
 
 class TwoAppConfig(AsgiConfigBuilder):
-    """Two apps (shop on the root, api secondary), cors + basic auth, host/port.
+    """Two apps (shop on the root, api secondary), cors, host/port.
 
     Declares ``external_url`` too — the whole-site recipe of these tests, and a
     site that configures an OIDC provider must name its public base address (the
     absolute ``redirect_uri`` prefix) or the server refuses to boot. The
-    without-``external_url`` case is covered on its own in ``test_oidc.py``.
+    without-``external_url`` case is covered on its own in
+    ``tests/auth_app/test_oidc.py``.
     """
 
     def main(self, root: Any) -> None:
         cfg = root.configuration()
         cfg.server(host="0.0.0.0", port=9100, external_url="https://shop.example.com")
         cfg.middleware(cors=True)
-        self.authentication_section(cfg)
         self.applications_section(cfg)
-
-    def authentication_section(self, cfg: Any) -> None:
-        """One Basic user, handed to ``AuthCore`` through ``credentials``."""
-        creds = cfg.authentication().credentials()
-        creds.basic_user(username="admin", password="secret", tags="admin")
 
     def applications_section(self, cfg: Any) -> None:
         """``shop`` claims the site root, ``api`` answers its own mount."""
@@ -102,12 +97,6 @@ def chain_types(server: AsgiServer) -> list[str]:
         names.append(type(node).__name__)
         node = node.app
     return names
-
-
-def basic_header(username: str, password: str) -> list[tuple[bytes, bytes]]:
-    """An ``Authorization: Basic`` header list for the given credentials."""
-    token = base64.b64encode(f"{username}:{password}".encode()).decode()
-    return [(b"authorization", f"Basic {token}".encode())]
 
 
 async def http_get(server: AsgiServer, path: str) -> bytes:
@@ -229,60 +218,6 @@ class TestMiddlewareChain:
                 cfg.applications().application(code="shop", mount="", app_class=ShopApp)
 
         assert "CORSMiddleware" not in chain_types(AsgiServer(config=NoCorsConfig))
-
-
-class TestCredentials:
-    def test_basic_user_is_verified_by_the_auth_core(self) -> None:
-        server = AsgiServer(config=TwoAppConfig)
-        scope: Scope = {"headers": basic_header("admin", "secret")}
-        avatar = server.auth_core.authenticate(scope)
-        assert avatar is not None
-        assert avatar.identity == "admin"
-        assert "admin" in avatar.tags
-
-    def test_wrong_password_raises_unauthorized(self) -> None:
-        server = AsgiServer(config=TwoAppConfig)
-        scope: Scope = {"headers": basic_header("admin", "wrong")}
-        with pytest.raises(HTTPUnauthorized):
-            server.auth_core.authenticate(scope)
-
-    def test_bearer_token_is_verified_by_its_identity(self) -> None:
-        class BearerConfig(AsgiConfigBuilder):
-            def main(self, root: Any) -> None:
-                cfg = root.configuration()
-                creds = cfg.authentication().credentials()
-                creds.bearer_token(identity="svc", token="sk_live_xyz", tags="api")
-                cfg.applications().application(code="shop", mount="", app_class=ShopApp)
-
-        server = AsgiServer(config=BearerConfig)
-        scope: Scope = {"headers": [(b"authorization", b"Bearer sk_live_xyz")]}
-        avatar = server.auth_core.authenticate(scope)
-        assert avatar is not None
-        assert avatar.identity == "svc"
-        assert avatar.tags == ["api"]
-
-    def test_jwt_entries_stay_an_ordered_list(self) -> None:
-        class JwtConfig(AsgiConfigBuilder):
-            def main(self, root: Any) -> None:
-                cfg = root.configuration()
-                creds = cfg.authentication().credentials()
-                creds.jwt(name="hmac", secret="topsecret")
-                creds.jwt(name="rsa", public_key="PUBKEY", algorithm="RS256")
-                cfg.applications().application(code="shop", mount="", app_class=ShopApp)
-
-        entries = ConfigurationHandler(JwtConfig).auth_entries()
-        assert [entry["name"] for entry in entries["jwt"]] == ["hmac", "rsa"]
-        assert entries["jwt"][0]["algorithm"] == "HS256"        # signature default
-        assert entries["jwt"][1]["public_key"] == "PUBKEY"
-
-    def test_no_credentials_section_arms_no_backend(self) -> None:
-        class BareConfig(AsgiConfigBuilder):
-            def main(self, root: Any) -> None:
-                root.configuration().applications().application(
-                    code="shop", mount="", app_class=ShopApp
-                )
-
-        assert ConfigurationHandler(BareConfig).auth_entries() is None
 
 
 class TestSession:
@@ -509,7 +444,7 @@ class TestDefaultRedirect:
 
 
 def storage_site_config(base_path: Path) -> type[AsgiConfigBuilder]:
-    """A site recipe with an ``idstore`` mount and the key the credential stores need."""
+    """A site recipe with an ``idstore`` mount and the key the ``_auth`` store needs."""
 
     class StorageSiteConfig(AsgiConfigBuilder):
         def setup(self, data: Any) -> None:
@@ -522,16 +457,14 @@ def storage_site_config(base_path: Path) -> type[AsgiConfigBuilder]:
             cfg.storage(
                 app=StorageManager, storage_key=Fernet.generate_key().decode()
             ).local(name="idstore", base_path=self.data["base_path"])
-            cfg.applications(default="shop").application(
-                code="shop", mount="", app_class=ShopApp
-            )
-            self.identity_section(cfg)
+            apps = cfg.applications(default="shop")
+            apps.application(code="shop", mount="", app_class=ShopApp)
+            self.auth_section(apps)
 
-        def identity_section(self, cfg: Any) -> None:
-            """Both identity stores on ``idstore``."""
-            auth = cfg.authentication()
-            auth.users(mount="idstore", prefix="users")
-            auth.tokens(mount="idstore", prefix="api_keys")
+        def auth_section(self, apps: Any) -> None:
+            """The ``_auth`` application with its store on ``idstore``."""
+            auth = apps.application(code="_auth", app_class=AuthApplicationBase)
+            auth.store(mount="idstore", prefix="auth")
 
     return StorageSiteConfig
 
@@ -572,68 +505,28 @@ class TestStorageSection:
         assert ConfigurationHandler(TwoAppConfig).storage_config() is None
 
 
-class TestIdentitySection:
-    """``authentication`` → the identity kwargs ``AuthMixin`` peels."""
+class TestAuthenticationSection:
+    """Authentication is configured under the ``_auth`` application, not the site dialect."""
 
-    def test_no_identity_configured_leaves_the_stores_unwired(self) -> None:
+    def test_no_auth_application_is_added_by_the_server(self) -> None:
         server = AsgiServer(config=TwoAppConfig)
-        assert server.user_store is None
-        assert server.api_key_store is None
+        assert "_auth" not in server.applications
 
-    def test_the_declared_stores_reach_the_server(self, tmp_path: Path) -> None:
+    def test_the_declared_store_reaches_the_auth_application(self, tmp_path: Path) -> None:
         server = AsgiServer(config=storage_site_config(tmp_path))
-        assert server.user_store is not None
-        assert server.api_key_store is not None
-        assert server.user_store.load_all() == []   # the server seeds nobody
+        store = server.applications["_auth"].store
+        assert isinstance(store, FileAuthStore)
+        assert (store.mount, store.prefix) == ("idstore", "auth")
+        assert store.user_list == []   # the server seeds nobody
 
-    def test_the_bootstrap_password_is_no_longer_a_word(self) -> None:
-        """#91: the server creates no user, so the recipe has nothing to say."""
-
-        class BootstrapConfig(AsgiConfigBuilder):
+    @pytest.mark.parametrize("section", ["authentication", "channels"])
+    def test_the_old_sections_are_no_longer_words(self, section: str) -> None:
+        class OldConfig(AsgiConfigBuilder):
             def main(self, root: Any) -> None:
-                root.configuration().authentication().admin_password("anything")
+                getattr(root.configuration(), section)()
 
-        with pytest.raises(AttributeError, match="admin_password"):
-            ConfigurationHandler(BootstrapConfig)
-
-    def test_a_second_users_element_is_rejected_by_the_grammar(self) -> None:
-        class DoubledConfig(AsgiConfigBuilder):
-            def main(self, root: Any) -> None:
-                auth = root.configuration().authentication()
-                auth.users(mount="one")
-                auth.users(mount="two")
-
-        with pytest.raises(ValueError):
-            ConfigurationHandler(DoubledConfig)
-
-
-class TestChannelsSection:
-    """``channels`` → the ``channels`` kwarg ``AuthMixin`` peels."""
-
-    def test_the_handler_reads_the_collection(self) -> None:
-        class ChannelsConfig(AsgiConfigBuilder):
-            def main(self, root: Any) -> None:
-                channels = root.configuration().channels()
-                channels.channel(name="mcp", authentication_route="/idp/check")
-                channels.channel(name="api", authentication_route="/_server/auth/authenticate")
-
-        assert ConfigurationHandler(ChannelsConfig).channels() == {
-            "mcp": {"authentication_route": "/idp/check"},
-            "api": {"authentication_route": "/_server/auth/authenticate"},
-        }
-
-    def test_no_section_reads_as_none(self) -> None:
-        assert ConfigurationHandler(TwoAppConfig).channels() is None
-
-    def test_a_second_channels_element_is_rejected_by_the_grammar(self) -> None:
-        class DoubledConfig(AsgiConfigBuilder):
-            def main(self, root: Any) -> None:
-                cfg = root.configuration()
-                cfg.channels()
-                cfg.channels()
-
-        with pytest.raises(ValueError):
-            ConfigurationHandler(DoubledConfig)
+        with pytest.raises(AttributeError, match=section):
+            ConfigurationHandler(OldConfig)
 
 
 class TestTasksConfig:
@@ -733,12 +626,12 @@ class TestReadStack:
     def test_signature_default_is_resolved_at_read_time(self) -> None:
         class ProviderConfig(AsgiConfigBuilder):
             def main(self, root: Any) -> None:
-                root.configuration().authentication().credentials().jwt(
-                    name="main", secret="s3cret"
-                )
+                auth = root.configuration().applications().application(
+                    code="_auth", app_class=AuthApplicationBase)
+                auth.oidc().provider(code="main", issuer="https://idp.example.com")
 
         handler = ConfigurationHandler(ProviderConfig)
-        assert handler("authentication.credentials.jwt_0.algorithm") == "HS256"
+        assert handler("applications._auth.oidc.main.scopes") == "openid email profile"
 
     def test_call_site_default_applies_to_an_unwritten_value(self) -> None:
         handler = ConfigurationHandler(TwoAppConfig)

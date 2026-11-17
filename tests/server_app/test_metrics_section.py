@@ -32,7 +32,7 @@ from prometheus_client.parser import text_string_to_metric_families
 
 from kajenn import AsgiServer, RoutedApplication
 from tests.conftest import start_server
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import add_user, auth_application, issue_token
 
 SERVER_FAMILIES = {
     "kajenn_build_info",
@@ -74,14 +74,15 @@ class Silent(RoutedApplication):
 
 async def metrics_server(*applications: Any) -> AsgiServer:
     return await start_server(AsgiServer(
-        applications=list(applications), tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), *applications]))
 
 
 async def scrape(server: AsgiServer, tags: list[str] | None = None) -> dict[str, Any]:
     """GET /_server/metrics, with an API key holding ``tags`` when given."""
     headers = [(b"host", b"site.example")]
     if tags is not None:
-        key = server.api_key_store.issue("prometheus", tags)
+        add_user(server, "prometheus", tags, system=True)
+        key = issue_token(server, "prometheus")
         headers.append((b"authorization", f"Bearer {key}".encode()))
     scope = {
         "type": "http", "method": "GET", "path": "/_server/metrics",
@@ -253,9 +254,9 @@ async def test_an_app_label_set_by_the_application_is_overwritten() -> None:
 RECIPE = '''
 from prometheus_client import CollectorRegistry, Gauge, generate_latest
 
-from kajenn import RoutedApplication
+from kajenn import AuthApplicationBase, RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import MemoryAuthStore
 
 
 class Billing(RoutedApplication):
@@ -279,8 +280,9 @@ class Failing(RoutedApplication):
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
-        cfg.authentication().tokens(store_class=MemoryApiKeyStore)
         apps = cfg.applications()
+        apps.application(code="_auth", app_class=AuthApplicationBase).store(
+            store_class=MemoryAuthStore)
         apps.application(code="billing", app_class=Billing, spawner="subprocess",
                          request_timeout=5)
         apps.application(code="failing", app_class=Failing, spawner="subprocess",

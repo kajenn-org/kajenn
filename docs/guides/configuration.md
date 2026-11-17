@@ -77,7 +77,7 @@ explains itself**: the grammar documents what CAN be written, a recipe docstring
 documents what THIS instance chose and why. `main` reads as a table of contents.
 
 Every section is a singleton, so its label is its tag and every path below it is
-stable and hand-writable: `server.host`, `authentication.credentials`,
+stable and hand-writable: `server.host`, `applications._auth.store`,
 `applications.<code>.parameters.<name>`.
 
 ## Values that come from outside: resolvers in place
@@ -340,25 +340,21 @@ One line each; the deep dives live in their own guides.
   (`origins`, `max_concurrent`), `session` (its `ttl`) and `tasks` (see [Background tasks](tasks.md)).
 - **`middleware`** — one `{name: bool | dict}` switch per middleware; a dict
   enables it and becomes its options (see [Middleware](middleware.md)).
-- **`authentication`** — the whole identity surface in one section:
-  the `users`/`tokens` stores, the `login` lockout policy, the
-  `oidc` providers and the header `credentials`. The grammar of each is in
-  [Authentication](authentication.md). `cache_ttl` sets the seconds a
-  verified credential stays cached.
-- **`channels`** — one `channel(name, authentication_route)` per face
-  (`rest`, `mcp`, `wsx`, ...): the route verifying a credential presented on
-  it. A channel not listed uses `/_server/auth/authenticate`.
 - **`storage`** — the mount point of [genro-storage](https://pypi.org/project/genro-storage/)'s
   own grammar: `storage_key` plus one child per mount, written in genro-storage's
   words (see [The storage section](#the-storage-section)).
 - **`applications`** — the app collection keyed by `code` (an identifier:
   letters, digits, underscore, not empty; the grammar refuses anything else), with the optional
   `default` naming who `/` redirects to. `application(code="_server", ...)`
-  customises the management application every server mounts — its `login`
-  policy, its `oidc` providers, or a `ServerApplication` subclass as
-  `app_class` — and never declares it: a recipe naming no `_server` still has
-  one. Without `app_class` it means `ServerApplication`; a class that does not
-  subclass it is a `ValueError` at boot.
+  customises the management application every server mounts — a
+  `ServerApplication` subclass as `app_class` — and never declares it: a
+  recipe naming no `_server` still has one. Without `app_class` it means
+  `ServerApplication`; a class that does not subclass it is a `ValueError` at
+  boot. `application(code="_auth", app_class=AuthApplicationBase)` mounts the
+  authentication application: the whole identity surface, with its `cache_ttl`
+  attribute and its own words `store`, `login`, `oidc` and `self_registration`
+  (see [Authentication](authentication.md)). A recipe without it mounts no
+  authentication.
 - **`databases`** — the default `handler_class` (a `DbHandlerBase` subclass)
   and one `database(code=...)` per database, which may name its own
   `handler_class`; every other keyword is a param handed to the handler's
@@ -398,9 +394,9 @@ in, on the folder the [site home](cli.md#the-site-home) names, and with no home
 declared on the folder of `site:`. Both must already exist — a recipe naming a
 missing directory is a boot error.
 
-`site:` is where the server's own state lands, all in one tree: `site:users` and
-`site:api_keys` (written `encrypted=True`), `site:tasks` and `site:batches`
-(plain). Sessions are not on `site:`: they live in a `MemorySessionStore`, and
+`site:` is where the server's own state lands, all in one tree: `site:auth`,
+the records of `FileAuthStore` (written `encrypted=True`), `site:tasks` and
+`site:batches` (plain). Sessions are not on `site:`: they live in a `MemorySessionStore`, and
 a pickle snapshot is written on the session's `save_path` when one is set. Encryption is declared per **write**, not per mount, and
 what lands on disk is self-describing — an envelope whose first line starts
 `#GNRE1:` — so reads declare nothing.
@@ -429,7 +425,7 @@ the earlier examples, which declare alternative recipe classes. The storage
 directory and environment prerequisites are described below.
 
 ```python
-from kajenn import AsgiServer, RoutedApplication
+from kajenn import AsgiServer, AuthApplicationBase, RoutedApplication
 from kajenn.application import ApplicationGrammar
 from kajenn.config import AsgiConfigBuilder
 from genro_bag.resolvers import EnvResolver
@@ -457,7 +453,6 @@ class ServerConfiguration(AsgiConfigBuilder):
         cfg = root.configuration()
         self.server_section(cfg)
         cfg.middleware(cors=True, logging=True)
-        self.authentication_section(cfg)
         self.storage_section(cfg)
         self.applications_section(cfg)
 
@@ -476,17 +471,18 @@ class ServerConfiguration(AsgiConfigBuilder):
             storage_key=EnvResolver("SHOP_STORAGE_KEY"),
         ).local(name="site", base_path="/srv/shop")
 
-    def authentication_section(self, cfg):
-        """The identity store: where the records live, and who keeps them."""
-        cfg.authentication().users(mount="site", prefix="users")
-
     def applications_section(self, cfg):
-        """One app on the site root, declaring its own catalog block."""
-        app = cfg.applications(default="shop").application(
-            code="shop", mount="", app_class=Shop
-        )
+        """One app on the site root, declaring its own catalog block, and _auth."""
+        apps = cfg.applications(default="shop")
+        app = apps.application(code="shop", mount="", app_class=Shop)
         app.parameters(currency="EUR")
         app.catalog(title="Outlet")
+        self.auth_section(apps)
+
+    def auth_section(self, apps):
+        """The authentication application: where its records live, and who keeps them."""
+        auth = apps.application(code="_auth", app_class=AuthApplicationBase)
+        auth.store(mount="site", prefix="auth")
 ```
 
 ## How to verify it
@@ -526,15 +522,16 @@ True
 ## Gotchas
 
 - **A secret is a resolver, not a string.** The secret-bearing attributes
-  (`storage_key`, `client_secret`, `password`, `token`, `secret`) accept a
+  (`storage_key`, `client_secret`) accept a
   literal, and should not get one — a recipe is code you commit.
 - **`dtype=` or you get a string.** `port=EnvResolver("SHOP_PORT")` without
   `dtype="L"` hands the server `"8123"`.
-- **The identity store needs a key, not just somewhere to write.** Its records
-  land under `site:users` written `encrypted=True`, so a recipe declaring
-  `authentication.users(...)` and no `storage_key` fails at the first write with
+- **The identity store needs a key, not just somewhere to write.** The records
+  of `FileAuthStore` land under `site:auth` written `encrypted=True`, so a
+  recipe mounting `_auth` with no `storage_key` fails at the first write with
   genro-storage's `Cannot encrypt for encryption domain '': it requires
-  installed key material`.
+  installed key material`. At startup `_auth` logs a warning and writes
+  nothing; the first write gets the error.
 - **`storage_key` lives on `storage`, not on `server`.** It is meaningless
   without the mounts it unlocks; a recipe still passing it to `cfg.server(...)`
   is a boot error naming the attribute.

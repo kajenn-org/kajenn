@@ -23,10 +23,11 @@ belong to the server instance, never to the module-level ``REGISTRY``.
 
 Who counts what:
 
-- credential checks: ``AuthSection.authenticate`` (the verification a cache
+- credential checks: ``AuthApplicationBase.authenticate`` (the verification a cache
   miss of ``server.authenticate_credential`` reaches, for in-process and
-  spawned applications alike), ``ServerApplication.login`` (``password``) and
+  spawned applications alike), ``AuthApplicationBase.login`` (``password``) and
   the OIDC ``callback`` (``oidc``). A cache hit is not a check.
+  The caller (``_auth``) supplies the scheme label.
 - WSX messages: ``WsxConnection`` for every message it hands to the demux; the
   ping it answers inline is not a message of an application.
 - websocket connections: ``BaseServer.on_websocket`` for every connection it
@@ -51,50 +52,7 @@ from __future__ import annotations
 from prometheus_client import Counter, Gauge, Histogram
 from prometheus_client.metrics_core import Metric
 
-from .auth.api_key_store import API_KEY_PREFIX
-
 __all__: list[str] = []
-
-#: The ``scheme`` labels of an accepted check: the backends ``AuthCore`` names.
-BACKEND_SCHEMES = frozenset({"basic", "bearer", "api_key", "jwt"})
-
-#: The ``scheme`` labels a refused check takes from its header word.
-HEADER_SCHEMES = frozenset({"basic", "bearer"})
-
-OTHER_SCHEME = "other"
-API_KEY_SCHEME = "api_key"
-JWT_SCHEME = "jwt"
-JWT_PARTS = 3
-
-
-def accepted_scheme(backend: str) -> str:
-    """The ``scheme`` label of a check ``AuthCore`` accepted with ``backend``.
-
-    ``jwt:<name>`` (a named verifier) is ``jwt``; a backend outside the set is
-    ``other``.
-    """
-    scheme = backend.partition(":")[0]
-    return scheme if scheme in BACKEND_SCHEMES else OTHER_SCHEME
-
-
-def refused_scheme(credential: str) -> str:
-    """The ``scheme`` label of a refused ``Authorization`` value, by its form.
-
-    A bearer token starting with ``gak_`` is ``api_key``; a bearer token of
-    three dot-separated parts is ``jwt``; otherwise the header word
-    lowercased when it is ``basic`` or ``bearer``; anything else — a value
-    with no space included — is ``other``.
-    """
-    word, separator, token = credential.partition(" ")
-    if not separator:
-        return OTHER_SCHEME
-    scheme = word.lower()
-    if scheme == "bearer":
-        if token.startswith(API_KEY_PREFIX):
-            return API_KEY_SCHEME
-        if len(token.split(".")) == JWT_PARTS:
-            return JWT_SCHEME
-    return scheme if scheme in HEADER_SCHEMES else OTHER_SCHEME
 
 
 class EventMetrics:
@@ -144,7 +102,7 @@ class EventMetrics:
             registry=None)
 
     def record_credential_check(self, scheme: str, outcome: str) -> None:
-        """Count one verification of ``scheme`` that ended ``accepted`` or ``refused``."""
+        """Count one verification with the caller-supplied ``scheme`` and outcome."""
         self._credential_checks.labels(scheme, outcome).inc()
 
     def record_wsx_message(self, application: str, route: str, status: int,

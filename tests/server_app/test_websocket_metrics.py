@@ -33,7 +33,7 @@ from kajenn import AsgiServer, RoutedApplication
 from kajenn.wsx import WsxEnvelope
 from tests.conftest import read_samples, running, start_server, value
 from tests.core.test_websocket_raw_seam import EchoSocketApp
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import auth_application
 
 MESSAGES = "kajenn_wsx_messages_total"
 DURATION_COUNT = "kajenn_wsx_message_duration_seconds_count"
@@ -90,7 +90,7 @@ class Socket:
 
 async def desk_server() -> AsgiServer:
     return await start_server(AsgiServer(
-        applications=[(Desk, {"code": "desk"})], tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), (Desk, {"code": "desk"})]))
 
 
 def counted_messages(samples: list[Any]) -> list[tuple[str, str, str, float]]:
@@ -117,8 +117,7 @@ async def test_messages_to_an_in_process_application_are_counted() -> None:
 
 async def test_a_message_to_a_switched_off_application_counts_without_application() -> None:
     server = await start_server(AsgiServer(
-        applications=[(Desk, {"code": "desk"}), (Desk, {"code": "other"})],
-        tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), (Desk, {"code": "desk"}), (Desk, {"code": "other"})]))
     server.disable_application("other")
     socket = Socket(server, "/desk/_wsx")
     await socket.open()
@@ -144,8 +143,7 @@ async def test_a_wsx_connection_is_opened_and_live_until_it_closes() -> None:
 
 async def test_a_raw_connection_counts_as_raw() -> None:
     server = await start_server(AsgiServer(
-        applications=[(EchoSocketApp, {"code": "raw"})],
-        tokens={"store_class": MemoryApiKeyStore}))
+        applications=[auth_application(), (EchoSocketApp, {"code": "raw"})]))
     inbox: asyncio.Queue = asyncio.Queue()
     echoed = asyncio.Event()
 
@@ -170,9 +168,9 @@ async def test_a_raw_connection_counts_as_raw() -> None:
 RECIPE = '''
 from genro_routes import route
 
-from kajenn import RoutedApplication
+from kajenn import AuthApplicationBase, RoutedApplication
 from kajenn.config.templates import CONFIGURATION_TEMPLATES
-from tests.storage_support import MemoryApiKeyStore
+from tests.storage_support import MemoryAuthStore
 
 
 class Desk(RoutedApplication):
@@ -200,8 +198,9 @@ class Pipe(RoutedApplication):
 
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
-        cfg.authentication().tokens(store_class=MemoryApiKeyStore)
         apps = cfg.applications()
+        auth = apps.application(code="_auth", app_class=AuthApplicationBase)
+        auth.store(store_class=MemoryAuthStore)
         apps.application(code="desk", app_class=Desk)
         apps.application(code="billing", app_class=Billing,
                          spawner="subprocess", request_timeout=5)
