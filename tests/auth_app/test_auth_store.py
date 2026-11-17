@@ -161,14 +161,14 @@ class TestLoginFailures:
         assert store.get_login_failures("ns/alice:x") is None
         assert store.delete_login_failures("ns/alice:x") is False
 
-    def test_user_writes_and_deletion_leave_failures_unchanged(self, store_class, storage) -> None:
+    def test_user_writes_leave_failures_and_deletion_removes_them(self, store_class, storage) -> None:
         store = store_class(storage)
         record = {"identity": "alice", "failed_attempts": 2, "last_failed_at": 123.5}
         store.save_login_failures(record)
         store.save_user(_user(store))
         assert store.get_login_failures("alice") == record
         assert store.delete_user("alice") is True
-        assert store.get_login_failures("alice") == record
+        assert store.get_login_failures("alice") is None
 
 
 @pytest.mark.parametrize("store_class", [FileAuthStore, MemoryAuthStore])

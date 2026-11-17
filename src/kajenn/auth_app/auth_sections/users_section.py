@@ -194,7 +194,6 @@ class UsersSection(RoutingClass):
     async def delete(self, identity: str = "") -> dict[str, Any]:
         """Remove a user, its tokens and its login failures; the credential cache is emptied."""
         deleted = self.store.delete_user(identity)
-        self.store.delete_login_failures(identity)
         await self.application.remove_temporary_admin()
         await self.application.server.forget_credentials_everywhere()
         return {"identity": identity, "deleted": deleted}
