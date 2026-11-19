@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<proposal id="proposal/update-handover-and-sessions" title="Update handover and durable sessions" date="2026-11-19" lang="en" author="Giovanni Porcari" status="draft">
+
+  <problem>
+    <p>An update of a kajenn application replaces its process. Everything the process keeps in memory is lost at that moment: the sessions, so every user signs in again, and the state shared by the pages, for example the chat of a meeting room.</p>
+    <p>The application this came from is Meetlot (kajenn-webrtc): one Kubernetes Deployment with one replica and <c>strategy: Recreate</c>. Each deploy signs everybody out and closes the PageStore WebSocket of every open page.</p>
+    <p>The same application needs session lifetimes that depend on where the user signed in: a desktop app should keep its user signed in for months, a browser on a shared computer for a couple of hours.</p>
+  </problem>
+
+  <current>
+    <section title="kajenn today">
+      <fact source="src/kajenn/request_registry.py:15-34" method="read" verified="2026-11-19"><c>RequestRegistry</c> registers every operation on entry and drops it on exit: an http dispatch, a WSX message, a kbus frame, a task. It counts operations, not connections.</fact>
+      <fact source="src/kajenn/request_registry.py:191" method="read" verified="2026-11-19"><c>await_drain(timeout)</c> waits for the in-flight set to empty and returns how many operations are still open when the timeout runs out.</fact>
+      <fact source="src/kajenn/server.py:765-772" method="read" verified="2026-11-19">While the server state is not <c>RUNNING</c>, a new http call gets <c>503 Server restarting</c> with <c>Retry-After: 5</c>.</fact>
+      <fact source="src/kajenn/lifespan.py:225-251" method="read" verified="2026-11-19">Shutdown turns the state, drains the registry for at most <c>SHUTDOWN_DRAIN_TIMEOUT_SECONDS</c> (10 s), then runs the <c>on_shutdown</c> hooks and closes the databases.</fact>
+      <fact source="src/kajenn/websocket.py:301" method="read" verified="2026-11-19"><c>WebSocketRegistry</c> keeps the live sockets and the socket each page speaks on, and already accepts a page that reconnects on a new socket before the old one closes.</fact>
+      <fact source="src/kajenn/session/session.py:134-138" method="read" verified="2026-11-19">A session expires after <c>ttl</c> seconds without requests: every request refreshes <c>last_access</c>.</fact>
+      <fact source="src/kajenn/session/store.py:174-196" method="read" verified="2026-11-19"><c>MemorySessionStore.save_snapshot</c> and <c>load_snapshot</c> write and read one pickle of the session objects through <c>pathlib.Path</c>, outside the storage nodes.</fact>
+      <fact source="src/kajenn/__main__.py:336" method="read" verified="2026-11-19">Only <c>kajenn serve &lt;name&gt;</c> arms the snapshot; a server built directly with <c>AsgiServer</c> has none.</fact>
+    </section>
+  </current>
+
+  <solution>
+    <section title="1. One process per application">
+      <rule level="must" why="A kajenn process keeps state in memory; Kubernetes replicas would split it.">A kajenn application runs as one Kubernetes replica. Several processes are kajenn-orchestra's job.</rule>
+    </section>
+
+    <section title="2. Every file goes through a storage node">
+      <rule level="must" why="The deployment chooses where the data lives — pod disk, persistent volume, S3 — and the write can be encrypted.">Every read and write of a file goes through a genro-storage node of the server's <c>StorageManager</c>. A direct <c>pathlib</c> access is a bug.</rule>
+    </section>
+
+    <section title="3. The update is a handover">
+      <list ordered="true">
+        <item>The new process starts and gets ready, without traffic.</item>
+        <item>The old process turns its state: a new call gets <c>503</c> with <c>Retry-After</c>.</item>
+        <item>The old process drains its registry, with a time limit. At the limit the operations still open end with an explicit error.</item>
+        <item>The old process writes the snapshot of its durable state.</item>
+        <item>The new process loads the snapshot.</item>
+        <item>The route of Traefik moves from the old process to the new one.</item>
+        <item>The old process closes its WebSockets with code <c>1012 Service Restart</c> and stops.</item>
+      </list>
+      <p>The old process stays alive with its state until the new one is ready and verified. If the new one fails, the route does not move and the old process returns to <c>RUNNING</c>.</p>
+      <p>kajenn-orchestra drives the handover: it knows both processes and the storage.</p>
+      <diagram kind="mermaid" title="Handover between the old and the new process"><![CDATA[
+sequenceDiagram
+    participant O as Orchestra
+    participant Old as Old process
+    participant New as New process
+    participant St as Storage node
+    participant T as Traefik
+    O->>New: start, no traffic
+    New-->>O: ready
+    O->>Old: leave
+    Old->>Old: state not RUNNING, new calls get 503
+    Old->>Old: drain registry (bounded)
+    Old->>St: write snapshot (TYTX, encrypted)
+    O->>New: load snapshot
+    New->>St: read snapshot
+    New-->>O: loaded and verified
+    O->>T: route to New
+    Old->>Old: close WebSockets with 1012, stop
+]]></diagram>
+    </section>
+
+    <section title="4. Calls during the handover">
+      <p>A call that arrives while the old process is leaving is refused with <c>503</c> and <c>Retry-After</c>, as kajenn does today. The old process keeps no call waiting and never proxies.</p>
+      <rule level="must">The Gramlot client transport repeats a call refused with <c>503</c> after <c>Retry-After</c>. One place, valid for every page.</rule>
+    </section>
+
+    <section title="5. WebSockets are rebuilt, not moved">
+      <p>An open connection cannot move between processes. At the switch the old process closes it with <c>1012</c>; the client reconnects with the same <c>pageId</c>; the new process rebuilds the page state from the durable state.</p>
+      <rule level="must-not" why="It keeps the snapshot small and independent of the pages' code.">Put the volatile state of a single page in the snapshot.</rule>
+    </section>
+
+    <section title="6. The snapshot">
+      <list>
+        <item>Content: the durable state only — the sessions and the state shared by the pages of an application (for example the state of a meeting room).</item>
+        <item>Format: plain data, lists and dicts, serialized as TYTX. TYTX keeps dates, decimals and bytes that plain JSON loses.</item>
+        <item>Place: a storage node, written encrypted. The write is atomic: a temporary node, then a rename.</item>
+      </list>
+      <rule level="must-not" why="Pickled objects break when a class changes between the old and the new release, and loading a tampered pickle runs code.">Write pickled objects in a snapshot.</rule>
+      <rule level="must" why="The old and the new process run different releases.">A reader of the snapshot tolerates missing keys (default value) and ignores the keys it does not know.</rule>
+      <p>The snapshot is armed by the configuration of the site, not by the command that starts the server.</p>
+    </section>
+
+    <section title="7. Session lifetimes">
+      <table title="Lifetime without requests, renewed by every request">
+        <row head="true"><cell>Where the user signed in</cell><cell>Lifetime</cell></row>
+        <row><cell>Desktop app</cell><cell>90 days</cell></row>
+        <row><cell>Browser, with "Remember me"</cell><cell>12 hours</cell></row>
+        <row><cell>Browser, without "Remember me"</cell><cell>2 hours</cell></row>
+      </table>
+      <list>
+        <item>The login method sets the lifetime of its session when it attaches the identity, through a public API of the session.</item>
+        <item>The cookie lasts longer than any session: the server is the only judge of expiry.</item>
+        <item>An administrator can close the sessions of a user.</item>
+        <item>The groups of the identity provider are read again periodically, not only at sign-in: a user removed from an administrators' group loses the rights within that period, not at the end of the session.</item>
+      </list>
+    </section>
+  </solution>
+
+  <decisions>
+    <decision id="d-refuse" status="decided">
+      <question>What happens to a call that arrives during the handover?</question>
+      <option id="d-refuse-503" title="Refused with 503 and Retry-After, repeated by the client"/>
+      <option id="d-refuse-hold" title="Held by the old process and forwarded to the new one"/>
+      <choice option="d-refuse-503" by="GP" date="2026-11-19">No call stays hanging in the old process; kajenn already answers so.</choice>
+    </decision>
+    <decision id="d-format" status="decided">
+      <question>Which format does the snapshot use?</question>
+      <option id="d-format-tytx" title="Plain data in TYTX, encrypted on a storage node"/>
+      <option id="d-format-pickle" title="Pickled session objects"/>
+      <choice option="d-format-tytx" by="GP" date="2026-11-19">No class versions between releases, types kept, no code run when reading.</choice>
+    </decision>
+    <decision id="d-replicas" status="decided">
+      <question>Who runs several processes of one application?</question>
+      <option id="d-replicas-orchestra" title="kajenn-orchestra"/>
+      <option id="d-replicas-kube" title="Kubernetes replicas"/>
+      <choice option="d-replicas-orchestra" by="GP" date="2026-11-19">Kubernetes replicas would split the state a kajenn process keeps in memory.</choice>
+    </decision>
+    <decision id="d-drain-limit" status="open">
+      <question>How long does the old process wait for the open operations, and what does it answer them at the limit?</question>
+    </decision>
+    <decision id="d-groups-period" status="open">
+      <question>How often are the groups of the identity provider read again for a long session?</question>
+    </decision>
+  </decisions>
+
+  <consequences>
+    <list>
+      <item>An update signs nobody out and leaves no gap in the answers; open pages reconnect.</item>
+      <item>A crash still loses what changed after the last snapshot: accepted.</item>
+      <item>The deployment chooses where the snapshot lives without touching the application.</item>
+      <item>The Gramlot client gains two behaviours used by every page: repeat on <c>503</c>, reconnect on <c>1012</c>.</item>
+    </list>
+  </consequences>
+</proposal>
