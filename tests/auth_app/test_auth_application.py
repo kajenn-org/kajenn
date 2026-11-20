@@ -112,9 +112,12 @@ async def drive(
     body: dict[str, Any] | None = None,
     cookie: str | None = None,
     authorization: str | None = None,
+    origin: str | None = None,
 ) -> list[Message]:
     """Drive one request through ``server`` at the ASGI level (JSON body when given)."""
     headers: list[tuple[bytes, bytes]] = []
+    if origin is not None:
+        headers.append((b"origin", origin.encode()))
     raw = b""
     if body is not None:
         headers.append((b"content-type", b"application/json"))
@@ -1278,3 +1281,51 @@ class TestKeycloakOnly:
         await start_server(server)
         seed(server)
         assert "session_id" not in await login(server, "alice", "wonder")
+
+
+PUBLIC_URL = "https://shop.example.com"
+
+
+async def started_public(tmp_path: Path) -> AsgiServer:
+    """A started, seeded server with ``external_url`` = ``PUBLIC_URL``."""
+    server = AsgiServer(
+        applications=[(AuthApplicationBase, {}), (BaseApplication, {"mount": ""})],
+        storage=site_mounts(tmp_path),
+        storage_key=Fernet.generate_key().decode(),
+        external_url=PUBLIC_URL,
+    )
+    await start_server(server)
+    seed(server)
+    return server
+
+
+class TestSignOut:
+    """Esci: one POST closes the session of the request, for every application of the server."""
+
+    async def test_a_logout_without_session_id_closes_the_session_of_the_request(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_public(tmp_path)
+        answer = await login(server, "alice", "wonder")
+        cookie = f"session_id={answer['session_id']}"
+        sent = await drive(server, "/_auth/logout", "POST", cookie=cookie, origin=PUBLIC_URL)
+        assert payload(sent) == {"status": "ok"}
+        assert server.session_store.get(answer["session_id"]) is None
+
+    async def test_an_origin_other_than_the_server_is_refused(self, tmp_path: Path) -> None:
+        server = await started_public(tmp_path)
+        answer = await login(server, "alice", "wonder")
+        cookie = f"session_id={answer['session_id']}"
+        sent = await drive(
+            server, "/_auth/logout", "POST", cookie=cookie, origin="https://evil.example"
+        )
+        assert status(sent) == 403
+        assert server.session_store.get(answer["session_id"]) is not None
+
+    async def test_a_get_is_refused(self, tmp_path: Path) -> None:
+        server = await started_public(tmp_path)
+        answer = await login(server, "alice", "wonder")
+        cookie = f"session_id={answer['session_id']}"
+        sent = await drive(server, "/_auth/logout", "GET", cookie=cookie)
+        assert status(sent) == 405
+        assert server.session_store.get(answer["session_id"]) is not None

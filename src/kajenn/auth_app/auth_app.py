@@ -101,7 +101,12 @@ Routes called by a client:
   of the user. A refusal answers ``{"error": ...}`` and attaches nothing:
   missing identity or password, wrong credentials, an active lockout, a group
   the user does not belong to;
-- ``logout(session_id)`` — deletes the session; answers ``{"status": "ok"}``;
+- ``logout(session_id)`` — POST only. Deletes ``session_id`` when given,
+  else the session of the request itself ("Esci": one session per browser
+  and server, so every application of the server is signed out); answers
+  ``{"status": "ok"}``. A request whose ``Origin`` header differs from the
+  server's ``external_url`` is refused with 403. The login at the external
+  provider stays open;
 - ``login_methods`` — public: ``{"methods": [descriptor, ...]}`` from the
   registry of login methods: ``PasswordMethod`` first, then one ``OidcMethod``
   per declared provider. On a server without ``external_url`` the OIDC
@@ -900,13 +905,22 @@ class AuthApplicationBase(RoutedApplication):
             "groups": list(user.get("groups", [])),
         }
 
-    @route(media_type="application/json")
-    def logout(self, session_id: str = "") -> dict[str, Any]:
-        """Delete a session; no error when it is unknown.
+    @route(media_type="application/json", openapi_method="post")
+    def logout(self, session_id: str = "", _request=None) -> dict[str, Any]:
+        """Delete ``session_id``, else the session of the request; no error when there is none.
+
+        Raises:
+            HTTPForbidden: An ``Origin`` header other than ``external_url``.
 
         Note:
             Route: POST /_auth/logout
         """
+        origin = _request.headers.get("origin") if _request is not None else None
+        external_url = self.server.external_url
+        if origin and external_url and origin.rstrip("/") != external_url.rstrip("/"):
+            raise HTTPForbidden("logout from another origin")
+        if not session_id and _request is not None and _request.session is not None:
+            session_id = _request.session.id
         if session_id:
             self.server.session_store.delete(session_id)
         return {"status": "ok"}

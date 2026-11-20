@@ -229,7 +229,11 @@ Called by a client:
   attaches nothing: a missing identity or password, wrong credentials, an
   active lockout, a group the user does not belong to.
 - `POST /_auth/logout?session_id=...` — deletes that session; answers
-  `{"status": "ok"}`. Without `session_id` no session is deleted.
+  `{"status": "ok"}`. Without `session_id` it deletes the session of the
+  request itself: a browser signs out of every application of the server at
+  once. Only `POST` is answered (another method gets 405), and a request whose
+  `Origin` header differs from the server's `external_url` gets 403. The login
+  at an external provider (Keycloak) stays open.
 - `GET /_auth/login_methods` — public: `{"methods": [descriptor, ...]}`. The
   password method comes first (`{"id": "password", "kind": "form", "label",
   "action": "/_auth/login"}`), then one `redirect` method per OIDC provider.
