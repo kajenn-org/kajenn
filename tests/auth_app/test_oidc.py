@@ -1099,3 +1099,69 @@ class TestPersonData:
             send,
         )
         assert payload(sent)["firstname"] == "Alice"
+
+
+ORIGINAL_STATE = "A" * 43
+
+
+class TestDesktopLogin:
+    """A state ``desktop.<port>.<state>`` sends the answer of the provider back to the desktop app."""
+
+    async def test_the_code_goes_back_to_the_app_on_the_loopback(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        sent = await drive(server, f"{CALLBACK}?state=desktop.51001.{ORIGINAL_STATE}&code=probe")
+        assert status(sent) == 302
+        assert location(sent) == (
+            f"http://127.0.0.1:51001/oidc/callback?state={ORIGINAL_STATE}&code=probe"
+        )
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        headers = dict(start["headers"])
+        assert headers[b"cache-control"] == b"no-store"
+        assert headers[b"referrer-policy"] == b"no-referrer"
+        browser = headers[b"set-cookie"].decode().split(";")[0]
+        assert avatar_of(server, browser) is None
+        assert FakeAsyncClient.posted == []
+
+    async def test_an_error_of_the_provider_goes_back_to_the_app(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        sent = await drive(
+            server, f"{CALLBACK}?state=desktop.51001.{ORIGINAL_STATE}&error=access_denied"
+        )
+        assert location(sent) == (
+            f"http://127.0.0.1:51001/oidc/callback?state={ORIGINAL_STATE}&error=access_denied"
+        )
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            f"desktop.80.{ORIGINAL_STATE}",
+            f"desktop.70000.{ORIGINAL_STATE}",
+            f"desktop.port.{ORIGINAL_STATE}",
+            "desktop.51001.short",
+            f"desktop.51001.{'A' * 42}!",
+        ],
+    )
+    async def test_a_malformed_desktop_state_answers_400(self, tmp_path: Path, state: str) -> None:
+        server = await started(tmp_path)
+        sent = await drive(server, f"{CALLBACK}?state={state}&code=probe")
+        assert status(sent) == 400
+
+    async def test_a_desktop_state_without_code_or_error_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        sent = await drive(server, f"{CALLBACK}?state=desktop.51001.{ORIGINAL_STATE}")
+        assert status(sent) == 400
+
+    async def test_the_webview_completes_the_login_with_the_relayed_code(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        webview, state = await begin_flow(server)
+        relayed = await drive(server, f"{CALLBACK}?state=desktop.51001.{state}&code=auth-code")
+        back = parse_qs(urlparse(location(relayed)).query)
+        answer = await drive(
+            server,
+            f"{CALLBACK}?state={back['state'][0]}&code={back['code'][0]}",
+            cookie=webview,
+        )
+        assert status(answer) == 302
+        assert avatar_of(server, webview).identity == "alice"

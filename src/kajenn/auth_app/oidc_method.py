@@ -99,6 +99,24 @@ Answers of the callback:
   taken, a status that does not authenticate, a system user. Nothing is
   attached.
 
+Desktop login. A desktop app cannot finish the login inside its webview: it
+lets the webview run ``start`` (the session, the PKCE verifier and the nonce
+stay in the webview's session), stops the navigation to the provider, listens
+on ``127.0.0.1`` on a free port and opens the same authorization URL in the
+system browser with the state rewritten as ``desktop.<port>.<state>``. When
+the provider sends the system browser to the callback with such a state, the
+callback checks the port (1024-65535) and the original state (43 characters of
+``secrets.token_urlsafe(32)``) and answers 302 to
+``http://127.0.0.1:<port>/oidc/callback`` with the original ``state`` and the
+``code`` (or the provider's ``error``), with ``Cache-Control: no-store`` and
+``Referrer-Policy: no-referrer``. It touches no session and exchanges nothing.
+The app then sends its webview to the callback with the original state and
+the code, and the login completes in the webview's session. The system browser
+never receives a session; the code is useless without the verifier. A
+malformed desktop state, or one without ``code`` and ``error``, answers 400.
+kajenn adds nothing to the authorization URL: the app recognises the
+provider's authorization endpoint by its own configuration.
+
 ``descriptor()`` is the public ``login_methods`` entry: ``id``, ``kind``,
 ``label`` and the relative ``url`` of ``start``; never the client id, the
 issuer or the secret.
@@ -109,6 +127,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
+import re
 import secrets
 from typing import Any
 from urllib.parse import urlencode
@@ -127,6 +146,9 @@ __all__ = ["OidcMethod"]
 
 DEFAULT_SCOPES = "openid email profile"
 FLOW_KEYS = ("state", "verifier", "nonce", "next", "app")
+DESKTOP_STATE = re.compile(r"desktop\.([0-9]{4,5})\.([A-Za-z0-9_-]{43})")
+DESKTOP_CALLBACK_PATH = "/oidc/callback"
+DESKTOP_HEADERS = [(b"cache-control", b"no-store"), (b"referrer-policy", b"no-referrer")]
 
 
 class OidcMethod(AuthMethod):
@@ -263,6 +285,8 @@ class OidcMethod(AuthMethod):
         Note:
             Route: GET /_auth/oidc:<code>/callback
         """
+        if state.startswith("desktop."):
+            raise self.desktop_redirect(state, code, error)
         metrics = self.application.server.event_metrics
         try:
             if error:
@@ -297,6 +321,27 @@ class OidcMethod(AuthMethod):
             session.data.pop(f"oidc.{self.method_id}.{suffix}", None)
         session.mark_dirty()
         return next_target
+
+    def desktop_redirect(self, state: str, code: str, error: str) -> Redirect:
+        """The redirect that sends the provider's answer back to a desktop app on ``127.0.0.1``.
+
+        Raises:
+            HTTPBadRequest: A malformed desktop state, or neither ``code`` nor ``error``.
+        """
+        match = DESKTOP_STATE.fullmatch(state)
+        if match is None or not 1024 <= int(match.group(1)) <= 65535:
+            raise HTTPBadRequest("Invalid desktop login state")
+        port, original = match.groups()
+        if error:
+            params = {"state": original, "error": error}
+        elif code:
+            params = {"state": original, "code": code}
+        else:
+            raise HTTPBadRequest("Incomplete desktop login")
+        return Redirect(
+            f"http://127.0.0.1:{port}{DESKTOP_CALLBACK_PATH}?{urlencode(params)}",
+            headers=list(DESKTOP_HEADERS),
+        )
 
     # ── the user in the AuthStore ──────────────────────────────────────
 
