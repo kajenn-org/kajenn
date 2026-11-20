@@ -383,6 +383,19 @@ class TestStart:
         assert data["oidc.oidc:google.verifier"]
         assert data["oidc.oidc:google.next"] == "/app/page"
 
+    async def test_a_browser_without_cookie_completes_the_login(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        sent = await drive(server, f"{START}?next=/app/page")
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        set_cookie = dict(start["headers"]).get(b"set-cookie")
+        assert set_cookie is not None
+        cookie = set_cookie.decode().split(";")[0]
+        state = location_query(sent)["state"][0]
+        answer = await drive(server, f"{CALLBACK}?state={state}&code=auth-code", cookie=cookie)
+        assert status(answer) == 302
+        assert location(answer) == "/app/page"
+        assert server.session_store.get(cookie.removeprefix("session_id=")).avatar().identity == "alice"
+
     async def test_the_callback_clears_the_one_shot_flow_keys(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
         cookie, sent = await oidc_login(server)
