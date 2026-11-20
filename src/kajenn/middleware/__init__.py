@@ -42,6 +42,7 @@ from .base import BaseMiddleware, build_chain, headers_dict
 from .cors import CORSMiddleware
 from .errors import ErrorMiddleware
 from .logging import LoggingMiddleware
+from .security_headers import SecurityHeadersMiddleware
 from .session import SessionMiddleware
 
 if TYPE_CHECKING:
@@ -53,6 +54,7 @@ __all__ = [
     "ErrorMiddleware",
     "LoggingMiddleware",
     "MiddlewareMixin",
+    "SecurityHeadersMiddleware",
     "SessionMiddleware",
     "build_chain",
     "default_registry",
@@ -63,6 +65,7 @@ __all__ = [
 def default_registry() -> dict[str, type[BaseMiddleware]]:
     """A fresh ``{name: class}`` mapping of the middlewares shipped with the core."""
     return {
+        "security_headers": SecurityHeadersMiddleware,
         "errors": ErrorMiddleware,
         "logging": LoggingMiddleware,
         "cors": CORSMiddleware,
