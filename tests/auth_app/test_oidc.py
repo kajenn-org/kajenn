@@ -41,13 +41,14 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import jwt
 import pytest
+from genro_routes import route
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from tests.conftest import start_server
 from tests.storage_support import site_mounts
 
-from kajenn import AsgiConfigBuilder, AsgiServer, BaseApplication
+from kajenn import AsgiConfigBuilder, AsgiServer, BaseApplication, RoutedApplication
 from kajenn.auth_app import AuthApplicationBase, AuthStore
 from kajenn.types import Message, Scope
 
@@ -125,6 +126,7 @@ class FakeAsyncClient:
     """
 
     id_token = ""
+    nonce = ""
     token_response: dict[str, Any] = {}
     posted: list[dict[str, Any]] = []
     fetched: list[str] = []
@@ -144,13 +146,15 @@ class FakeAsyncClient:
 
     async def post(self, url: str, data: dict[str, Any] | None = None) -> FakeResponse:
         type(self).posted.append(dict(data or {}))
-        return FakeResponse(self.token_response or {"id_token": self.id_token or make_id_token()})
+        id_token = self.id_token or make_id_token(nonce=self.nonce)
+        return FakeResponse(self.token_response or {"id_token": id_token})
 
 
 @pytest.fixture(autouse=True)
 def fake_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     """The fake provider at the httpx and PyJWKClient boundaries, reset per test."""
     monkeypatch.setattr(FakeAsyncClient, "id_token", "")
+    monkeypatch.setattr(FakeAsyncClient, "nonce", "")
     monkeypatch.setattr(FakeAsyncClient, "token_response", {})
     monkeypatch.setattr(FakeAsyncClient, "posted", [])
     monkeypatch.setattr(FakeAsyncClient, "fetched", [])
@@ -193,6 +197,9 @@ def user(identity: str, **fields: Any) -> dict[str, Any]:
         "system": False,
         "password_hash": None,
         "email": None,
+        "firstname": None,
+        "lastname": None,
+        "photo": None,
         "external_ids": [],
     }
     record.update(fields)
@@ -267,17 +274,23 @@ def payload(sent: list[Message]) -> Any:
 
 
 async def begin_flow(server: AsgiServer, next_target: str = "/app/page") -> tuple[str, str]:
-    """Run ``start`` for a fresh session; ``(cookie, state)`` from the redirect."""
+    """Run ``start`` for a fresh session; ``(cookie, state)`` from the redirect.
+
+    The fake provider takes the ``nonce`` of the redirect, as a real provider
+    binds it to the code.
+    """
     session = server.session_store.create()
     cookie = f"session_id={session.id}"
     sent = await drive(server, f"{START}?next={next_target}", cookie=cookie)
-    return cookie, location_query(sent)["state"][0]
+    query = location_query(sent)
+    FakeAsyncClient.nonce = query["nonce"][0]
+    return cookie, query["state"][0]
 
 
 async def oidc_login(server: AsgiServer, **claims: Any) -> tuple[str, list[Message]]:
     """A whole round trip with an id_token carrying ``claims``; ``(cookie, callback answer)``."""
-    FakeAsyncClient.id_token = make_id_token(**claims)
     cookie, state = await begin_flow(server)
+    FakeAsyncClient.id_token = make_id_token(**{"nonce": FakeAsyncClient.nonce, **claims})
     sent = await drive(server, f"{CALLBACK}?state={state}&code=auth-code", cookie=cookie)
     return cookie, sent
 
@@ -383,12 +396,26 @@ class TestStart:
         assert data["oidc.oidc:google.verifier"]
         assert data["oidc.oidc:google.next"] == "/app/page"
 
+    async def test_a_browser_without_cookie_completes_the_login(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        sent = await drive(server, f"{START}?next=/app/page")
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        set_cookie = dict(start["headers"]).get(b"set-cookie")
+        assert set_cookie is not None
+        cookie = set_cookie.decode().split(";")[0]
+        state = location_query(sent)["state"][0]
+        FakeAsyncClient.nonce = location_query(sent)["nonce"][0]
+        answer = await drive(server, f"{CALLBACK}?state={state}&code=auth-code", cookie=cookie)
+        assert status(answer) == 302
+        assert location(answer) == "/app/page"
+        assert server.session_store.get(cookie.removeprefix("session_id=")).avatar().identity == "alice"
+
     async def test_the_callback_clears_the_one_shot_flow_keys(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
         cookie, sent = await oidc_login(server)
         assert status(sent) == 302
         data = session_data(server, cookie)
-        for suffix in ("state", "verifier", "next"):
+        for suffix in ("state", "verifier", "next", "nonce"):
             assert f"oidc.oidc:google.{suffix}" not in data
 
     async def test_an_external_url_trailing_slash_does_not_double_the_separator(
@@ -402,11 +429,65 @@ class TestStart:
 
     async def test_an_unsafe_next_lands_on_the_root(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
-        FakeAsyncClient.id_token = make_id_token()
         cookie, state = await begin_flow(server, next_target="//evil.example")
         sent = await drive(server, f"{CALLBACK}?state={state}&code=c", cookie=cookie)
         assert status(sent) == 302
         assert location(sent) == "/"
+
+
+class TestProviderAnswer:
+    """The nonce of the flow and the parameters Keycloak adds to the authorization response."""
+
+    async def test_start_sends_a_nonce_and_keeps_it_in_the_session(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, _ = await begin_flow(server)
+        assert FakeAsyncClient.nonce
+        assert session_data(server, cookie)["oidc.oidc:google.nonce"] == FakeAsyncClient.nonce
+
+    async def test_an_id_token_without_the_nonce_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, sent = await oidc_login(server, nonce=None)
+        assert status(sent) == 400
+        assert server.session_store.get(cookie.removeprefix("session_id=")).avatar() is None
+
+    async def test_an_id_token_with_another_nonce_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        _, sent = await oidc_login(server, nonce="replayed")
+        assert status(sent) == 400
+
+    async def test_an_iss_parameter_of_another_issuer_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, state = await begin_flow(server)
+        sent = await drive(
+            server, f"{CALLBACK}?state={state}&code=c&iss=https://evil.example", cookie=cookie
+        )
+        assert status(sent) == 400
+
+    async def test_the_iss_and_session_state_parameters_of_keycloak_are_accepted(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        cookie, state = await begin_flow(server)
+        sent = await drive(
+            server,
+            f"{CALLBACK}?state={state}&code=c&iss={ISSUER}&session_state=kc-session",
+            cookie=cookie,
+        )
+        assert status(sent) == 302
+
+    async def test_an_error_of_the_provider_answers_400_and_attaches_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        cookie, state = await begin_flow(server)
+        sent = await drive(
+            server,
+            f"{CALLBACK}?state={state}&error=access_denied&error_description=cancelled",
+            cookie=cookie,
+        )
+        assert status(sent) == 400
+        assert FakeAsyncClient.posted == []
+        assert server.session_store.get(cookie.removeprefix("session_id=")).avatar() is None
 
 
 class TestLinkedUser:
@@ -753,3 +834,334 @@ class TestConfiguration:
         sent = await drive(server, START, cookie=f"session_id={session.id}")
         assert status(sent) == 404
         assert FakeAsyncClient.fetched == []
+
+
+class Alfa(BaseApplication):
+    """Admits self registration with its own tag."""
+
+    @property
+    def declared_tags(self) -> list[dict[str, Any]]:
+        return [{"code": "ALFA_USER"}]
+
+    @property
+    def self_registration(self) -> dict[str, Any] | None:
+        return {"status": "confirmed", "tags": ["ALFA_USER"]}
+
+
+class Beta(BaseApplication):
+    """Refuses every unknown person."""
+
+    @property
+    def self_registration(self) -> dict[str, Any] | None:
+        return {}
+
+
+class Gamma(BaseApplication):
+    """Admits self registration with another tag."""
+
+    @property
+    def declared_tags(self) -> list[dict[str, Any]]:
+        return [{"code": "GAMMA_USER"}]
+
+    @property
+    def self_registration(self) -> dict[str, Any] | None:
+        return {"status": "confirmed", "tags": ["GAMMA_USER"]}
+
+
+async def started_with_apps(tmp_path: Path, **app_kwargs: Any) -> AsgiServer:
+    """A started, seeded server with ``alfa``, ``beta``, ``gamma`` and a plain ``home``."""
+    app_kwargs.setdefault("oidc", {"google": PROVIDER})
+    server = AsgiServer(
+        applications=[
+            (AuthApplicationBase, app_kwargs),
+            (Alfa, {"code": "alfa"}),
+            (Beta, {"code": "beta"}),
+            (Gamma, {"code": "gamma"}),
+            (BaseApplication, {"code": "home", "mount": ""}),
+        ],
+        storage=site_mounts(tmp_path),
+        storage_key=Fernet.generate_key().decode(),
+        external_url=EXTERNAL_URL,
+    )
+    await start_server(server)
+    seed(server)
+    return server
+
+
+async def login_through(server: AsgiServer, app: str, **claims: Any) -> tuple[str, list[Message]]:
+    """A whole round trip started with ``?app=<app>``; ``(cookie, callback answer)``."""
+    session = server.session_store.create()
+    cookie = f"session_id={session.id}"
+    sent = await drive(server, f"{START}?app={app}&next=/{app}", cookie=cookie)
+    query = location_query(sent)
+    FakeAsyncClient.id_token = make_id_token(**{"nonce": query["nonce"][0], **claims})
+    answer = await drive(server, f"{CALLBACK}?state={query['state'][0]}&code=c", cookie=cookie)
+    return cookie, answer
+
+
+class TestApplicationRules:
+    """The application named by ``?app=`` gives the registration rules of the login."""
+
+    async def test_an_unknown_person_entering_alfa_is_registered_with_its_tag(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_with_apps(tmp_path)
+        cookie, sent = await login_through(server, "alfa", sub="new", email="new@example.com")
+        assert status(sent) == 302
+        assert location(sent) == "/alfa"
+        assert avatar_of(server, cookie).identity == "new@example.com"
+        assert auth_store(server).get_user("new@example.com")["tags"] == ["ALFA_USER"]
+
+    async def test_an_unknown_person_entering_beta_is_refused(self, tmp_path: Path) -> None:
+        server = await started_with_apps(tmp_path, self_registration={
+            "status": "confirmed", "tags": []})
+        _, sent = await login_through(server, "beta", sub="new", email="new@example.com")
+        assert status(sent) == 403
+        assert auth_store(server).get_user("new@example.com") is None
+
+    async def test_an_application_declaring_nothing_leaves_the_auth_setting(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_with_apps(tmp_path)
+        _, sent = await login_through(server, "home", sub="new", email="new@example.com")
+        assert status(sent) == 403
+
+    async def test_an_unknown_application_answers_400(self, tmp_path: Path) -> None:
+        server = await started_with_apps(tmp_path)
+        session = server.session_store.create()
+        sent = await drive(server, f"{START}?app=nowhere", cookie=f"session_id={session.id}")
+        assert status(sent) == 400
+
+    async def test_a_known_user_entering_another_application_gets_its_tags(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_with_apps(tmp_path)
+        await login_through(server, "alfa", sub="new", email="new@example.com")
+        cookie, sent = await login_through(server, "gamma", sub="new", email="new@example.com")
+        assert status(sent) == 302
+        record = auth_store(server).get_user("new@example.com")
+        assert record["tags"] == ["ALFA_USER", "GAMMA_USER"]
+        assert "GAMMA_USER" in avatar_of(server, cookie).tags
+
+    async def test_a_known_user_entering_beta_keeps_its_tags(self, tmp_path: Path) -> None:
+        server = await started_with_apps(tmp_path)
+        _, sent = await login_through(server, "beta", sub="alice-sub", email="alice@example.com")
+        assert status(sent) == 302
+        assert auth_store(server).get_user("alice")["tags"] == ["OWN"]
+
+
+class TestUsernameLookup:
+    async def test_the_preferred_username_links_a_user_without_email(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        auth_store(server).save_user(user("bob"))
+        cookie, sent = await oidc_login(
+            server, sub="kc-bob", email=None, email_verified=None, preferred_username="bob"
+        )
+        assert status(sent) == 302
+        assert avatar_of(server, cookie).identity == "bob"
+        assert auth_store(server).get_user("bob")["external_ids"] == [
+            {"iss": ISSUER, "sub": "kc-bob"}
+        ]
+
+    async def test_a_username_match_that_cannot_sign_in_is_refused(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        auth_store(server).save_user(user("bob", status="waiting"))
+        _, sent = await oidc_login(server, sub="kc-bob", preferred_username="bob")
+        assert status(sent) == 403
+        assert auth_store(server).get_user("bob")["external_ids"] == []
+
+
+class TestAuthorizedParty:
+    async def test_an_azp_of_the_client_is_accepted(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        _, sent = await oidc_login(server, azp=CLIENT_ID)
+        assert status(sent) == 302
+
+    async def test_an_azp_of_another_client_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, sent = await oidc_login(server, azp="beta-client")
+        assert status(sent) == 400
+        assert avatar_of(server, cookie) is None
+
+
+class Whoami(RoutedApplication):
+    """Answers the ``data`` of the request avatar."""
+
+    @route()
+    def me(self, _request=None) -> dict[str, Any]:
+        avatar = _request.avatar()
+        return dict(avatar.data) if avatar is not None else {"anonymous": True}
+
+
+async def started_with_whoami(tmp_path: Path) -> AsgiServer:
+    """A started, seeded server with ``whoami`` mounted at ``/whoami``."""
+    server = AsgiServer(
+        applications=[
+            (AuthApplicationBase, {"oidc": {"google": PROVIDER}}),
+            (Whoami, {"code": "whoami"}),
+            (BaseApplication, {"code": "home", "mount": ""}),
+        ],
+        storage=site_mounts(tmp_path),
+        storage_key=Fernet.generate_key().decode(),
+        external_url=EXTERNAL_URL,
+    )
+    await start_server(server)
+    seed(server)
+    return server
+
+
+KEYCLOAK_PERSON = {
+    "given_name": "Alice",
+    "family_name": "Liddell",
+    "picture": "https://example.com/alice.png",
+}
+
+
+class TestPersonData:
+    """The user record holds the person; Keycloak fills only its empty fields."""
+
+    async def test_a_login_fills_the_empty_fields_and_the_next_request_reads_them(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_with_whoami(tmp_path)
+        cookie, sent = await oidc_login(server, **KEYCLOAK_PERSON)
+        assert status(sent) == 302
+        data = payload(await drive(server, "/whoami/me", cookie=cookie))
+        assert data == {
+            "email": "alice@example.com",
+            "firstname": "Alice",
+            "lastname": "Liddell",
+            "photo": "https://example.com/alice.png",
+        }
+
+    async def test_a_filled_field_is_kept(self, tmp_path: Path) -> None:
+        server = await started_with_whoami(tmp_path)
+        record = auth_store(server).get_user("alice")
+        record["firstname"] = "Alicia"
+        auth_store(server).save_user(record)
+        await oidc_login(server, **KEYCLOAK_PERSON)
+        record = auth_store(server).get_user("alice")
+        assert (record["firstname"], record["lastname"]) == ("Alicia", "Liddell")
+
+    async def test_an_unverified_email_does_not_fill_the_email(self, tmp_path: Path) -> None:
+        server = await started_with_whoami(tmp_path)
+        auth_store(server).save_user(user("bob"))
+        await oidc_login(
+            server,
+            sub="kc-bob",
+            preferred_username="bob",
+            email="bob@example.com",
+            email_verified=False,
+            given_name="Bob",
+        )
+        record = auth_store(server).get_user("bob")
+        assert (record["email"], record["firstname"]) == (None, "Bob")
+
+    async def test_a_registered_user_is_born_with_the_person_fields(self, tmp_path: Path) -> None:
+        server = AsgiServer(
+            applications=[
+                (AuthApplicationBase, {"oidc": {"google": PROVIDER},
+                                       "self_registration": {"status": "confirmed", "tags": []}}),
+                (BaseApplication, {"code": "home", "mount": ""}),
+            ],
+            storage=site_mounts(tmp_path),
+            storage_key=Fernet.generate_key().decode(),
+            external_url=EXTERNAL_URL,
+        )
+        await start_server(server)
+        await oidc_login(server, sub="kc-new", email="new@example.com", **KEYCLOAK_PERSON)
+        record = auth_store(server).get_user("new@example.com")
+        assert (record["firstname"], record["lastname"], record["photo"]) == (
+            "Alice", "Liddell", "https://example.com/alice.png")
+
+    async def test_a_password_login_reads_the_same_data(self, tmp_path: Path) -> None:
+        server = await started_with_whoami(tmp_path)
+        store = auth_store(server)
+        record = store.get_user("alice")
+        record.update(firstname="Alice", password_hash=store.hash_password("s3cret-pass"))
+        store.save_user(record)
+        basic = base64.b64encode(b"alice:s3cret-pass").decode()
+        scope_headers = [(b"authorization", f"Basic {basic}".encode())]
+        sent: list[Message] = []
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        await server(
+            {"type": "http", "method": "GET", "path": "/whoami/me", "query_string": b"",
+             "headers": scope_headers},
+            receive,
+            send,
+        )
+        assert payload(sent)["firstname"] == "Alice"
+
+
+ORIGINAL_STATE = "A" * 43
+
+
+class TestDesktopLogin:
+    """A state ``desktop.<port>.<state>`` sends the answer of the provider back to the desktop app."""
+
+    async def test_the_code_goes_back_to_the_app_on_the_loopback(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        sent = await drive(server, f"{CALLBACK}?state=desktop.51001.{ORIGINAL_STATE}&code=probe")
+        assert status(sent) == 302
+        assert location(sent) == (
+            f"http://127.0.0.1:51001/oidc/callback?state={ORIGINAL_STATE}&code=probe"
+        )
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        headers = dict(start["headers"])
+        assert headers[b"cache-control"] == b"no-store"
+        assert headers[b"referrer-policy"] == b"no-referrer"
+        browser = headers[b"set-cookie"].decode().split(";")[0]
+        assert avatar_of(server, browser) is None
+        assert FakeAsyncClient.posted == []
+
+    async def test_an_error_of_the_provider_goes_back_to_the_app(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        sent = await drive(
+            server, f"{CALLBACK}?state=desktop.51001.{ORIGINAL_STATE}&error=access_denied"
+        )
+        assert location(sent) == (
+            f"http://127.0.0.1:51001/oidc/callback?state={ORIGINAL_STATE}&error=access_denied"
+        )
+
+    @pytest.mark.parametrize(
+        "state",
+        [
+            f"desktop.80.{ORIGINAL_STATE}",
+            f"desktop.70000.{ORIGINAL_STATE}",
+            f"desktop.port.{ORIGINAL_STATE}",
+            "desktop.51001.short",
+            f"desktop.51001.{'A' * 42}!",
+        ],
+    )
+    async def test_a_malformed_desktop_state_answers_400(self, tmp_path: Path, state: str) -> None:
+        server = await started(tmp_path)
+        sent = await drive(server, f"{CALLBACK}?state={state}&code=probe")
+        assert status(sent) == 400
+
+    async def test_a_desktop_state_without_code_or_error_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        sent = await drive(server, f"{CALLBACK}?state=desktop.51001.{ORIGINAL_STATE}")
+        assert status(sent) == 400
+
+    async def test_the_webview_completes_the_login_with_the_relayed_code(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        webview, state = await begin_flow(server)
+        relayed = await drive(server, f"{CALLBACK}?state=desktop.51001.{state}&code=auth-code")
+        back = parse_qs(urlparse(location(relayed)).query)
+        answer = await drive(
+            server,
+            f"{CALLBACK}?state={back['state'][0]}&code={back['code'][0]}",
+            cookie=webview,
+        )
+        assert status(answer) == 302
+        assert avatar_of(server, webview).identity == "alice"

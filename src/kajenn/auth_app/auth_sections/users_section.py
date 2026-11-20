@@ -23,7 +23,7 @@ Every route asks ``auth_rule="AUTH_ADMIN"``. Routes, under ``/_auth/users/``:
   (when given they must match). Without a password the record has no
   ``password_hash`` and the user does not enter with a password. Defaults: ``groups`` ``[]``, ``primary_group``
   ``None``, ``tags`` ``[]``, ``status`` ``"confirmed"``, ``system`` ``False``,
-  ``email`` ``None``, ``external_ids`` ``[]``. An existing identity is an error;
+  ``email``, ``firstname``, ``lastname``, ``photo`` ``None``, ``external_ids`` ``[]``. An existing identity is an error;
 - ``save(identity, body)`` — merges the body's fields over an existing record;
   the password hash is untouched. An absent identity is an error;
 - ``set_password(identity, body)`` — sets or replaces the password of an
@@ -70,6 +70,9 @@ NEW_USER_DEFAULTS: dict[str, Any] = {
     "status": "confirmed",
     "system": False,
     "email": None,
+    "firstname": None,
+    "lastname": None,
+    "photo": None,
     "external_ids": [],
 }
 

@@ -470,6 +470,20 @@ class BaseApplication:
         return []
 
     @property
+    def self_registration(self) -> dict[str, Any] | None:
+        """What an external login entering through this application does with an unknown person.
+
+        ``None`` (the base): the application declares nothing and the
+        ``self_registration`` setting of ``_auth`` applies. A dict with
+        ``status`` and ``tags``: the person is registered with that status and
+        those tags, and a known user entering through this application gets
+        the tags it lacks. ``{}``: an unknown person is refused. The login
+        names the application with ``?app=<code>`` on the ``start`` route of
+        an OIDC provider of ``_auth``.
+        """
+        return None
+
+    @property
     def system_users(self) -> list[dict[str, Any]]:
         """The system users this application needs: one complete user record each.
 

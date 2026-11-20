@@ -499,6 +499,16 @@ class TestLate:
             assert (status, answer) == (200, {"report": "billing"})
             assert await status_with_tags(server, "/billing/report", ["SERVER_ADMIN"]) == 403
 
+    async def test_an_application_with_a_spawner_brings_its_self_registration(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        async with running(write_recipe(tmp_path)) as server:
+            assert server.applications["billing"].self_registration == {
+                "status": "waiting",
+                "tags": ["bll_REPORTS"],
+            }
+
 
 RECIPE = """
 import os
@@ -512,6 +522,10 @@ from tests.storage_support import MemoryAuthStore
 
 
 class Billing(Declaring):
+    @property
+    def self_registration(self):
+        return {"status": "waiting", "tags": ["bll_REPORTS"]}
+
     @route()
     def prepared_state(self):
         return {"prepared": True, "pid": os.getpid()}

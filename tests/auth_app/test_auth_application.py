@@ -112,9 +112,12 @@ async def drive(
     body: dict[str, Any] | None = None,
     cookie: str | None = None,
     authorization: str | None = None,
+    origin: str | None = None,
 ) -> list[Message]:
     """Drive one request through ``server`` at the ASGI level (JSON body when given)."""
     headers: list[tuple[bytes, bytes]] = []
+    if origin is not None:
+        headers.append((b"origin", origin.encode()))
     raw = b""
     if body is not None:
         headers.append((b"content-type", b"application/json"))
@@ -580,6 +583,9 @@ class TestStoreWord:
         assert (await login(server, "alice", "wonder"))["identity"] == "alice"
 
 
+NO_PERSON_DATA = {"email": None, "firstname": None, "lastname": None, "photo": None}
+
+
 class TestCredentials:
     async def test_a_basic_header_is_verified_on_the_auth_store(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
@@ -597,7 +603,7 @@ class TestCredentials:
             "identity": "alice",
             "group": "staff",
             "tags": ["OWN", "STAFF_READ"],
-            "data": {},
+            "data": NO_PERSON_DATA,
             "valid_until": None,
         }
 
@@ -620,7 +626,7 @@ class TestCredentials:
             "identity": "alice",
             "group": "staff",
             "tags": ["OWN", "STAFF_READ"],
-            "data": {},
+            "data": NO_PERSON_DATA,
             "valid_until": expires_at,
         }
 
@@ -675,7 +681,7 @@ class TestAvatarRoute:
             "identity": "alice",
             "group": "ops",
             "tags": ["OWN", "OPS_DEPLOY"],
-            "data": {},
+            "data": NO_PERSON_DATA,
             "valid_until": None,
         }
 
@@ -1227,3 +1233,99 @@ class TestAvatarGroup:
     def test_the_group_field(self) -> None:
         assert Avatar("ann", ["x"], group="staff").group == "staff"
         assert Avatar("ann", ["x"]).group is None
+
+
+class TestKeycloakOnly:
+    """``login(password=False)``: no password login; tokens stay valid."""
+
+    async def test_a_right_password_is_refused_on_the_login_route(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"password": False})
+        answer = await login(server, "alice", "wonder")
+        assert "session_id" not in answer
+        assert "error" in answer
+
+    async def test_a_basic_header_is_refused(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"password": False})
+        sent = await drive(server, "/_auth/users/list", authorization=basic("root", "rootpw"))
+        assert status(sent) == 401
+
+    async def test_a_gak_token_is_accepted(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"password": False})
+        key = auth_store(server).issue_token("root", "*")
+        sent = await drive(server, "/_auth/users/list", authorization=f"Bearer {key}")
+        assert status(sent) == 200
+
+    async def test_the_password_method_is_not_listed(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"password": False})
+        await server.applications["_auth"].remove_temporary_admin()
+        methods = payload(await drive(server, "/_auth/login_methods"))["methods"]
+        assert "password" not in [method["id"] for method in methods]
+
+    async def test_without_the_attribute_the_password_works(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"max_attempts": 3})
+        assert (await login(server, "alice", "wonder"))["identity"] == "alice"
+
+    async def test_the_recipe_word_turns_the_password_login_off(self, tmp_path: Path) -> None:
+        class KeycloakOnlySite(AsgiConfigBuilder):
+            def main(self, root: Any) -> None:
+                apps = root.configuration().applications()
+                apps.application(code="home", mount="", app_class=BaseApplication)
+                auth_app = apps.application(code="_auth", app_class=AuthApplicationBase)
+                auth_app.login(password=False)
+
+        server = AsgiServer(
+            KeycloakOnlySite,
+            storage=site_mounts(tmp_path),
+            storage_key=Fernet.generate_key().decode(),
+        )
+        await start_server(server)
+        seed(server)
+        assert "session_id" not in await login(server, "alice", "wonder")
+
+
+PUBLIC_URL = "https://shop.example.com"
+
+
+async def started_public(tmp_path: Path) -> AsgiServer:
+    """A started, seeded server with ``external_url`` = ``PUBLIC_URL``."""
+    server = AsgiServer(
+        applications=[(AuthApplicationBase, {}), (BaseApplication, {"mount": ""})],
+        storage=site_mounts(tmp_path),
+        storage_key=Fernet.generate_key().decode(),
+        external_url=PUBLIC_URL,
+    )
+    await start_server(server)
+    seed(server)
+    return server
+
+
+class TestSignOut:
+    """Esci: one POST closes the session of the request, for every application of the server."""
+
+    async def test_a_logout_without_session_id_closes_the_session_of_the_request(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_public(tmp_path)
+        answer = await login(server, "alice", "wonder")
+        cookie = f"session_id={answer['session_id']}"
+        sent = await drive(server, "/_auth/logout", "POST", cookie=cookie, origin=PUBLIC_URL)
+        assert payload(sent) == {"status": "ok"}
+        assert server.session_store.get(answer["session_id"]) is None
+
+    async def test_an_origin_other_than_the_server_is_refused(self, tmp_path: Path) -> None:
+        server = await started_public(tmp_path)
+        answer = await login(server, "alice", "wonder")
+        cookie = f"session_id={answer['session_id']}"
+        sent = await drive(
+            server, "/_auth/logout", "POST", cookie=cookie, origin="https://evil.example"
+        )
+        assert status(sent) == 403
+        assert server.session_store.get(answer["session_id"]) is not None
+
+    async def test_a_get_is_refused(self, tmp_path: Path) -> None:
+        server = await started_public(tmp_path)
+        answer = await login(server, "alice", "wonder")
+        cookie = f"session_id={answer['session_id']}"
+        sent = await drive(server, "/_auth/logout", "GET", cookie=cookie)
+        assert status(sent) == 405
+        assert server.session_store.get(answer["session_id"]) is not None
