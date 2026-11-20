@@ -14,18 +14,19 @@ installed layer, or returns `None`.
 
 | Layer | Order | Class default |
 |---|---:|---|
+| SecurityHeadersMiddleware | 50 | enabled |
 | ErrorMiddleware | 100 | enabled |
 | LoggingMiddleware | 200 | disabled |
 | CORSMiddleware | 300 | disabled |
 | SessionMiddleware | 400 | disabled |
 
-`default_registry()` carries these four names: `errors`, `logging`, `cors`,
-`session`. `AuthMiddleware` does not exist: it was removed in 0.4.0 (commit
+`default_registry()` carries these five names: `security_headers`, `errors`,
+`logging`, `cors`, `session`. `AuthMiddleware` does not exist: it was removed in 0.4.0 (commit
 `05411ad`). `SessionMixin` is the only mixin that calls `setdefault` on the
 switches: it enables `session`, and an explicit `False` wins. Therefore a bare
-composition has errors and session.
+composition has security headers, errors and session.
 
-The recipe element `middleware` declares the four names and takes `**extra`.
+The recipe element `middleware` declares the five names and takes `**extra`.
 A middleware merged through `middleware_registry=` is switched by its own name
 through `**extra`.
 
@@ -89,6 +90,24 @@ Claim anchors: [`SessionMiddleware`](../../../src/kajenn/middleware/session.py#S
 
 Behavior evidence: [`CORSMiddleware`](../../../src/kajenn/middleware/cors.py#CORSMiddleware), [`LoggingMiddleware`](../../../src/kajenn/middleware/logging.py#LoggingMiddleware).
 
+## Security headers
+
+`SecurityHeadersMiddleware` (order 50, outside errors, so error answers carry
+its headers too) adds `X-Content-Type-Options: nosniff`, `X-Frame-Options:
+SAMEORIGIN` and `Referrer-Policy: strict-origin-when-cross-origin` to every
+response, and `Strict-Transport-Security: max-age=31536000` when the scope
+scheme is `https` (`hsts="auto"`; `"always"` and `"never"` are the other
+modes). CSP, Permissions-Policy and the `Cross-Origin-*` policies are named
+options, off by default. The `headers` mapping adds, replaces or (falsy value)
+removes any header and wins over the named options. A header the application
+already set is kept unless `override=True`. Names and values are validated at
+construction (token names, no CR/LF/NUL), so a bad configuration fails at
+startup.
+
+Claim anchors: [`SecurityHeadersMiddleware`](../../../src/kajenn/middleware/security_headers.py#SecurityHeadersMiddleware).
+
+Behavior evidence: [tests/core/test_middleware_security_headers.py](../../../tests/core/test_middleware_security_headers.py).
+
 ## WSX handshake boundary
 
 WebSocket and lifespan scopes bypass the chain. `WsxConnection` checks Origin
@@ -103,6 +122,7 @@ Claim anchors: [`WsxConnection`](../../../src/kajenn/wsx.py#WsxConnection), [`ge
 
 - [src/kajenn/middleware/__init__.py](../../../src/kajenn/middleware/__init__.py)
 - [src/kajenn/middleware/base.py](../../../src/kajenn/middleware/base.py)
+- [src/kajenn/middleware/security_headers.py](../../../src/kajenn/middleware/security_headers.py)
 - [src/kajenn/middleware/errors.py](../../../src/kajenn/middleware/errors.py)
 - [src/kajenn/middleware/cors.py](../../../src/kajenn/middleware/cors.py)
 - [src/kajenn/middleware/session.py](../../../src/kajenn/middleware/session.py)

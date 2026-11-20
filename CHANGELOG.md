@@ -5,6 +5,26 @@ All notable changes to kajenn are recorded here. The format follows
 [Semantic Versioning](https://semver.org/). Releases before 0.9.0 are listed
 on [GitHub Releases](https://github.com/kajenn-org/kajenn/releases).
 
+## [Unreleased]
+
+### Added
+
+- `SecurityHeadersMiddleware`, registered as `security_headers` (order 50,
+  outermost, **on by default**). Every HTTP response, error answers included,
+  carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` and
+  `Referrer-Policy: strict-origin-when-cross-origin`, plus
+  `Strict-Transport-Security: max-age=31536000` on `https` requests. CSP,
+  Permissions-Policy and the `Cross-Origin-*` policies are opt-in options; the
+  `headers` mapping adds, replaces or removes any header; a header the
+  application set is kept unless `override=True`. Configure it with
+  `middleware={"security_headers": {...}}` or `cfg.middleware(security_headers=...)`;
+  `False` turns it off.
+
+### Changed
+
+- Responses now carry the default security headers. A site that is framed by
+  another origin sets `x_frame_options=None` (or disables the stage).
+
 ## [0.10.0] - 2026-11-17
 
 ### Breaking
