@@ -70,6 +70,9 @@ The user record::
       "system": false,
       "password_hash": "scrypt$n=16384,r=8,p=1$<salt-b64>$<hash-b64>",  # or None
       "email": "alice@example.org",
+      "firstname": "Alice",                # person fields: email, firstname,
+      "lastname": "Liddell",               # lastname, photo (None when unknown)
+      "photo": None,
       "external_ids": [{"iss": "https://idp.example.org", "sub": "248289761001"}]
     }
 
@@ -171,6 +174,7 @@ from genro_storage import StorageManager, StorageNode
 __all__ = ["AuthStore", "FileAuthStore"]
 
 USER_STATUSES = ("waiting", "confirmed", "banned")
+PERSON_FIELDS = ("email", "firstname", "lastname", "photo")
 AUTHENTICATING_STATUS = "confirmed"
 ALL_TAGS = "*"
 

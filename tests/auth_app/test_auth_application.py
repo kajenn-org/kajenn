@@ -580,6 +580,9 @@ class TestStoreWord:
         assert (await login(server, "alice", "wonder"))["identity"] == "alice"
 
 
+NO_PERSON_DATA = {"email": None, "firstname": None, "lastname": None, "photo": None}
+
+
 class TestCredentials:
     async def test_a_basic_header_is_verified_on_the_auth_store(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
@@ -597,7 +600,7 @@ class TestCredentials:
             "identity": "alice",
             "group": "staff",
             "tags": ["OWN", "STAFF_READ"],
-            "data": {},
+            "data": NO_PERSON_DATA,
             "valid_until": None,
         }
 
@@ -620,7 +623,7 @@ class TestCredentials:
             "identity": "alice",
             "group": "staff",
             "tags": ["OWN", "STAFF_READ"],
-            "data": {},
+            "data": NO_PERSON_DATA,
             "valid_until": expires_at,
         }
 
@@ -675,7 +678,7 @@ class TestAvatarRoute:
             "identity": "alice",
             "group": "ops",
             "tags": ["OWN", "OPS_DEPLOY"],
-            "data": {},
+            "data": NO_PERSON_DATA,
             "valid_until": None,
         }
 

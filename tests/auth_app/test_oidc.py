@@ -41,13 +41,14 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import jwt
 import pytest
+from genro_routes import route
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from tests.conftest import start_server
 from tests.storage_support import site_mounts
 
-from kajenn import AsgiConfigBuilder, AsgiServer, BaseApplication
+from kajenn import AsgiConfigBuilder, AsgiServer, BaseApplication, RoutedApplication
 from kajenn.auth_app import AuthApplicationBase, AuthStore
 from kajenn.types import Message, Scope
 
@@ -196,6 +197,9 @@ def user(identity: str, **fields: Any) -> dict[str, Any]:
         "system": False,
         "password_hash": None,
         "email": None,
+        "firstname": None,
+        "lastname": None,
+        "photo": None,
         "external_ids": [],
     }
     record.update(fields)
@@ -980,3 +984,118 @@ class TestAuthorizedParty:
         cookie, sent = await oidc_login(server, azp="beta-client")
         assert status(sent) == 400
         assert avatar_of(server, cookie) is None
+
+
+class Whoami(RoutedApplication):
+    """Answers the ``data`` of the request avatar."""
+
+    @route()
+    def me(self, _request=None) -> dict[str, Any]:
+        avatar = _request.avatar()
+        return dict(avatar.data) if avatar is not None else {"anonymous": True}
+
+
+async def started_with_whoami(tmp_path: Path) -> AsgiServer:
+    """A started, seeded server with ``whoami`` mounted at ``/whoami``."""
+    server = AsgiServer(
+        applications=[
+            (AuthApplicationBase, {"oidc": {"google": PROVIDER}}),
+            (Whoami, {"code": "whoami"}),
+            (BaseApplication, {"code": "home", "mount": ""}),
+        ],
+        storage=site_mounts(tmp_path),
+        storage_key=Fernet.generate_key().decode(),
+        external_url=EXTERNAL_URL,
+    )
+    await start_server(server)
+    seed(server)
+    return server
+
+
+KEYCLOAK_PERSON = {
+    "given_name": "Alice",
+    "family_name": "Liddell",
+    "picture": "https://example.com/alice.png",
+}
+
+
+class TestPersonData:
+    """The user record holds the person; Keycloak fills only its empty fields."""
+
+    async def test_a_login_fills_the_empty_fields_and_the_next_request_reads_them(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_with_whoami(tmp_path)
+        cookie, sent = await oidc_login(server, **KEYCLOAK_PERSON)
+        assert status(sent) == 302
+        data = payload(await drive(server, "/whoami/me", cookie=cookie))
+        assert data == {
+            "email": "alice@example.com",
+            "firstname": "Alice",
+            "lastname": "Liddell",
+            "photo": "https://example.com/alice.png",
+        }
+
+    async def test_a_filled_field_is_kept(self, tmp_path: Path) -> None:
+        server = await started_with_whoami(tmp_path)
+        record = auth_store(server).get_user("alice")
+        record["firstname"] = "Alicia"
+        auth_store(server).save_user(record)
+        await oidc_login(server, **KEYCLOAK_PERSON)
+        record = auth_store(server).get_user("alice")
+        assert (record["firstname"], record["lastname"]) == ("Alicia", "Liddell")
+
+    async def test_an_unverified_email_does_not_fill_the_email(self, tmp_path: Path) -> None:
+        server = await started_with_whoami(tmp_path)
+        auth_store(server).save_user(user("bob"))
+        await oidc_login(
+            server,
+            sub="kc-bob",
+            preferred_username="bob",
+            email="bob@example.com",
+            email_verified=False,
+            given_name="Bob",
+        )
+        record = auth_store(server).get_user("bob")
+        assert (record["email"], record["firstname"]) == (None, "Bob")
+
+    async def test_a_registered_user_is_born_with_the_person_fields(self, tmp_path: Path) -> None:
+        server = AsgiServer(
+            applications=[
+                (AuthApplicationBase, {"oidc": {"google": PROVIDER},
+                                       "self_registration": {"status": "confirmed", "tags": []}}),
+                (BaseApplication, {"code": "home", "mount": ""}),
+            ],
+            storage=site_mounts(tmp_path),
+            storage_key=Fernet.generate_key().decode(),
+            external_url=EXTERNAL_URL,
+        )
+        await start_server(server)
+        await oidc_login(server, sub="kc-new", email="new@example.com", **KEYCLOAK_PERSON)
+        record = auth_store(server).get_user("new@example.com")
+        assert (record["firstname"], record["lastname"], record["photo"]) == (
+            "Alice", "Liddell", "https://example.com/alice.png")
+
+    async def test_a_password_login_reads_the_same_data(self, tmp_path: Path) -> None:
+        server = await started_with_whoami(tmp_path)
+        store = auth_store(server)
+        record = store.get_user("alice")
+        record.update(firstname="Alice", password_hash=store.hash_password("s3cret-pass"))
+        store.save_user(record)
+        basic = base64.b64encode(b"alice:s3cret-pass").decode()
+        scope_headers = [(b"authorization", f"Basic {basic}".encode())]
+        sent: list[Message] = []
+
+        async def receive() -> Message:
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        async def send(message: Message) -> None:
+            sent.append(message)
+
+        await server(
+            {"type": "http", "method": "GET", "path": "/whoami/me", "query_string": b"",
+             "headers": scope_headers},
+            receive,
+            send,
+        )
+        assert payload(sent)["firstname"] == "Alice"

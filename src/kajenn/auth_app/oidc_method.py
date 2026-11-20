@@ -71,7 +71,13 @@ The user, from the verified ``id_token`` claims:
   already taken: refused, nothing written.
 
 A user found by username or email that is not confirmed or is a system user is
-refused and never written. A user found (not registered) through an ``app``
+refused and never written.
+
+Person fields: at every login the empty fields of the record take the claims
+(``given_name`` → ``firstname``, ``family_name`` → ``lastname``, ``picture`` →
+``photo``, ``email`` → ``email`` only with ``email_verified`` true); a filled
+field is kept. The record is saved when a field changes. A system user is
+never written. A user found (not registered) through an ``app``
 whose own setting admits registration gets the setting's tags it lacks; the
 record is saved when that adds a tag.
 
@@ -350,17 +356,39 @@ class OidcMethod(AuthMethod):
         if user is None:
             user = self.find_unlinked_user(claims)
             if user is None:
-                return self.register_user(claims, setting)
-            if user.get("status") != AUTHENTICATING_STATUS or user.get("system", False):
+                user = self.register_user(claims, setting)
+            elif user.get("status") != AUTHENTICATING_STATUS or user.get("system", False):
                 raise HTTPForbidden("OIDC login refused: the user cannot sign in")
-            user["external_ids"] = [*user.get("external_ids", []), {"iss": iss, "sub": sub}]
-            store.save_user(user)
-        if declared and setting and not user.get("system", False):
+            else:
+                user["external_ids"] = [*user.get("external_ids", []), {"iss": iss, "sub": sub}]
+                store.save_user(user)
+        if user.get("system", False):
+            return user
+        changed = self.fill_person_fields(user, claims)
+        if declared and setting:
             missing = [tag for tag in setting.get("tags") or [] if tag not in user.get("tags", [])]
             if missing:
                 user["tags"] = [*user.get("tags", []), *missing]
-                store.save_user(user)
+                changed = True
+        if changed:
+            store.save_user(user)
         return user
+
+    def fill_person_fields(self, user: dict[str, Any], claims: dict[str, Any]) -> bool:
+        """Write the claims into the empty person fields of ``user``; True when one changed."""
+        values = {
+            "firstname": claims.get("given_name"),
+            "lastname": claims.get("family_name"),
+            "photo": claims.get("picture"),
+        }
+        if claims.get("email_verified") is True:
+            values["email"] = claims.get("email")
+        changed = False
+        for field, value in values.items():
+            if value and not user.get(field):
+                user[field] = value
+                changed = True
+        return changed
 
     def find_unlinked_user(self, claims: dict[str, Any]) -> dict[str, Any] | None:
         """The user ``claims`` match before any link: by ``preferred_username``, then verified email.
@@ -405,6 +433,9 @@ class OidcMethod(AuthMethod):
             "system": False,
             "password_hash": None,
             "email": email,
+            "firstname": None,
+            "lastname": None,
+            "photo": None,
             "external_ids": [{"iss": claims["iss"], "sub": claims["sub"]}],
         }
         store.save_user(record)

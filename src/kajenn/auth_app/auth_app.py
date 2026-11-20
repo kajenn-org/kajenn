@@ -184,7 +184,14 @@ from kajenn.session import Avatar
 from .auth_method import AuthMethod, AuthMethodRegistry, PasswordMethod
 from .auth_sections import GroupsSection, TagsSection, TokensSection, UsersSection
 from .auth_sections.tags_section import ADMIN_TAG, NEW_TAG_DEFAULTS
-from .auth_store import AUTHENTICATING_STATUS, TOKEN_PREFIX, USER_STATUSES, AuthStore, FileAuthStore
+from .auth_store import (
+    AUTHENTICATING_STATUS,
+    PERSON_FIELDS,
+    TOKEN_PREFIX,
+    USER_STATUSES,
+    AuthStore,
+    FileAuthStore,
+)
 from .oidc_method import OidcMethod
 
 __all__ = ["AuthApplicationBase", "AuthApplicationGrammar"]
@@ -475,7 +482,7 @@ class AuthApplicationBase(RoutedApplication):
             "identity": verified["identity"],
             "group": verified["group"],
             "tags": verified["tags"],
-            "data": {},
+            "data": self.person_data(self.store.get_user(verified["identity"])),
             "valid_until": verified["expires_at"],
         }
 
@@ -497,9 +504,19 @@ class AuthApplicationBase(RoutedApplication):
             "identity": identity,
             "group": group if group is not None else user.get("primary_group"),
             "tags": tags,
-            "data": {},
+            "data": self.person_data(user),
             "valid_until": None,
         }
+
+    def person_data(self, user: dict[str, Any] | None) -> dict[str, Any]:
+        """The person fields of ``user`` (``PERSON_FIELDS``), each ``None`` when unknown.
+
+        This is the ``data`` of every avatar answer: the user record is the
+        source of truth, whatever the way of entering. No record: ``{}``.
+        """
+        if user is None:
+            return {}
+        return {field: user.get(field) for field in PERSON_FIELDS}
 
     def _verify_login(
         self, identity: str, password: str
