@@ -125,6 +125,7 @@ class FakeAsyncClient:
     """
 
     id_token = ""
+    nonce = ""
     token_response: dict[str, Any] = {}
     posted: list[dict[str, Any]] = []
     fetched: list[str] = []
@@ -144,13 +145,15 @@ class FakeAsyncClient:
 
     async def post(self, url: str, data: dict[str, Any] | None = None) -> FakeResponse:
         type(self).posted.append(dict(data or {}))
-        return FakeResponse(self.token_response or {"id_token": self.id_token or make_id_token()})
+        id_token = self.id_token or make_id_token(nonce=self.nonce)
+        return FakeResponse(self.token_response or {"id_token": id_token})
 
 
 @pytest.fixture(autouse=True)
 def fake_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     """The fake provider at the httpx and PyJWKClient boundaries, reset per test."""
     monkeypatch.setattr(FakeAsyncClient, "id_token", "")
+    monkeypatch.setattr(FakeAsyncClient, "nonce", "")
     monkeypatch.setattr(FakeAsyncClient, "token_response", {})
     monkeypatch.setattr(FakeAsyncClient, "posted", [])
     monkeypatch.setattr(FakeAsyncClient, "fetched", [])
@@ -267,17 +270,23 @@ def payload(sent: list[Message]) -> Any:
 
 
 async def begin_flow(server: AsgiServer, next_target: str = "/app/page") -> tuple[str, str]:
-    """Run ``start`` for a fresh session; ``(cookie, state)`` from the redirect."""
+    """Run ``start`` for a fresh session; ``(cookie, state)`` from the redirect.
+
+    The fake provider takes the ``nonce`` of the redirect, as a real provider
+    binds it to the code.
+    """
     session = server.session_store.create()
     cookie = f"session_id={session.id}"
     sent = await drive(server, f"{START}?next={next_target}", cookie=cookie)
-    return cookie, location_query(sent)["state"][0]
+    query = location_query(sent)
+    FakeAsyncClient.nonce = query["nonce"][0]
+    return cookie, query["state"][0]
 
 
 async def oidc_login(server: AsgiServer, **claims: Any) -> tuple[str, list[Message]]:
     """A whole round trip with an id_token carrying ``claims``; ``(cookie, callback answer)``."""
-    FakeAsyncClient.id_token = make_id_token(**claims)
     cookie, state = await begin_flow(server)
+    FakeAsyncClient.id_token = make_id_token(**{"nonce": FakeAsyncClient.nonce, **claims})
     sent = await drive(server, f"{CALLBACK}?state={state}&code=auth-code", cookie=cookie)
     return cookie, sent
 
@@ -391,6 +400,7 @@ class TestStart:
         assert set_cookie is not None
         cookie = set_cookie.decode().split(";")[0]
         state = location_query(sent)["state"][0]
+        FakeAsyncClient.nonce = location_query(sent)["nonce"][0]
         answer = await drive(server, f"{CALLBACK}?state={state}&code=auth-code", cookie=cookie)
         assert status(answer) == 302
         assert location(answer) == "/app/page"
@@ -401,7 +411,7 @@ class TestStart:
         cookie, sent = await oidc_login(server)
         assert status(sent) == 302
         data = session_data(server, cookie)
-        for suffix in ("state", "verifier", "next"):
+        for suffix in ("state", "verifier", "next", "nonce"):
             assert f"oidc.oidc:google.{suffix}" not in data
 
     async def test_an_external_url_trailing_slash_does_not_double_the_separator(
@@ -415,11 +425,65 @@ class TestStart:
 
     async def test_an_unsafe_next_lands_on_the_root(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
-        FakeAsyncClient.id_token = make_id_token()
         cookie, state = await begin_flow(server, next_target="//evil.example")
         sent = await drive(server, f"{CALLBACK}?state={state}&code=c", cookie=cookie)
         assert status(sent) == 302
         assert location(sent) == "/"
+
+
+class TestProviderAnswer:
+    """The nonce of the flow and the parameters Keycloak adds to the authorization response."""
+
+    async def test_start_sends_a_nonce_and_keeps_it_in_the_session(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, _ = await begin_flow(server)
+        assert FakeAsyncClient.nonce
+        assert session_data(server, cookie)["oidc.oidc:google.nonce"] == FakeAsyncClient.nonce
+
+    async def test_an_id_token_without_the_nonce_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, sent = await oidc_login(server, nonce=None)
+        assert status(sent) == 400
+        assert server.session_store.get(cookie.removeprefix("session_id=")).avatar() is None
+
+    async def test_an_id_token_with_another_nonce_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        _, sent = await oidc_login(server, nonce="replayed")
+        assert status(sent) == 400
+
+    async def test_an_iss_parameter_of_another_issuer_answers_400(self, tmp_path: Path) -> None:
+        server = await started(tmp_path)
+        cookie, state = await begin_flow(server)
+        sent = await drive(
+            server, f"{CALLBACK}?state={state}&code=c&iss=https://evil.example", cookie=cookie
+        )
+        assert status(sent) == 400
+
+    async def test_the_iss_and_session_state_parameters_of_keycloak_are_accepted(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        cookie, state = await begin_flow(server)
+        sent = await drive(
+            server,
+            f"{CALLBACK}?state={state}&code=c&iss={ISSUER}&session_state=kc-session",
+            cookie=cookie,
+        )
+        assert status(sent) == 302
+
+    async def test_an_error_of_the_provider_answers_400_and_attaches_nothing(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started(tmp_path)
+        cookie, state = await begin_flow(server)
+        sent = await drive(
+            server,
+            f"{CALLBACK}?state={state}&error=access_denied&error_description=cancelled",
+            cookie=cookie,
+        )
+        assert status(sent) == 400
+        assert FakeAsyncClient.posted == []
+        assert server.session_store.get(cookie.removeprefix("session_id=")).avatar() is None
 
 
 class TestLinkedUser:

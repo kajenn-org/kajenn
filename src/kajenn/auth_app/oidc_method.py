@@ -19,16 +19,20 @@ one instance per declared provider, with ``method_id`` ``oidc:<code>``. It owns
 two routes, so the registry attaches it under ``/_auth/oidc:<code>/``:
 
 - ``GET /_auth/oidc:<code>/start?next=<path>`` — begins the authorization-code
-  flow with PKCE (S256). It stores a fresh ``state``, the PKCE verifier and the
-  safe ``next`` path in the session's ``data`` under ``oidc.<method_id>.*`` and
-  answers 302 to the provider's authorization endpoint.
+  flow with PKCE (S256). It stores a fresh ``state``, the PKCE verifier, a
+  fresh ``nonce`` and the safe ``next`` path in the session's ``data`` under
+  ``oidc.<method_id>.*`` and answers 302 to the provider's authorization
+  endpoint, with the ``nonce``.
 - ``GET /_auth/oidc:<code>/callback?state=...&code=...`` — the provider sends
-  the browser here. It checks the ``state``, exchanges the ``code`` on the
-  provider's token endpoint (PKCE verifier, ``client_secret`` when declared),
-  verifies the ``id_token`` (RS256 on the provider's JWKS, audience =
-  ``client_id``, issuer = ``issuer``), finds the user in the ``AuthStore``,
-  attaches the avatar to the session, clears the ``oidc.<method_id>.*`` keys
-  and answers 302 to the stored ``next``.
+  the browser here. It refuses an ``error`` answer of the provider and an
+  ``iss`` parameter other than ``issuer`` (RFC 9207); ``session_state``, which
+  Keycloak adds, is accepted and not used. It checks the ``state``, exchanges
+  the ``code`` on the provider's token endpoint (PKCE verifier,
+  ``client_secret`` when declared), verifies the ``id_token`` (RS256 on the
+  provider's JWKS, audience = ``client_id``, issuer = ``issuer``, ``nonce`` =
+  the one of the session), finds the user in the ``AuthStore``, attaches the
+  avatar to the session, clears the ``oidc.<method_id>.*`` keys and answers
+  302 to the stored ``next``.
 
 The provider metadata comes from ``<issuer>/.well-known/openid-configuration``,
 fetched at first use and kept on the instance: a server whose provider is
@@ -64,9 +68,11 @@ The callback does not touch the lockout counter.
 Answers of the callback:
 
 - 302 to the stored ``next`` on success;
-- 400 (``HTTPBadRequest``) for a flow error: a ``state`` missing or different
-  from the session's, a failed token exchange, an ``id_token`` that does not
-  verify or carries no ``sub``;
+- 400 (``HTTPBadRequest``) for a flow error: an ``error`` from the provider
+  (the user cancelled or the provider refused), an ``iss`` of another issuer,
+  a ``state`` missing or different from the session's, a failed token
+  exchange, an ``id_token`` that does not verify, carries no ``sub`` or
+  another ``nonce``;
 - 403 (``HTTPForbidden``) for a refused login: no verified email, an ambiguous
   email, an unknown user without ``self_registration``, an identity already
   taken, a status that does not authenticate, a system user. Nothing is
@@ -98,7 +104,7 @@ from .auth_store import AUTHENTICATING_STATUS, AuthStore
 __all__ = ["OidcMethod"]
 
 DEFAULT_SCOPES = "openid email profile"
-FLOW_KEYS = ("state", "verifier", "next")
+FLOW_KEYS = ("state", "verifier", "nonce", "next")
 
 
 class OidcMethod(AuthMethod):
@@ -189,9 +195,11 @@ class OidcMethod(AuthMethod):
         discovery = await self.discovery()
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(64)
+        nonce = secrets.token_urlsafe(32)
         session = _request.session
         session.data[f"oidc.{self.method_id}.state"] = state
         session.data[f"oidc.{self.method_id}.verifier"] = verifier
+        session.data[f"oidc.{self.method_id}.nonce"] = nonce
         session.data[f"oidc.{self.method_id}.next"] = self.get_safe_next_path(next)
         session.mark_dirty()
         params = {
@@ -200,13 +208,23 @@ class OidcMethod(AuthMethod):
             "redirect_uri": self.callback_url,
             "scope": self.provider.get("scopes") or DEFAULT_SCOPES,
             "state": state,
+            "nonce": nonce,
             "code_challenge": self._pkce_challenge(verifier),
             "code_challenge_method": "S256",
         }
         raise Redirect(f"{discovery['authorization_endpoint']}?{urlencode(params)}")
 
     @route(media_type="text/plain", env_requires=env_requires)
-    async def callback(self, state: str = "", code: str = "", _request=None) -> str:
+    async def callback(
+        self,
+        state: str = "",
+        code: str = "",
+        iss: str = "",
+        session_state: str = "",
+        error: str = "",
+        error_description: str = "",
+        _request=None,
+    ) -> str:
         """Close the flow: check state, exchange, verify, find the user, attach, redirect.
 
         The callback is counted in ``server.event_metrics`` as scheme ``oidc``:
@@ -222,6 +240,10 @@ class OidcMethod(AuthMethod):
         """
         metrics = self.application.server.event_metrics
         try:
+            if error:
+                raise HTTPBadRequest(f"OIDC login cancelled or refused by the provider: {error}")
+            if iss and iss != self.provider["issuer"]:
+                raise HTTPBadRequest("OIDC response issuer mismatch")
             next_target = await self._attach_identity(state, code, _request.session)
         except (HTTPBadRequest, HTTPForbidden):
             metrics.record_credential_check("oidc", "refused")
@@ -232,12 +254,15 @@ class OidcMethod(AuthMethod):
     async def _attach_identity(self, state: str, code: str, session: Any) -> str:
         """Check the flow and attach the avatar; return the stored next path."""
         expected = session.data[f"oidc.{self.method_id}.state"]
-        if not state or state != expected:
+        if not state or not expected or not secrets.compare_digest(state, expected):
             raise HTTPBadRequest("OIDC state mismatch")
         verifier = session.data[f"oidc.{self.method_id}.verifier"]
         next_target = session.data[f"oidc.{self.method_id}.next"] or "/"
         id_token = await self._exchange_code(code, verifier)
         claims = await self._verify_id_token(id_token)
+        nonce = session.data[f"oidc.{self.method_id}.nonce"]
+        if not nonce or claims.get("nonce") != nonce:
+            raise HTTPBadRequest("OIDC nonce mismatch")
         if not claims.get("sub"):
             raise HTTPBadRequest("OIDC id_token carries no sub")
         avatar = await self.application.server.run_sync(self.authenticate_claims, claims)
