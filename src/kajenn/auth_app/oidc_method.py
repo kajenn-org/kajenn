@@ -18,11 +18,13 @@
 one instance per declared provider, with ``method_id`` ``oidc:<code>``. It owns
 two routes, so the registry attaches it under ``/_auth/oidc:<code>/``:
 
-- ``GET /_auth/oidc:<code>/start?next=<path>`` — begins the authorization-code
+- ``GET /_auth/oidc:<code>/start?next=<path>&app=<code>`` — begins the authorization-code
   flow with PKCE (S256). It stores a fresh ``state``, the PKCE verifier, a
   fresh ``nonce`` and the safe ``next`` path in the session's ``data`` under
   ``oidc.<method_id>.*`` and answers 302 to the provider's authorization
-  endpoint, with the ``nonce``.
+  endpoint, with the ``nonce``. ``app``, optional, names the application the
+  person enters through; it is kept with the flow, and an unknown code
+  answers 400.
 - ``GET /_auth/oidc:<code>/callback?state=...&code=...`` — the provider sends
   the browser here. It refuses an ``error`` answer of the provider and an
   ``iss`` parameter other than ``issuer`` (RFC 9207); ``session_state``, which
@@ -30,7 +32,7 @@ two routes, so the registry attaches it under ``/_auth/oidc:<code>/``:
   the ``code`` on the provider's token endpoint (PKCE verifier,
   ``client_secret`` when declared), verifies the ``id_token`` (RS256 on the
   provider's JWKS, audience = ``client_id``, issuer = ``issuer``, ``nonce`` =
-  the one of the session), finds the user in the ``AuthStore``, attaches the
+  the one of the session, ``azp`` = ``client_id`` when present), finds the user in the ``AuthStore``, attaches the
   avatar to the session, clears the ``oidc.<method_id>.*`` keys and answers
   302 to the stored ``next``.
 
@@ -46,19 +48,32 @@ declare ``env_requires="external_links"``: on a server without
 ``not_available`` (see ``ServerCapabilities``), and ``login_methods`` leaves
 the provider out.
 
+The registration setting of a login: the ``self_registration`` the
+application named by ``app`` declares; when no ``app`` was given or the
+application declares ``None``, the ``self_registration`` setting of ``_auth``.
+A setting whose ``status`` is not a user status is not applied: it counts as
+no registration and a warning is logged.
+
 The user, from the verified ``id_token`` claims:
 
 - the user whose ``external_ids`` holds the token's ``iss`` + ``sub``, whatever
   its email is now;
+- else the user whose identity equals the ``preferred_username`` claim;
+  ``{iss, sub}`` is appended to its ``external_ids`` and the record is saved;
 - else, only when the token carries ``email`` and ``email_verified`` true: the
   one user with that email (compared lowercased); ``{iss, sub}`` is appended to
-  its ``external_ids`` and the record is saved. A system user is never written.
-  Two or more users with that email: refused, nothing written;
-- else the ``self_registration`` setting of the application: absent, refused.
-  Present, a record is written with identity = the verified email, ``status``
-  and ``tags`` from the setting, ``groups`` [], ``primary_group`` None,
-  ``system`` False, ``password_hash`` None, ``email``, ``external_ids``
-  [{iss, sub}]. An identity already taken: refused, nothing written.
+  its ``external_ids`` and the record is saved. Two or more users with that
+  email: refused, nothing written;
+- else the registration setting: absent or empty, refused. Present, a record
+  is written with identity = the verified email, ``status`` and ``tags`` from
+  the setting, ``groups`` [], ``primary_group`` None, ``system`` False,
+  ``password_hash`` None, ``email``, ``external_ids`` [{iss, sub}]. An identity
+  already taken: refused, nothing written.
+
+A user found by username or email that is not confirmed or is a system user is
+refused and never written. A user found (not registered) through an ``app``
+whose own setting admits registration gets the setting's tags it lacks; the
+record is saved when that adds a tag.
 
 A user found or written whose ``status`` is not ``confirmed``, or that is a
 system user, is refused. The avatar is
@@ -87,6 +102,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import secrets
 from typing import Any
 from urllib.parse import urlencode
@@ -99,12 +115,12 @@ from kajenn.exceptions import HTTPBadRequest, HTTPForbidden, Redirect
 from kajenn.session import Avatar
 
 from .auth_method import AuthMethod
-from .auth_store import AUTHENTICATING_STATUS, AuthStore
+from .auth_store import AUTHENTICATING_STATUS, USER_STATUSES, AuthStore
 
 __all__ = ["OidcMethod"]
 
 DEFAULT_SCOPES = "openid email profile"
-FLOW_KEYS = ("state", "verifier", "nonce", "next")
+FLOW_KEYS = ("state", "verifier", "nonce", "next", "app")
 
 
 class OidcMethod(AuthMethod):
@@ -183,7 +199,7 @@ class OidcMethod(AuthMethod):
     # ── routes ─────────────────────────────────────────────────────────
 
     @route(media_type="text/plain", env_requires=env_requires)
-    async def start(self, next: str = "", _request=None) -> str:
+    async def start(self, next: str = "", app: str = "", _request=None) -> str:
         """Begin the authorization-code flow with PKCE: redirect to the provider.
 
         Raises:
@@ -192,6 +208,8 @@ class OidcMethod(AuthMethod):
         Note:
             Route: GET /_auth/oidc:<code>/start
         """
+        if app and self.application.server.applications.get(app) is None:
+            raise HTTPBadRequest(f"OIDC login for an unknown application: {app}")
         discovery = await self.discovery()
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(64)
@@ -201,6 +219,7 @@ class OidcMethod(AuthMethod):
         session.data[f"oidc.{self.method_id}.verifier"] = verifier
         session.data[f"oidc.{self.method_id}.nonce"] = nonce
         session.data[f"oidc.{self.method_id}.next"] = self.get_safe_next_path(next)
+        session.data[f"oidc.{self.method_id}.app"] = app
         session.mark_dirty()
         params = {
             "response_type": "code",
@@ -265,7 +284,8 @@ class OidcMethod(AuthMethod):
             raise HTTPBadRequest("OIDC nonce mismatch")
         if not claims.get("sub"):
             raise HTTPBadRequest("OIDC id_token carries no sub")
-        avatar = await self.application.server.run_sync(self.authenticate_claims, claims)
+        app = session.data[f"oidc.{self.method_id}.app"] or ""
+        avatar = await self.application.server.run_sync(self.authenticate_claims, claims, app)
         session.attach_avatar(avatar)
         for suffix in FLOW_KEYS:
             session.data.pop(f"oidc.{self.method_id}.{suffix}", None)
@@ -274,8 +294,8 @@ class OidcMethod(AuthMethod):
 
     # ── the user in the AuthStore ──────────────────────────────────────
 
-    def authenticate_claims(self, claims: dict[str, Any]) -> Avatar:
-        """The avatar of the user the verified ``claims`` lead to.
+    def authenticate_claims(self, claims: dict[str, Any], app: str = "") -> Avatar:
+        """The avatar of the user the verified ``claims`` lead to, entering through ``app``.
 
         Finds, links or registers the user (``link_user``), then refuses a
         status that does not authenticate and a system user.
@@ -283,54 +303,96 @@ class OidcMethod(AuthMethod):
         Raises:
             HTTPForbidden: A refused login.
         """
-        user = self.link_user(claims)
+        user = self.link_user(claims, app)
         if user.get("status") != AUTHENTICATING_STATUS or user.get("system", False):
             raise HTTPForbidden("OIDC login refused: the user cannot sign in")
         identity = user["identity"]
         store: AuthStore = self.application.store
         return Avatar(identity, store.get_user_tags(identity), group=user.get("primary_group"))
 
-    def link_user(self, claims: dict[str, Any]) -> dict[str, Any]:
-        """The user record of ``claims``: by ``iss`` + ``sub``, else by verified email, else registered.
+    def registration_setting(self, app: str) -> tuple[dict[str, Any], bool]:
+        """The registration setting of a login through ``app``, and whether ``app`` declared it.
 
-        Writes ``{iss, sub}`` on the one confirmed, non-system user with the
-        verified email; writes a new record through ``register_user`` when nobody has it.
+        A setting whose ``status`` is not a user status counts as ``{}`` and
+        logs a warning.
+        """
+        declared = None
+        if app:
+            declared = self.application.server.applications[app].self_registration
+        setting = declared if declared is not None else self.application.self_registration
+        if setting and setting.get("status") not in USER_STATUSES:
+            logging.getLogger(__name__).warning(
+                "application %s: self_registration not applied, status %r is not one of %s",
+                app or self.application.code,
+                setting.get("status"),
+                ", ".join(USER_STATUSES),
+            )
+            setting = {}
+        return setting or {}, declared is not None
+
+    def link_user(self, claims: dict[str, Any], app: str = "") -> dict[str, Any]:
+        """The user record of ``claims``: by ``iss`` + ``sub``, username, verified email, else registered.
+
+        Writes ``{iss, sub}`` on the confirmed, non-system user found by
+        username or email; writes a new record through ``register_user`` when
+        nobody matches. A user found through an ``app`` whose own setting
+        admits registration gets the tags of that setting it lacks.
 
         Raises:
-            HTTPForbidden: No verified email, an ambiguous email, a user found
-                by email that is not confirmed or is a system user, or a refused
-                registration.
+            HTTPForbidden: No verified email when nobody matches the username,
+                an ambiguous email, a user found by username or email that is
+                not confirmed or is a system user, or a refused registration.
         """
         store: AuthStore = self.application.store
         iss, sub = claims["iss"], claims["sub"]
+        setting, declared = self.registration_setting(app)
         user = store.get_user_by_external_id(iss, sub)
-        if user is not None:
-            return user
+        if user is None:
+            user = self.find_unlinked_user(claims)
+            if user is None:
+                return self.register_user(claims, setting)
+            if user.get("status") != AUTHENTICATING_STATUS or user.get("system", False):
+                raise HTTPForbidden("OIDC login refused: the user cannot sign in")
+            user["external_ids"] = [*user.get("external_ids", []), {"iss": iss, "sub": sub}]
+            store.save_user(user)
+        if declared and setting and not user.get("system", False):
+            missing = [tag for tag in setting.get("tags") or [] if tag not in user.get("tags", [])]
+            if missing:
+                user["tags"] = [*user.get("tags", []), *missing]
+                store.save_user(user)
+        return user
+
+    def find_unlinked_user(self, claims: dict[str, Any]) -> dict[str, Any] | None:
+        """The user ``claims`` match before any link: by ``preferred_username``, then verified email.
+
+        Raises:
+            HTTPForbidden: No username match and no verified email, or more
+                than one user with the email.
+        """
+        store: AuthStore = self.application.store
+        username = claims.get("preferred_username")
+        if username:
+            user = store.get_user(username)
+            if user is not None:
+                return user
         email = claims.get("email")
         if not email or claims.get("email_verified") is not True:
             raise HTTPForbidden("OIDC login refused: no verified email")
         matches = store.get_user_list_by_email(email)
         if len(matches) > 1:
             raise HTTPForbidden("OIDC login refused: more than one user has this email")
-        if not matches:
-            return self.register_user(email, iss, sub)
-        user = matches[0]
-        if user.get("status") != AUTHENTICATING_STATUS or user.get("system", False):
-            raise HTTPForbidden("OIDC login refused: the user cannot sign in")
-        user["external_ids"] = [*user.get("external_ids", []), {"iss": iss, "sub": sub}]
-        store.save_user(user)
-        return user
+        return matches[0] if matches else None
 
-    def register_user(self, email: str, iss: str, sub: str) -> dict[str, Any]:
-        """Write the record of an unknown user under the ``self_registration`` setting.
+    def register_user(self, claims: dict[str, Any], setting: dict[str, Any]) -> dict[str, Any]:
+        """Write the record of an unknown user under the registration ``setting``.
 
         Raises:
-            HTTPForbidden: No ``self_registration`` setting, or the identity
-                ``email`` is already taken.
+            HTTPForbidden: An empty ``setting``, or the identity (the verified
+                email) is already taken.
         """
-        setting = self.application.self_registration
         if not setting:
             raise HTTPForbidden("OIDC login refused: unknown user")
+        email = claims["email"]
         store: AuthStore = self.application.store
         if store.get_user(email) is not None:
             raise HTTPForbidden("OIDC login refused: the identity is already taken")
@@ -343,7 +405,7 @@ class OidcMethod(AuthMethod):
             "system": False,
             "password_hash": None,
             "email": email,
-            "external_ids": [{"iss": iss, "sub": sub}],
+            "external_ids": [{"iss": claims["iss"], "sub": claims["sub"]}],
         }
         store.save_user(record)
         return record
@@ -390,6 +452,8 @@ class OidcMethod(AuthMethod):
             )
         except (jwt.InvalidTokenError, jwt.PyJWKClientError) as error:
             raise HTTPBadRequest("OIDC id_token verification failed") from error
+        if "azp" in claims and claims["azp"] != self.provider["client_id"]:
+            raise HTTPBadRequest("OIDC id_token issued to another client")
         return claims
 
     def _pkce_challenge(self, verifier: str) -> str:

@@ -65,6 +65,9 @@ Configuration, under the application element (``AuthApplicationGrammar``)::
   the word such a login is refused. A setting whose ``status`` is not a user
   status is not applied: self registration stays off and a warning is logged.
   A hand-built server passes the same dict as the ``self_registration`` kwarg.
+  An application declares its own ``self_registration`` (``BaseApplication``);
+  a login started with ``?app=<code>`` uses it in place of this setting when
+  it is not ``None`` (see ``OidcMethod``).
 
 Credentials accepted: a password, through ``/_auth/login`` or an
 ``Authorization: Basic`` header, and a ``gak_`` token as
