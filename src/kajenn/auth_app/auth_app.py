@@ -46,9 +46,13 @@ Configuration, under the application element (``AuthApplicationGrammar``)::
   ``store_class`` is omitted. Without the word: ``FileAuthStore(server.storage)``.
   A hand-built server passes the same dict as the ``store`` kwarg. The store
   is built on first use: a server without storage raises ``RuntimeError``.
-- ``login(max_attempts, backoff)`` — the lockout policy, defaults 5 attempts
-  and 30 seconds. A hand-built server passes the same dict as the ``login``
-  kwarg.
+- ``login(max_attempts, backoff, password)`` — the lockout policy, defaults 5
+  attempts and 30 seconds. ``password=False`` turns the password login off:
+  ``/_auth/login`` and an ``Authorization: Basic`` header refuse every
+  identity except ``_temporary_admin`` while its record exists, and
+  ``login_methods`` lists the password form only then. ``gak_`` tokens stay
+  valid. Without the attribute the password login is on. A hand-built server
+  passes the same dict as the ``login`` kwarg.
 - ``oidc()`` with one ``provider(code, issuer, client_id, client_secret,
   scopes)`` per external provider; ``client_secret`` is optional and is
   written as a resolver; ``scopes`` defaults to ``openid email profile``. Each
@@ -253,8 +257,10 @@ class AuthApplicationGrammar(ApplicationGrammar):
         """The AuthStore: ``store_class`` (``FileAuthStore`` when omitted) and its own kwargs."""
 
     @element(sub_tags="", node_label="login")
-    def login(self, max_attempts: int = None, backoff: float = None) -> None:
-        """Lockout policy of the password check: ``max_attempts`` and ``backoff`` seconds."""
+    def login(
+        self, max_attempts: int = None, backoff: float = None, password: bool = None
+    ) -> None:
+        """Password login: lockout ``max_attempts`` and ``backoff`` seconds; ``password=False`` turns it off."""
 
     @element(sub_tags="provider", collection_key="code", node_label="oidc")
     def oidc(self) -> None:
@@ -331,7 +337,9 @@ class AuthApplicationBase(RoutedApplication):
         if store_node is not None:
             self._store_options = handler.open_attrs(store_node)
         if handler.node(f"{section}.login") is not None:
-            self._login_policy = handler.closed_attrs(f"{section}.login", "max_attempts", "backoff")
+            self._login_policy = handler.closed_attrs(
+                f"{section}.login", "max_attempts", "backoff", "password"
+            )
         if handler.node(f"{section}.self_registration") is not None:
             self.self_registration = handler.closed_attrs(
                 f"{section}.self_registration", "status", "tags"
@@ -387,8 +395,17 @@ class AuthApplicationBase(RoutedApplication):
 
     @property
     def login_policy(self) -> dict[str, Any]:
-        """The lockout policy from the ``login`` word (may be empty)."""
+        """The policy from the ``login`` word (may be empty)."""
         return self._login_policy
+
+    @property
+    def password_login(self) -> bool:
+        """False when the ``login`` word says ``password=False``."""
+        return self.login_policy.get("password") is not False
+
+    def accepts_password_of(self, identity: str) -> bool:
+        """Whether a password check runs for ``identity``: always, or only ``_temporary_admin``."""
+        return self.password_login or identity == TEMPORARY_ADMIN
 
     @property
     def oidc_providers(self) -> dict[str, dict[str, Any]]:
@@ -525,8 +542,12 @@ class AuthApplicationBase(RoutedApplication):
 
         The refusal is the ``{"error": ...}`` shape, with ``remaining_attempts``
         when the identity has a record. A refused attempt during a lockout
-        leaves the counter as it is; a failure counts; a success resets.
+        leaves the counter as it is; a failure counts; a success resets. With
+        the password login off (``accepts_password_of``) the check does not
+        run and the counter is not touched.
         """
+        if not self.accepts_password_of(identity):
+            return None, {"error": "Password login is disabled"}
         record = self.store.get_user(identity)
         failures = self.store.get_login_failures(identity)
         if (
@@ -897,4 +918,7 @@ class AuthApplicationBase(RoutedApplication):
         Note:
             Route: GET /_auth/login_methods
         """
-        return {"methods": self.auth_method_registry.descriptor_list}
+        methods = self.auth_method_registry.descriptor_list
+        if not self.password_login and self.store.get_user(TEMPORARY_ADMIN) is None:
+            methods = [method for method in methods if method["kind"] != "form"]
+        return {"methods": methods}

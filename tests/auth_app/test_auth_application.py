@@ -1230,3 +1230,51 @@ class TestAvatarGroup:
     def test_the_group_field(self) -> None:
         assert Avatar("ann", ["x"], group="staff").group == "staff"
         assert Avatar("ann", ["x"]).group is None
+
+
+class TestKeycloakOnly:
+    """``login(password=False)``: no password login; tokens stay valid."""
+
+    async def test_a_right_password_is_refused_on_the_login_route(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"password": False})
+        answer = await login(server, "alice", "wonder")
+        assert "session_id" not in answer
+        assert "error" in answer
+
+    async def test_a_basic_header_is_refused(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"password": False})
+        sent = await drive(server, "/_auth/users/list", authorization=basic("root", "rootpw"))
+        assert status(sent) == 401
+
+    async def test_a_gak_token_is_accepted(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"password": False})
+        key = auth_store(server).issue_token("root", "*")
+        sent = await drive(server, "/_auth/users/list", authorization=f"Bearer {key}")
+        assert status(sent) == 200
+
+    async def test_the_password_method_is_not_listed(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"password": False})
+        await server.applications["_auth"].remove_temporary_admin()
+        methods = payload(await drive(server, "/_auth/login_methods"))["methods"]
+        assert "password" not in [method["id"] for method in methods]
+
+    async def test_without_the_attribute_the_password_works(self, tmp_path: Path) -> None:
+        server = await started(tmp_path, login={"max_attempts": 3})
+        assert (await login(server, "alice", "wonder"))["identity"] == "alice"
+
+    async def test_the_recipe_word_turns_the_password_login_off(self, tmp_path: Path) -> None:
+        class KeycloakOnlySite(AsgiConfigBuilder):
+            def main(self, root: Any) -> None:
+                apps = root.configuration().applications()
+                apps.application(code="home", mount="", app_class=BaseApplication)
+                auth_app = apps.application(code="_auth", app_class=AuthApplicationBase)
+                auth_app.login(password=False)
+
+        server = AsgiServer(
+            KeycloakOnlySite,
+            storage=site_mounts(tmp_path),
+            storage_key=Fernet.generate_key().decode(),
+        )
+        await start_server(server)
+        seed(server)
+        assert "session_id" not in await login(server, "alice", "wonder")
