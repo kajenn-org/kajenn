@@ -68,7 +68,10 @@ Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the a
 - **d-config-syntax** `decided` — Syntax of the keycloak section.
    1. **keycloak(url) with children client(realm, client_id, client_secret), registration(admitted, status, tags, invitations), phone(collect: no|optional|required, otp), username(chosen_by: person|inviter, when_taken: ask|counter), shared_data (to define with Authlot). genropy: the package node in instanceconfig packages carries url and the children; kajenn: the same element under the application in the recipe. A missing child means the application defaults; a missing keycloak node means no Keycloak login for that application**
    → Choice: **keycloak(url) with children client(realm, client_id, client_secret), registration(admitted, status, tags, invitations), phone(collect: no|optional|required, otp), username(chosen_by: person|inviter, when_taken: ask|counter), shared_data (to define with Authlot). genropy: the package node in instanceconfig packages carries url and the children; kajenn: the same element under the application in the recipe. A missing child means the application defaults; a missing keycloak node means no Keycloak login for that application** (owner, 2026-11-22)
-- **d-rules-current-value** `open` — After an administrator changes a rule in Authlot, which value does a login use and where is it read? Keycloak client attributes written by Authlot, or the application configuration written by Authlot.
+- **d-rules-current-value** `decided` — After an administrator changes a rule in Authlot, which value does a registration use and where is it read?
+   1. **Authlot writes the change into the attributes of the Keycloak client (Admin API; Authlot's keys authlot.*). The application reads them when it registers a new person; its keycloak section is the default until Authlot wrote. A change applies from the next registration on: users already registered are not touched**
+   2. **Authlot rewrites the configuration of every site and instance**
+   → Choice: **Authlot writes the change into the attributes of the Keycloak client (Admin API; Authlot's keys authlot.*). The application reads them when it registers a new person; its keycloak section is the default until Authlot wrote. A change applies from the next registration on: users already registered are not touched** (owner, 2026-11-22)
 - **d-local-user-create** `open` — Who creates the local user of a new person? kajenn: \_auth at the callback. Authlot (d-client-create): an endpoint of the application, called during registration.
    1. **_auth at the callback (implemented in #165)**
    2. **An endpoint of the application, called by Authlot**
@@ -108,7 +111,7 @@ Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the a
 - A site with users not linked to a provider has that provider off until the realignment tool exists and has run.
 - An OIDC login no longer links an existing user by email (breaking for 0.10.0 sites that relied on it).
 - Meetlot changes after #165: its KeycloakMethod follows the new start and callback.
-- The open decisions d-rules-current-value, d-local-user-create and d-reverse-link meet Authlot's model: decide them before Authlot writes anything.
+- The open decisions d-local-user-create and d-reverse-link meet Authlot's model: decide them before Authlot writes anything.
 - PR #165 changes: BaseApplication.self\_registration and the client of an application as an extra provider of \_auth give way to the keycloak section of the application in the recipe.
 - genropy-keycloak: to verify that the package loader accepts children under a package node of instanceconfig; the rule "the node turns the feature on" replaces its decision d-enable (GNR\_AUTH\_PKG).
 
