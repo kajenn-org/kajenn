@@ -105,7 +105,7 @@ th { background: var(--panel); }
     </section>
 
     <section class="section"><h3>Where the administration lives</h3>
-      <p><code>services.softwell.it</code> is one kajenn site with several applications on different routes: the recipe <code>SoftwellSite</code> of <code>softwell-services</code> mounts <code>_auth</code>, <code>/clients</code> and <code>/connectors</code>; Authlot becomes one more mount of that site and shares its <code>_auth</code> (owner, reported by the softwell-services session, 2026-11-22).</p>
+      <p><code>services.softwell.it</code> is one kajenn site with several applications on different routes: the recipe <code>SoftwellSite</code> of <code>softwell-services</code> mounts <code>_auth</code>, <code>/clients</code> and the signing service (today <code>/connectors</code>: it signs site connectors for GenroApp instances, which call it with an instance token; it may sign other things later); Authlot becomes one more mount of that site and shares its <code>_auth</code> (owner, reported by the softwell-services session, 2026-11-22).</p>
       <p>All administration has a GUI in Authlot, mounted at <code>services.softwell.it</code> (owner, 2026-11-22). The realignment and the repair tools are used from there. Authlot's plan names <code>auth.genro.dev</code> for the users' portal (<code>d-portal-host</code>): to verify whether the two addresses stay separate.</p>
     </section>
 
