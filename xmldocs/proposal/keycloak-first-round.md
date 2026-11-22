@@ -27,6 +27,10 @@ The scenarios are limited on purpose.
 
 Step 1 (the gate) is in PR #165. The realignment tool, the alignment of step 2 and the repair tool are not written yet; they are the base the rest builds on.
 
+#### Where the administration lives
+
+All administration has a GUI in Authlot, mounted at `services.softwell.it` (owner, 2026-11-22). The realignment and the repair tools are used from there. Authlot's plan names `auth.genro.dev` for the users' portal (`d-portal-host`): to verify whether the two addresses stay separate.
+
 #### Who decides what
 
 Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the applications decide what the person can do. The `_auth` user record is the source of truth for the person's data.
@@ -43,8 +47,11 @@ Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the a
 - **d-gate** `decided` — When can a provider be used?
    1. **Only when every user of the store is linked to its issuer (system users and _temporary_admin do not count). Otherwise start and callback answer 403 and login_methods leaves it out. A computed condition, no switch**
    → Choice: **Only when every user of the store is linked to its issuer (system users and _temporary_admin do not count). Otherwise start and callback answer 403 and login_methods leaves it out. A computed condition, no switch** (owner (rule); delegated (computed condition), 2026-11-22)
-- **d-realign** `open` — Realignment tool: what it does with each kajenn user, where it runs, how passwords move.
-   1. **A kajenn command using the Keycloak Admin API with a service account, as Authlot's reader does; to be designed**
+- **d-admin-gui** `decided` — Where is the administration?
+   1. **A GUI in Authlot, mounted at services.softwell.it, for all administration**
+   → Choice: **A GUI in Authlot, mounted at services.softwell.it, for all administration** (owner, 2026-11-22)
+- **d-realign** `open` — Realignment tool: what it does with each kajenn user and how passwords move. Its GUI is in Authlot (d-admin-gui); which part runs in kajenn and which in Authlot is to design.
+   1. **kajenn exposes what the tool needs on _auth (users, links); Authlot talks to the Keycloak Admin API with a service account, as its reader does, and drives the realignment; to be designed**
 - **d-reverse-link** `open` — Where does the reverse link (Keycloak person → kajenn user) live? Issue #163.
    1. **An attribute on the Keycloak user, one per application**
    2. **Authlot's person_application table (local_user_id, local_username)**

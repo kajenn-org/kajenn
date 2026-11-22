@@ -22,6 +22,10 @@
       <p>Step 1 (the gate) is in PR #165. The realignment tool, the alignment of step 2 and the repair tool are not written yet; they are the base the rest builds on.</p>
     </section>
 
+    <section title="Where the administration lives">
+      <p>All administration has a GUI in Authlot, mounted at <c>services.softwell.it</c> (owner, 2026-11-22). The realignment and the repair tools are used from there. Authlot's plan names <c>auth.genro.dev</c> for the users' portal (<c>d-portal-host</c>): to verify whether the two addresses stay separate.</p>
+    </section>
+
     <section title="Who decides what">
       <p>Keycloak says who the person is. <c>_auth</c> (users, groups, tags, tokens) and the applications decide what the person can do. The <c>_auth</c> user record is the source of truth for the person's data.</p>
     </section>
@@ -44,9 +48,14 @@
       <option id="d-gate-linked" title="Only when every user of the store is linked to its issuer (system users and _temporary_admin do not count). Otherwise start and callback answer 403 and login_methods leaves it out. A computed condition, no switch"/>
       <choice option="d-gate-linked" by="owner (rule); delegated (computed condition)" date="2026-11-22"/>
     </decision>
+    <decision id="d-admin-gui" status="decided">
+      <question>Where is the administration?</question>
+      <option id="d-admin-gui-authlot" title="A GUI in Authlot, mounted at services.softwell.it, for all administration"/>
+      <choice option="d-admin-gui-authlot" by="owner" date="2026-11-22"/>
+    </decision>
     <decision id="d-realign" status="open">
-      <question>Realignment tool: what it does with each kajenn user, where it runs, how passwords move.</question>
-      <option id="d-realign-kajenn" title="A kajenn command using the Keycloak Admin API with a service account, as Authlot's reader does; to be designed"/>
+      <question>Realignment tool: what it does with each kajenn user and how passwords move. Its GUI is in Authlot (d-admin-gui); which part runs in kajenn and which in Authlot is to design.</question>
+      <option id="d-realign-split" title="kajenn exposes what the tool needs on _auth (users, links); Authlot talks to the Keycloak Admin API with a service account, as its reader does, and drives the realignment; to be designed"/>
     </decision>
     <decision id="d-reverse-link" status="open">
       <question>Where does the reverse link (Keycloak person → kajenn user) live? Issue #163.</question>
