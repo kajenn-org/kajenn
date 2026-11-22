@@ -48,11 +48,13 @@ declare ``env_requires="external_links"``: on a server without
 ``not_available`` (see ``ServerCapabilities``), and ``login_methods`` leaves
 the provider out.
 
-The registration setting of a login: the ``self_registration`` the
-application named by ``app`` declares; when no ``app`` was given or the
-application declares ``None``, the ``self_registration`` setting of ``_auth``.
-A setting whose ``status`` is not a user status is not applied: it counts as
-no registration and a warning is logged.
+The registration setting of a login. With ``app``: the ``keycloak`` section of
+that application (``BaseApplication.keycloak``). An application without the
+section offers no Keycloak login: ``start`` and the callback answer 403. Its
+``selfregister`` child admits self registration: the person is born
+``waiting`` with the child's ``tags``; without the child an unknown person is
+refused. Without ``app``: the ``self_registration`` setting of ``_auth``; one
+whose ``status`` is not a user status is not applied and a warning is logged.
 
 The user, from the verified ``id_token`` claims:
 
@@ -66,9 +68,10 @@ The user, from the verified ``id_token`` claims:
   No verified email, an identity already taken, or a verified email another
   user holds: refused, nothing written.
 
-A user that is not confirmed or is a system user is refused. A user found
-through an ``app`` whose own setting admits registration gets the setting's
-tags it lacks.
+A ``waiting`` user is refused with the message that an administrator must
+approve the registration. Another user that is not confirmed, or a system
+user, is refused. A known user entering through another application gets
+no tag from the login: an administrator assigns the tags of that application.
 
 Every user linked first. A provider is off while a user of the store is not
 linked to its issuer (``every_user_linked``): system users and
@@ -91,9 +94,7 @@ Person fields: at every login the empty fields of the record take the claims
 (``given_name`` → ``firstname``, ``family_name`` → ``lastname``, ``picture`` →
 ``photo``, ``email`` → ``email`` only with ``email_verified`` true); a filled
 field is kept. The record is saved when a field changes. A system user is
-never written. A user found (not registered) through an ``app``
-whose own setting admits registration gets the setting's tags it lacks; the
-record is saved when that adds a tag.
+never written.
 
 A user found or written whose ``status`` is not ``confirmed``, or that is a
 system user, is refused. The avatar is
@@ -154,7 +155,13 @@ from kajenn.exceptions import HTTPBadRequest, HTTPForbidden, Redirect
 from kajenn.session import Avatar
 
 from .auth_method import AuthMethod
-from .auth_store import AUTHENTICATING_STATUS, TEMPORARY_ADMIN, USER_STATUSES, AuthStore
+from .auth_store import (
+    AUTHENTICATING_STATUS,
+    TEMPORARY_ADMIN,
+    USER_STATUSES,
+    WAITING_STATUS,
+    AuthStore,
+)
 
 __all__ = ["OidcMethod"]
 
@@ -254,6 +261,8 @@ class OidcMethod(AuthMethod):
             raise HTTPBadRequest(f"OIDC login for an unknown application: {app}")
         if app and not self.application.server.is_enabled(app):
             raise HTTPForbidden(f"OIDC login for a disabled application: {app}")
+        if app and self.application.server.applications[app].keycloak is None:
+            raise HTTPForbidden(f"The application {app} has no Keycloak login")
         if not self.every_user_linked():
             raise HTTPForbidden("OIDC login is off until every user is linked to the provider")
         discovery = await self.discovery()
@@ -393,6 +402,10 @@ class OidcMethod(AuthMethod):
             HTTPForbidden: A refused login.
         """
         user, written = self.link_user(claims, app)
+        if user.get("status") == WAITING_STATUS and not user.get("system", False):
+            raise HTTPForbidden(
+                "Your registration is waiting: an administrator must approve it before you can enter"
+            )
         if user.get("status") != AUTHENTICATING_STATUS or user.get("system", False):
             raise HTTPForbidden("OIDC login refused: the user cannot sign in")
         identity = user["identity"]
@@ -400,45 +413,53 @@ class OidcMethod(AuthMethod):
         avatar = Avatar(identity, store.get_user_tags(identity), group=user.get("primary_group"))
         return avatar, written
 
-    def registration_setting(self, app: str) -> tuple[dict[str, Any], bool]:
-        """The registration setting of a login through ``app``, and whether ``app`` declared it.
+    def registration_setting(self, app: str) -> dict[str, Any]:
+        """The registration setting of a login through ``app``.
 
-        A setting whose ``status`` is not a user status counts as ``{}`` and
-        logs a warning.
+        With ``app``: ``{"status": "waiting", "tags": [...]}`` when the
+        ``keycloak`` section of the application has a ``selfregister`` child,
+        else ``{}``. Without ``app``: the ``self_registration`` setting of
+        ``_auth``; one whose ``status`` is not a user status counts as ``{}``
+        and logs a warning.
 
         Raises:
-            HTTPForbidden: ``app`` is no longer an enabled application.
+            HTTPForbidden: ``app`` is no longer an enabled application, or has
+                no ``keycloak`` section.
         """
-        declared = None
         if app:
             server = self.application.server
             if server.applications.get(app) is None or not server.is_enabled(app):
                 raise HTTPForbidden(f"OIDC login for an application no longer enabled: {app}")
-            declared = server.applications[app].self_registration
-        setting = declared if declared is not None else self.application.self_registration
+            keycloak = server.applications[app].keycloak
+            if keycloak is None:
+                raise HTTPForbidden(f"The application {app} has no Keycloak login")
+            if "selfregister" not in keycloak:
+                return {}
+            tags = list(keycloak["selfregister"].get("tags") or [])
+            return {"status": WAITING_STATUS, "tags": tags}
+        setting = self.application.self_registration
         if setting and setting.get("status") not in USER_STATUSES:
             logging.getLogger(__name__).warning(
                 "application %s: self_registration not applied, status %r is not one of %s",
-                app or self.application.code,
+                self.application.code,
                 setting.get("status"),
                 ", ".join(USER_STATUSES),
             )
             setting = {}
-        return setting or {}, declared is not None
+        return setting or {}
 
     def link_user(self, claims: dict[str, Any], app: str = "") -> tuple[dict[str, Any], bool]:
         """The user record of ``claims`` by ``iss`` + ``sub``, else registered; and whether it was written.
 
-        A user found through an ``app`` whose own setting admits registration
-        gets the tags of that setting it lacks; the empty person fields take
-        the claims.
+        The empty person fields take the claims; a user that exists gets no
+        tag from the login.
 
         Raises:
             HTTPForbidden: An application no longer enabled, or a refused
                 registration.
         """
         store: AuthStore = self.application.store
-        setting, declared = self.registration_setting(app)
+        setting = self.registration_setting(app)
         user = store.get_user_by_external_id(claims["iss"], claims["sub"])
         written = False
         if user is None:
@@ -447,11 +468,6 @@ class OidcMethod(AuthMethod):
         if user.get("system", False):
             return user, written
         changed = self.fill_person_fields(user, claims)
-        if declared and setting:
-            missing = [tag for tag in setting.get("tags") or [] if tag not in user.get("tags", [])]
-            if missing:
-                user["tags"] = [*user.get("tags", []), *missing]
-                changed = True
         if changed:
             store.save_user(user)
         return user, written or changed

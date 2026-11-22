@@ -94,9 +94,10 @@ Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the a
    1. **The application at the first login, with the defaults of its keycloak section**
    2. **The application, when Authlot calls it at the end of its registration path: it answers the local id, the username and the state (Authlot d-client-create). In kajenn a route of _auth that Authlot calls with its own credential (a gak_ token of a system user); the route is to design**
    → Choice: **The application, when Authlot calls it at the end of its registration path: it answers the local id, the username and the state (Authlot d-client-create). In kajenn a route of _auth that Authlot calls with its own credential (a gak_ token of a system user); the route is to design** (owner, 2026-11-22)
-- **d-known-user-new-app** `decided` — A known user enters through another application that admits registration: does it get that application's tags?
-   1. **Yes, the tags it lacks are added**
-   → Choice: **Yes, the tags it lacks are added** (delegated, to review, 2026-11-20)
+- **d-known-user-new-app** `decided` — A known user enters through another application that admits self registration: does it get that application's tags?
+   1. **Yes, the tags it lacks are added (delegated, 2026-11-20): superseded, it would skip the approval that d-selfregister asks**
+   2. **No: the login gives no tag to a user that exists; an administrator assigns the tags of that application**
+   → Choice: **No: the login gives no tag to a user that exists; an administrator assigns the tags of that application** (delegated, to review, 2026-11-22)
 - **d-app-enabled** `decided` — What if the application of a login is disabled or removed?
    1. **Checked at start and at the callback; 403 before the user is touched**
    → Choice: **Checked at start and at the callback; 403 before the user is touched** (owner (approved review fix), 2026-11-22)
@@ -131,7 +132,7 @@ Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the a
 - An OIDC login no longer links an existing user by email (breaking for 0.10.0 sites that relied on it).
 - Meetlot changes after #165: its KeycloakMethod follows the new start and callback.
 - genropy-keycloak d-link (GenroPy id as a Keycloak attribute) is superseded for the reverse direction by d-reverse-link.
-- PR #165 changes: BaseApplication.self\_registration and the client of an application as an extra provider of \_auth give way to the keycloak section of the application in the recipe.
+- In PR #165: the keycloak section of the application in the recipe (ApplicationGrammar.keycloak and its children, read back by BaseApplication.keycloak) replaces BaseApplication.self\_registration; a login through ?app= follows it; selfregister gives birth to a waiting user with the approval message. Not yet applied by kajenn: client (the client of an application is still a provider of \_auth), invite, phone, username, shared\_data, the route Authlot calls to create the local user, the reading of the current rules from the Keycloak client attributes.
 - genropy-keycloak: to verify that the package loader accepts children under a package node of instanceconfig; the rule "the node turns the feature on" replaces its decision d-enable (GNR\_AUTH\_PKG).
 
 ### Related documents

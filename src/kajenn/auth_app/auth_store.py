@@ -177,6 +177,7 @@ USER_STATUSES = ("waiting", "confirmed", "banned")
 PERSON_FIELDS = ("email", "firstname", "lastname", "photo")
 TEMPORARY_ADMIN = "_temporary_admin"
 AUTHENTICATING_STATUS = "confirmed"
+WAITING_STATUS = "waiting"
 ALL_TAGS = "*"
 
 TOKEN_PREFIX = "gak_"

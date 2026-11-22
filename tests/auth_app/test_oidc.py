@@ -836,48 +836,34 @@ class TestConfiguration:
 
 
 class Alfa(BaseApplication):
-    """Admits self registration with its own tag."""
+    """Owns the tag its ``selfregister`` gives."""
 
     @property
     def declared_tags(self) -> list[dict[str, Any]]:
         return [{"code": "ALFA_USER"}]
 
-    @property
-    def self_registration(self) -> dict[str, Any] | None:
-        return {"status": "confirmed", "tags": ["ALFA_USER"]}
+
+class SiteWithApplications(AsgiConfigBuilder):
+    """``alfa`` admits self registration, ``beta`` has a Keycloak login without it, ``plain`` has none."""
+
+    def main(self, root: Any) -> None:
+        apps = root.configuration().applications()
+        apps.application(code="home", mount="", app_class=BaseApplication)
+        auth_app = apps.application(code="_auth", app_class=AuthApplicationBase)
+        auth_app.oidc().provider(
+            code="google", issuer=ISSUER, client_id=CLIENT_ID, client_secret="s3cret"
+        )
+        alfa = apps.application(code="alfa", app_class=Alfa).keycloak(url=ISSUER)
+        alfa.selfregister(tags=["ALFA_USER"])
+        alfa.phone(collect="optional", otp=False)
+        apps.application(code="beta", app_class=BaseApplication).keycloak(url=ISSUER)
+        apps.application(code="plain", app_class=BaseApplication)
 
 
-class Beta(BaseApplication):
-    """Refuses every unknown person."""
-
-    @property
-    def self_registration(self) -> dict[str, Any] | None:
-        return {}
-
-
-class Gamma(BaseApplication):
-    """Admits self registration with another tag."""
-
-    @property
-    def declared_tags(self) -> list[dict[str, Any]]:
-        return [{"code": "GAMMA_USER"}]
-
-    @property
-    def self_registration(self) -> dict[str, Any] | None:
-        return {"status": "confirmed", "tags": ["GAMMA_USER"]}
-
-
-async def started_with_apps(tmp_path: Path, **app_kwargs: Any) -> AsgiServer:
-    """A started, seeded server with ``alfa``, ``beta``, ``gamma`` and a plain ``home``."""
-    app_kwargs.setdefault("oidc", {"google": PROVIDER})
+async def started_with_apps(tmp_path: Path) -> AsgiServer:
+    """A started, seeded server built from ``SiteWithApplications``."""
     server = AsgiServer(
-        applications=[
-            (AuthApplicationBase, app_kwargs),
-            (Alfa, {"code": "alfa"}),
-            (Beta, {"code": "beta"}),
-            (Gamma, {"code": "gamma"}),
-            (BaseApplication, {"code": "home", "mount": ""}),
-        ],
+        SiteWithApplications,
         storage=site_mounts(tmp_path),
         storage_key=Fernet.generate_key().decode(),
         external_url=EXTERNAL_URL,
@@ -898,31 +884,67 @@ async def login_through(server: AsgiServer, app: str, **claims: Any) -> tuple[st
     return cookie, answer
 
 
-class TestApplicationRules:
-    """The application named by ``?app=`` gives the registration rules of the login."""
+def body_text(sent: list[Message]) -> str:
+    return b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body").decode()
 
-    async def test_an_unknown_person_entering_alfa_is_registered_with_its_tag(
+
+class TestKeycloakSection:
+    """The ``keycloak`` section of the application named by ``?app=`` rules the login."""
+
+    async def test_the_section_is_read_back_from_the_recipe(self, tmp_path: Path) -> None:
+        server = await started_with_apps(tmp_path)
+        assert server.applications["alfa"].keycloak == {
+            "url": ISSUER,
+            "selfregister": {"tags": ["ALFA_USER"]},
+            "phone": {"collect": "optional", "otp": False},
+        }
+        assert server.applications["beta"].keycloak == {"url": ISSUER}
+        assert server.applications["plain"].keycloak is None
+
+    async def test_a_person_registering_through_alfa_is_born_waiting_with_its_tag(
         self, tmp_path: Path
     ) -> None:
         server = await started_with_apps(tmp_path)
         cookie, sent = await login_through(server, "alfa", sub="new", email="new@example.com")
+        assert status(sent) == 403
+        assert "administrator must approve" in body_text(sent)
+        assert avatar_of(server, cookie) is None
+        record = auth_store(server).get_user("new@example.com")
+        assert (record["status"], record["tags"]) == ("waiting", ["ALFA_USER"])
+
+    async def test_the_waiting_person_gets_the_message_again_at_the_next_login(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_with_apps(tmp_path)
+        await login_through(server, "alfa", sub="new", email="new@example.com")
+        _, sent = await login_through(server, "alfa", sub="new", email="new@example.com")
+        assert status(sent) == 403
+        assert "administrator must approve" in body_text(sent)
+
+    async def test_once_confirmed_the_person_enters(self, tmp_path: Path) -> None:
+        server = await started_with_apps(tmp_path)
+        await login_through(server, "alfa", sub="new", email="new@example.com")
+        store = auth_store(server)
+        record = store.get_user("new@example.com")
+        record["status"] = "confirmed"
+        store.save_user(record)
+        cookie, sent = await login_through(server, "alfa", sub="new", email="new@example.com")
         assert status(sent) == 302
         assert location(sent) == "/alfa"
-        assert avatar_of(server, cookie).identity == "new@example.com"
-        assert auth_store(server).get_user("new@example.com")["tags"] == ["ALFA_USER"]
+        assert avatar_of(server, cookie).tags == ["ALFA_USER"]
 
-    async def test_an_unknown_person_entering_beta_is_refused(self, tmp_path: Path) -> None:
-        server = await started_with_apps(tmp_path, self_registration={
-            "status": "confirmed", "tags": []})
+    async def test_without_selfregister_an_unknown_person_is_refused(self, tmp_path: Path) -> None:
+        server = await started_with_apps(tmp_path)
         _, sent = await login_through(server, "beta", sub="new", email="new@example.com")
         assert status(sent) == 403
         assert auth_store(server).get_user("new@example.com") is None
 
-    async def test_an_application_declaring_nothing_leaves_the_auth_setting(
+    async def test_an_application_without_the_section_has_no_keycloak_login(
         self, tmp_path: Path
     ) -> None:
         server = await started_with_apps(tmp_path)
-        _, sent = await login_through(server, "home", sub="new", email="new@example.com")
+        session = server.session_store.create()
+        sent = await drive(server, f"{START}?app=plain", cookie=f"session_id={session.id}")
         assert status(sent) == 403
 
     async def test_an_unknown_application_answers_400(self, tmp_path: Path) -> None:
@@ -931,22 +953,16 @@ class TestApplicationRules:
         sent = await drive(server, f"{START}?app=nowhere", cookie=f"session_id={session.id}")
         assert status(sent) == 400
 
-    async def test_a_known_user_entering_another_application_gets_its_tags(
+    async def test_a_known_user_entering_alfa_gets_no_tag_from_the_login(
         self, tmp_path: Path
     ) -> None:
         server = await started_with_apps(tmp_path)
-        await login_through(server, "alfa", sub="new", email="new@example.com")
-        cookie, sent = await login_through(server, "gamma", sub="new", email="new@example.com")
-        assert status(sent) == 302
-        record = auth_store(server).get_user("new@example.com")
-        assert record["tags"] == ["ALFA_USER", "GAMMA_USER"]
-        assert "GAMMA_USER" in avatar_of(server, cookie).tags
-
-    async def test_a_known_user_entering_beta_keeps_its_tags(self, tmp_path: Path) -> None:
-        server = await started_with_apps(tmp_path)
-        _, sent = await login_through(server, "beta", sub="google-sub-1", email="alice@example.com")
+        cookie, sent = await login_through(
+            server, "alfa", sub="google-sub-1", email="alice@example.com"
+        )
         assert status(sent) == 302
         assert auth_store(server).get_user("alice")["tags"] == ["OWN"]
+        assert "ALFA_USER" not in avatar_of(server, cookie).tags
 
 
 class TestAuthorizedParty:

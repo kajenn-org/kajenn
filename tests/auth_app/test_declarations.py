@@ -499,14 +499,14 @@ class TestLate:
             assert (status, answer) == (200, {"report": "billing"})
             assert await status_with_tags(server, "/billing/report", ["SERVER_ADMIN"]) == 403
 
-    async def test_an_application_with_a_spawner_brings_its_self_registration(
+    async def test_the_keycloak_section_of_an_application_with_a_spawner_is_read(
         self,
         tmp_path: Path,
     ) -> None:
         async with running(write_recipe(tmp_path)) as server:
-            assert server.applications["billing"].self_registration == {
-                "status": "waiting",
-                "tags": ["bll_REPORTS"],
+            assert server.applications["billing"].keycloak == {
+                "url": "https://auth.example.org",
+                "selfregister": {"tags": ["bll_REPORTS"]},
             }
 
 
@@ -522,10 +522,6 @@ from tests.storage_support import MemoryAuthStore
 
 
 class Billing(Declaring):
-    @property
-    def self_registration(self):
-        return {"status": "waiting", "tags": ["bll_REPORTS"]}
-
     @route()
     def prepared_state(self):
         return {"prepared": True, "pid": os.getpid()}
@@ -534,8 +530,9 @@ class Billing(Declaring):
 class Recipe(CONFIGURATION_TEMPLATES["default"]):
     def applications_section(self, cfg):
         apps = cfg.applications()
-        apps.application(code="billing", app_class=Billing, spawner="subprocess",
-                         request_timeout=5)
+        billing = apps.application(code="billing", app_class=Billing, spawner="subprocess",
+                                   request_timeout=5)
+        billing.keycloak(url="https://auth.example.org").selfregister(tags=["bll_REPORTS"])
         apps.application(code="_auth", app_class=AuthApplicationBase).store(
             store_class=MemoryAuthStore)
 """

@@ -497,10 +497,10 @@ The user of a provider login is found in the store from the verified
 
 1. the user whose `external_ids` holds the token's `iss` + `sub`, whatever its
    email or username is now;
-2. else nobody: the login never looks a user up by username or email. The
-   `self_registration` setting applies (the one the application named by
-   `?app=<code>` declares, else the one of `_auth`). Without it the login is
-   refused. With it a user is written: identity = the verified email,
+2. else nobody: the login never looks a user up by username or email. A
+   login started with `?app=<code>` follows the `keycloak` section of that
+   application (below); a login without `app` follows the `self_registration`
+   setting of `_auth`. Without a setting the login is refused. With it a user is written: identity = the verified email,
    `status` and `tags` from the setting, no group, no password, `email`,
    `external_ids`. No verified email, an identity already taken, or an email
    another user holds: refused.
@@ -512,6 +512,28 @@ provider has only linked users. A site that adds the provider later links
 every user first, creating the users at the provider and writing their
 `{iss, sub}`; until then the provider stays off, so a person already known to
 the site is never registered a second time.
+
+An application has a Keycloak login when its configuration carries a
+`keycloak` section; without it `?app=<code>` answers `403`:
+
+```python
+alfa = apps.application(code="alfa", app_class=Alfa).keycloak(
+    url="https://auth.example.org")
+alfa.client(realm="softwell", client_id="alfa")
+alfa.selfregister(tags=["ALFA_USER"])
+alfa.invite(expires="72h", by="ALFA_ADMIN")
+alfa.phone(collect="optional", otp=False)
+alfa.username(chosen_by="person", when_taken="ask")
+```
+
+`selfregister` admits self registration: the person is born `waiting` with
+its `tags` and gets the message that an administrator must approve the
+registration, at every login until it is confirmed. Without `selfregister` an
+unknown person is refused. A known user entering through another application
+gets no tag from the login. The section is read back by
+`application.keycloak`; `client`, `invite`, `phone`, `username` and
+`shared_data` are the defaults the administration takes as initial values
+and are not applied by kajenn yet.
 
 `self_registration(status="waiting")` writes a user that waits for approval
 and does not enter; `status="confirmed"` writes a user that enters at once. A

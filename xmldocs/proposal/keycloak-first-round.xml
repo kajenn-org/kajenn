@@ -121,9 +121,10 @@
       <choice option="d-local-user-create-endpoint" by="owner" date="2026-11-22"/>
     </decision>
     <decision id="d-known-user-new-app" status="decided">
-      <question>A known user enters through another application that admits registration: does it get that application's tags?</question>
-      <option id="d-known-user-new-app-add" title="Yes, the tags it lacks are added"/>
-      <choice option="d-known-user-new-app-add" by="delegated, to review" date="2026-11-20"/>
+      <question>A known user enters through another application that admits self registration: does it get that application's tags?</question>
+      <option id="d-known-user-new-app-add" title="Yes, the tags it lacks are added (delegated, 2026-11-20): superseded, it would skip the approval that d-selfregister asks"/>
+      <option id="d-known-user-new-app-admin" title="No: the login gives no tag to a user that exists; an administrator assigns the tags of that application"/>
+      <choice option="d-known-user-new-app-admin" by="delegated, to review" date="2026-11-22"/>
     </decision>
     <decision id="d-app-enabled" status="decided">
       <question>What if the application of a login is disabled or removed?</question>
@@ -178,7 +179,7 @@
       <item>An OIDC login no longer links an existing user by email (breaking for 0.10.0 sites that relied on it).</item>
       <item>Meetlot changes after #165: its KeycloakMethod follows the new start and callback.</item>
       <item>genropy-keycloak d-link (GenroPy id as a Keycloak attribute) is superseded for the reverse direction by d-reverse-link.</item>
-      <item>PR #165 changes: BaseApplication.self_registration and the client of an application as an extra provider of _auth give way to the keycloak section of the application in the recipe.</item>
+      <item>In PR #165: the keycloak section of the application in the recipe (ApplicationGrammar.keycloak and its children, read back by BaseApplication.keycloak) replaces BaseApplication.self_registration; a login through ?app= follows it; selfregister gives birth to a waiting user with the approval message. Not yet applied by kajenn: client (the client of an application is still a provider of _auth), invite, phone, username, shared_data, the route Authlot calls to create the local user, the reading of the current rules from the Keycloak client attributes.</item>
       <item>genropy-keycloak: to verify that the package loader accepts children under a package node of instanceconfig; the rule "the node turns the feature on" replaces its decision d-enable (GNR_AUTH_PKG).</item>
     </list>
   </consequences>

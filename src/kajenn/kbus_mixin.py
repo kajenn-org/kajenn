@@ -356,8 +356,6 @@ class KBusMixin:
         declarations of its application — are kept on the mount; a value that
         is not a list of dicts is refused with ``kbus.Refused``. When the
         authentication application is mounted, it creates their missing records.
-        ``meta["self_registration"]`` — ``None`` or a dict — is kept on the
-        mount too; another value is refused with ``kbus.Refused``.
         """
         presented = {name: meta.get(name) for name in ("well_known", "default_well_known")}
         for name, routes in presented.items():
@@ -372,10 +370,6 @@ class KBusMixin:
                 isinstance(records, list) and all(isinstance(record, dict) for record in records)
             ):
                 raise kbus.Refused(f"application {code!r} refused: {name} is not a list of dicts")
-        self_registration = meta.get("self_registration")
-        if self_registration is not None and not isinstance(self_registration, dict):
-            raise kbus.Refused(
-                f"application {code!r} refused: self_registration is not a dict")
         app = self.external_applications[code]
         try:
             self.claim_well_known(app, presented["well_known"], presented["default_well_known"])
@@ -383,8 +377,7 @@ class KBusMixin:
             raise kbus.Refused(f"application {code!r} refused: {exc}") from exc
         self.kbus_spawners[app.spawner].joined(f"application:{code}")
         self.kbus_pids[code] = meta["pid"]
-        app.mark_joined(
-            declarations["declared_tags"], declarations["system_users"], self_registration)
+        app.mark_joined(declarations["declared_tags"], declarations["system_users"])
         authentication = self.applications.get(AUTHENTICATION_CODE)
         if authentication is not None:
             authentication.create_declared_records(app)
@@ -486,7 +479,6 @@ class KBusMixin:
                 "default_well_known": app.active_default_well_known(),
                 "declared_tags": app.declared_tags,
                 "system_users": app.system_users,
-                "self_registration": app.self_registration,
                 "pid": os.getpid()}))
             ended = asyncio.create_task(member.connected.wait_closed())
             stopped = asyncio.create_task(stop.wait())
