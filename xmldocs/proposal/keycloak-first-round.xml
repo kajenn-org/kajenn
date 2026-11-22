@@ -7,8 +7,8 @@
 
   <current>
     <fact source="src/kajenn/auth_app/oidc_method.py" method="test" verified="2026-11-22">On branch <c>feat/keycloak-first-round</c> (PR #165) an OIDC login finds a user only by the <c>iss</c> + <c>sub</c> link, and a provider is off while a user of the store is not linked to its issuer.</fact>
-    <fact source="kajenn-authlot/docs/model/README.md" method="read" verified="2026-11-22">Authlot (draft, not deployed) declares <c>authlot.person_application</c> with <c>local_user_id</c> and <c>local_username</c> per person and application, and states that no link is made automatically by email.</fact>
-    <fact source="kajenn-authlot/src/kajenn_keycloak/keycloak_reader.py" method="read" verified="2026-11-22">Authlot reads the Keycloak Admin REST API with a service account (<c>client_credentials</c>); it writes nothing.</fact>
+    <fact source="genro-private/authlot/docs/model/README.md" method="read" verified="2026-11-22">Authlot (draft, not deployed) declares <c>authlot.person_application</c> with <c>local_user_id</c> and <c>local_username</c> per person and application, and states that no link is made automatically by email.</fact>
+    <fact source="genro-private/authlot/src/kajenn_keycloak/keycloak_reader.py" method="read" verified="2026-11-22">Authlot reads the Keycloak Admin REST API with a service account (<c>client_credentials</c>); it writes nothing.</fact>
   </current>
 
   <solution>

@@ -12,8 +12,8 @@ This document is the one place where the decisions live. Issues, pull requests a
 ### Current state
 
 - `TEST` `src/kajenn/auth_app/oidc_method.py` · 2026-11-22 — On branch `feat/keycloak-first-round` (PR #165) an OIDC login finds a user only by the `iss` + `sub` link, and a provider is off while a user of the store is not linked to its issuer.
-- `READ` `kajenn-authlot/docs/model/README.md` · 2026-11-22 — Authlot (draft, not deployed) declares `authlot.person_application` with `local_user_id` and `local_username` per person and application, and states that no link is made automatically by email.
-- `READ` `kajenn-authlot/src/kajenn_keycloak/keycloak_reader.py` · 2026-11-22 — Authlot reads the Keycloak Admin REST API with a service account (`client_credentials`); it writes nothing.
+- `READ` `genro-private/authlot/docs/model/README.md` · 2026-11-22 — Authlot (draft, not deployed) declares `authlot.person_application` with `local_user_id` and `local_username` per person and application, and states that no link is made automatically by email.
+- `READ` `genro-private/authlot/src/kajenn_keycloak/keycloak_reader.py` · 2026-11-22 — Authlot reads the Keycloak Admin REST API with a service account (`client_credentials`); it writes nothing.
 
 ### Proposed solution
 
