@@ -77,8 +77,23 @@
     </decision>
     <decision id="d-config-syntax" status="decided">
       <question>Syntax of the keycloak section.</question>
-      <option id="d-config-syntax-children" title="keycloak(url) with children client(realm, client_id, client_secret), registration(admitted, status, tags, invitations), phone(collect: no|optional|required, otp), username(chosen_by: person|inviter, when_taken: ask|counter), shared_data (to define with Authlot). genropy: the package node in instanceconfig packages carries url and the children; kajenn: the same element under the application in the recipe. A missing child means the application defaults; a missing keycloak node means no Keycloak login for that application"/>
-      <choice option="d-config-syntax-children" by="owner" date="2026-11-22"/>
+      <option id="d-config-syntax-children" title="keycloak(url) with meaningful children: client(realm, client_id, client_secret); selfregister(tags) — present: self registration admitted, absent: not admitted; invite(expires, by, first_steps, return_to); phone(collect: no|optional|required, otp); username(chosen_by: person|inviter, when_taken: ask|counter); shared_data (to define with Authlot). genropy: the package node in instanceconfig packages carries url and the children; kajenn: the same element under the application in the recipe. A missing child means the application defaults (selfregister and invite: not admitted); a missing keycloak node means no Keycloak login for that application. registration(admitted, status, ...) of the first draft is replaced by selfregister and invite"/>
+      <choice option="d-config-syntax-children" by="owner (structure, selfregister, invite); delegated, to review (parameter names of invite)" date="2026-11-22"/>
+    </decision>
+    <decision id="d-selfregister" status="decided">
+      <question>What happens to a person who registers by itself?</question>
+      <option id="d-selfregister-waiting" title="Always born waiting in the application, with the tags of selfregister; it cannot use the application until an administrator approves it. When it signs in before the approval it gets a message saying an administrator must approve it, not a bare refusal"/>
+      <choice option="d-selfregister-waiting" by="owner" date="2026-11-22"/>
+    </decision>
+    <decision id="d-invite" status="decided">
+      <question>What is an invitation?</question>
+      <option id="d-invite-link" title="The administrator creates the user in the application first, with its tags. At that moment its Keycloak account is created, or an existing one is found, and the link is written both ways: no user is ever unlinked, so the provider gate holds. The invitation is the email Keycloak sends to complete first_steps; it ends on return_to"/>
+      <choice option="d-invite-link" by="owner" date="2026-11-22"/>
+    </decision>
+    <decision id="d-invite-removal" status="decided">
+      <question>An invitation is revoked or expires: what is removed?</question>
+      <option id="d-invite-removal-both" title="The application user and its Keycloak account. The Keycloak account is removed only when it was born with that invitation and is linked to no other application; otherwise only the application user and its link are removed"/>
+      <choice option="d-invite-removal-both" by="owner (both); delegated, to review (account shared with other applications)" date="2026-11-22"/>
     </decision>
     <decision id="d-rules-current-value" status="decided">
       <question>After an administrator changes a rule in Authlot, which value does a registration use and where is it read?</question>
