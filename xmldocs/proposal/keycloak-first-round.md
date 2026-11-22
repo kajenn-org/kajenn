@@ -29,6 +29,8 @@ Step 1 (the gate) is in PR #165. The realignment tool, the alignment of step 2 a
 
 #### Where the administration lives
 
+`services.softwell.it` is one kajenn site with several applications on different routes: the recipe `SoftwellSite` of `softwell-services` mounts `_auth`, `/clients` and `/connectors`; Authlot becomes one more mount of that site and shares its `_auth` (owner, reported by the softwell-services session, 2026-11-22).
+
 All administration has a GUI in Authlot, mounted at `services.softwell.it` (owner, 2026-11-22). The realignment and the repair tools are used from there. Authlot's plan names `auth.genro.dev` for the users' portal (`d-portal-host`): to verify whether the two addresses stay separate.
 
 #### Who decides what
