@@ -54,9 +54,10 @@ Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the a
    → Choice: **A GUI in Authlot, mounted at services.softwell.it, for all administration** (owner, 2026-11-22)
 - **d-realign** `open` — Realignment tool: what it does with each kajenn user and how passwords move. Its GUI is in Authlot (d-admin-gui); which part runs in kajenn and which in Authlot is to design.
    1. **kajenn exposes what the tool needs on _auth (users, links); Authlot talks to the Keycloak Admin API with a service account, as its reader does, and drives the realignment; to be designed**
-- **d-reverse-link** `open` — Where does the reverse link (Keycloak person → kajenn user) live? Issue #163.
-   1. **An attribute on the Keycloak user, one per application**
-   2. **Authlot's person_application table (local_user_id, local_username)**
+- **d-reverse-link** `decided` — Where does the reverse link (Keycloak person → user in each application) live? Issue #163.
+   1. **An attribute on the Keycloak user, put in the token (genropy-keycloak d-link, 2026-11-04): superseded for the reverse direction**
+   2. **Authlot's person_application table: one person per realm, at most one local user per person and application, with its local id, immutable local username and state in the application; the technical link stays iss + sub (Authlot d-local-usernames, d-profile-cardinality, d-profile-storage, 2026-11-17). Users, passwords, groups and tags stay in the application (adm.user in genropy legacy, _auth in kajenn): person_application holds only the reference. If lost, it is rebuilt from the applications, which keep iss + sub of their users**
+   → Choice: **Authlot's person_application table: one person per realm, at most one local user per person and application, with its local id, immutable local username and state in the application; the technical link stays iss + sub (Authlot d-local-usernames, d-profile-cardinality, d-profile-storage, 2026-11-17). Users, passwords, groups and tags stay in the application (adm.user in genropy legacy, _auth in kajenn): person_application holds only the reference. If lost, it is rebuilt from the applications, which keep iss + sub of their users** (owner, 2026-11-22)
 - **d-app-rules** `decided` — Can two applications on one server have different registration rules?
    1. **Yes: the application passes its rules (registration yes or no, status and tags of new users) to _auth, server side**
    → Choice: **Yes: the application passes its rules (registration yes or no, status and tags of new users) to _auth, server side** (owner, 2026-11-20)
@@ -124,7 +125,7 @@ Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the a
 - A site with users not linked to a provider has that provider off until the realignment tool exists and has run.
 - An OIDC login no longer links an existing user by email (breaking for 0.10.0 sites that relied on it).
 - Meetlot changes after #165: its KeycloakMethod follows the new start and callback.
-- The open decision d-reverse-link meets Authlot's model: decide them before Authlot writes anything.
+- genropy-keycloak d-link (GenroPy id as a Keycloak attribute) is superseded for the reverse direction by d-reverse-link.
 - PR #165 changes: BaseApplication.self\_registration and the client of an application as an extra provider of \_auth give way to the keycloak section of the application in the recipe.
 - genropy-keycloak: to verify that the package loader accepts children under a package node of instanceconfig; the rule "the node turns the feature on" replaces its decision d-enable (GNR\_AUTH\_PKG).
 
