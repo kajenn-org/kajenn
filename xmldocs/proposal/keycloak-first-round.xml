@@ -54,9 +54,16 @@
       <option id="d-admin-gui-authlot" title="A GUI in Authlot, mounted at services.softwell.it, for all administration"/>
       <choice option="d-admin-gui-authlot" by="owner" date="2026-11-22"/>
     </decision>
-    <decision id="d-realign" status="open">
-      <question>Realignment tool: what it does with each kajenn user and how passwords move. Its GUI is in Authlot (d-admin-gui); which part runs in kajenn and which in Authlot is to design.</question>
-      <option id="d-realign-split" title="kajenn exposes what the tool needs on _auth (users, links); Authlot talks to the Keycloak Admin API with a service account, as its reader does, and drives the realignment; to be designed"/>
+    <decision id="d-realign" status="decided">
+      <question>Realignment tool: what it does with each user of a site that adds Keycloak.</question>
+      <option id="d-realign-steps" title="Launched by an administrator from Authlot, per site. For each user of the application: find the one Keycloak account with the same email, else create it (username, email, first and last name from the application); write the link both ways (iss + sub on the application user; person and person_application in Authlot). Doubtful cases are not resolved: they are listed for the repair tool (no email, one email on two users, a Keycloak account already linked to another user). When every user is linked the site turns Keycloak on by itself (d-gate)"/>
+      <choice option="d-realign-steps" by="delegated, to review" date="2026-11-22"/>
+    </decision>
+    <decision id="d-realign-password" status="decided">
+      <question>What happens to the password people use before the realignment?</question>
+      <option id="d-realign-password-copy" title="The old password hash is copied into Keycloak; Keycloak verifies it at the first login and rehashes it in its own format, so the person keeps its password. It needs a password hash provider (Java) in Keycloak for each format: the md5 formats of genropy adm (genropy-keycloak d-pwd, 2026-11-04); scrypt of kajenn _auth by the same way (delegated, to review)"/>
+      <option id="d-realign-password-reset" title="Every person sets a new password or a passkey from an email of Keycloak"/>
+      <choice option="d-realign-password-copy" by="owner" date="2026-11-22"/>
     </decision>
     <decision id="d-reverse-link" status="decided">
       <question>Where does the reverse link (Keycloak person → user in each application) live? Issue #163.</question>
