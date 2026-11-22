@@ -81,9 +81,13 @@ Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the a
    1. **Authlot writes the change into the attributes of the Keycloak client (Admin API; Authlot's keys authlot.*). The application reads them when it registers a new person; its keycloak section is the default until Authlot wrote. A change applies from the next registration on: users already registered are not touched**
    2. **Authlot rewrites the configuration of every site and instance**
    → Choice: **Authlot writes the change into the attributes of the Keycloak client (Admin API; Authlot's keys authlot.*). The application reads them when it registers a new person; its keycloak section is the default until Authlot wrote. A change applies from the next registration on: users already registered are not touched** (owner, 2026-11-22)
-- **d-local-user-create** `open` — Who creates the local user of a new person? kajenn: \_auth at the callback. Authlot (d-client-create): an endpoint of the application, called during registration.
-   1. **_auth at the callback (implemented in #165)**
-   2. **An endpoint of the application, called by Authlot**
+- **d-gui-authlot** `decided` — Who shows the pages a person or an administrator uses?
+   1. **Authlot, all of them where feasible, for coherence: registration, phone, username, invitations, profile, administration. The page where the person types a password or uses a passkey stays Keycloak's (Keycloak checks the credentials there); Authlot controls only its look through the theme**
+   → Choice: **Authlot, all of them where feasible, for coherence: registration, phone, username, invitations, profile, administration. The page where the person types a password or uses a passkey stays Keycloak's (Keycloak checks the credentials there); Authlot controls only its look through the theme** (owner, 2026-11-22)
+- **d-local-user-create** `decided` — Who creates the local user of a new person?
+   1. **The application at the first login, with the defaults of its keycloak section**
+   2. **The application, when Authlot calls it at the end of its registration path: it answers the local id, the username and the state (Authlot d-client-create). In kajenn a route of _auth that Authlot calls with its own credential (a gak_ token of a system user); the route is to design**
+   → Choice: **The application, when Authlot calls it at the end of its registration path: it answers the local id, the username and the state (Authlot d-client-create). In kajenn a route of _auth that Authlot calls with its own credential (a gak_ token of a system user); the route is to design** (owner, 2026-11-22)
 - **d-known-user-new-app** `decided` — A known user enters through another application that admits registration: does it get that application's tags?
    1. **Yes, the tags it lacks are added**
    → Choice: **Yes, the tags it lacks are added** (delegated, to review, 2026-11-20)
@@ -120,7 +124,7 @@ Keycloak says who the person is. `_auth` (users, groups, tags, tokens) and the a
 - A site with users not linked to a provider has that provider off until the realignment tool exists and has run.
 - An OIDC login no longer links an existing user by email (breaking for 0.10.0 sites that relied on it).
 - Meetlot changes after #165: its KeycloakMethod follows the new start and callback.
-- The open decisions d-local-user-create and d-reverse-link meet Authlot's model: decide them before Authlot writes anything.
+- The open decision d-reverse-link meets Authlot's model: decide them before Authlot writes anything.
 - PR #165 changes: BaseApplication.self\_registration and the client of an application as an extra provider of \_auth give way to the keycloak section of the application in the recipe.
 - genropy-keycloak: to verify that the package loader accepts children under a package node of instanceconfig; the rule "the node turns the feature on" replaces its decision d-enable (GNR\_AUTH\_PKG).
 

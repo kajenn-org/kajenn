@@ -101,10 +101,16 @@
       <option id="d-rules-current-value-config" title="Authlot rewrites the configuration of every site and instance"/>
       <choice option="d-rules-current-value-keycloak" by="owner" date="2026-11-22"/>
     </decision>
-    <decision id="d-local-user-create" status="open">
-      <question>Who creates the local user of a new person? kajenn: _auth at the callback. Authlot (d-client-create): an endpoint of the application, called during registration.</question>
-      <option id="d-local-user-create-auth" title="_auth at the callback (implemented in #165)"/>
-      <option id="d-local-user-create-endpoint" title="An endpoint of the application, called by Authlot"/>
+    <decision id="d-gui-authlot" status="decided">
+      <question>Who shows the pages a person or an administrator uses?</question>
+      <option id="d-gui-authlot-all" title="Authlot, all of them where feasible, for coherence: registration, phone, username, invitations, profile, administration. The page where the person types a password or uses a passkey stays Keycloak's (Keycloak checks the credentials there); Authlot controls only its look through the theme"/>
+      <choice option="d-gui-authlot-all" by="owner" date="2026-11-22"/>
+    </decision>
+    <decision id="d-local-user-create" status="decided">
+      <question>Who creates the local user of a new person?</question>
+      <option id="d-local-user-create-callback" title="The application at the first login, with the defaults of its keycloak section"/>
+      <option id="d-local-user-create-endpoint" title="The application, when Authlot calls it at the end of its registration path: it answers the local id, the username and the state (Authlot d-client-create). In kajenn a route of _auth that Authlot calls with its own credential (a gak_ token of a system user); the route is to design"/>
+      <choice option="d-local-user-create-endpoint" by="owner" date="2026-11-22"/>
     </decision>
     <decision id="d-known-user-new-app" status="decided">
       <question>A known user enters through another application that admits registration: does it get that application's tags?</question>
@@ -163,7 +169,7 @@
       <item>A site with users not linked to a provider has that provider off until the realignment tool exists and has run.</item>
       <item>An OIDC login no longer links an existing user by email (breaking for 0.10.0 sites that relied on it).</item>
       <item>Meetlot changes after #165: its KeycloakMethod follows the new start and callback.</item>
-      <item>The open decisions d-local-user-create and d-reverse-link meet Authlot's model: decide them before Authlot writes anything.</item>
+      <item>The open decision d-reverse-link meets Authlot's model: decide them before Authlot writes anything.</item>
       <item>PR #165 changes: BaseApplication.self_registration and the client of an application as an extra provider of _auth give way to the keycloak section of the application in the recipe.</item>
       <item>genropy-keycloak: to verify that the package loader accepts children under a package node of instanceconfig; the rule "the node turns the feature on" replaces its decision d-enable (GNR_AUTH_PKG).</item>
     </list>
