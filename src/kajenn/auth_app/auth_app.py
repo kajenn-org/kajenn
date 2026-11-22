@@ -69,8 +69,6 @@ Configuration, under the application element (``AuthApplicationGrammar``)::
   the word such a login is refused. A setting whose ``status`` is not a user
   status is not applied: self registration stays off and a warning is logged.
   A hand-built server passes the same dict as the ``self_registration`` kwarg.
-  A login started with ``?app=<code>`` follows the ``keycloak`` section of
-  that application in place of this setting (see ``OidcMethod``).
 
 Credentials accepted: a password, through ``/_auth/login`` or an
 ``Authorization: Basic`` header, and a ``gak_`` token as
@@ -944,17 +942,7 @@ class AuthApplicationBase(RoutedApplication):
         Note:
             Route: GET /_auth/login_methods
         """
-        registry = self.auth_method_registry
-        methods = []
-        for descriptor in registry.descriptor_list:
-            method = registry.methods[descriptor["id"]]
-            if isinstance(method, OidcMethod) and not method.every_user_linked():
-                continue
-            if (
-                descriptor["kind"] == "form"
-                and not self.password_login
-                and self.store.get_user(TEMPORARY_ADMIN) is None
-            ):
-                continue
-            methods.append(descriptor)
+        methods = self.auth_method_registry.descriptor_list
+        if not self.password_login and self.store.get_user(TEMPORARY_ADMIN) is None:
+            methods = [method for method in methods if method["kind"] != "form"]
         return {"methods": methods}

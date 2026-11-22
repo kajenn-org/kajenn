@@ -232,8 +232,9 @@ Called by a client:
   `{"status": "ok"}`. Without `session_id` it deletes the session of the
   request itself: a browser signs out of every application of the server at
   once. Only `POST` is answered (another method gets 405), and a request whose
-  `Origin` header differs from the server's `external_url` gets 403. The login
-  at an external provider (Keycloak) stays open.
+  `Origin` header differs from the origin of the server's `external_url`
+  (scheme, host and port) gets 403. The login at an external provider stays
+  open.
 - `GET /_auth/login_methods` — public: `{"methods": [descriptor, ...]}`. The
   password method comes first (`{"id": "password", "kind": "form", "label",
   "action": "/_auth/login"}`), then one `redirect` method per OIDC provider.
@@ -493,47 +494,16 @@ each provider is addressed by its `code`: `applications._auth.oidc.google`. See
 [The public address](configuration.md#the-public-address).
 
 The user of a provider login is found in the store from the verified
-`id_token`, only by its link:
+`id_token`:
 
 1. the user whose `external_ids` holds the token's `iss` + `sub`, whatever its
-   email or username is now;
-2. else nobody: the login never looks a user up by username or email. A
-   login started with `?app=<code>` follows the `keycloak` section of that
-   application (below); a login without `app` follows the `self_registration`
-   setting of `_auth`. Without a setting the login is refused. With it a user is written: identity = the verified email,
-   `status` and `tags` from the setting, no group, no password, `email`,
-   `external_ids`. No verified email, an identity already taken, or an email
-   another user holds: refused.
-
-A provider is off while a user of the store is not linked to its issuer
-(system users and `_temporary_admin` do not count): `start` and the callback
-answer `403` and `/_auth/login_methods` leaves it out. A site born with the
-provider has only linked users. A site that adds the provider later links
-every user first, creating the users at the provider and writing their
-`{iss, sub}`; until then the provider stays off, so a person already known to
-the site is never registered a second time.
-
-An application has a Keycloak login when its configuration carries a
-`keycloak` section; without it `?app=<code>` answers `403`:
-
-```python
-alfa = apps.application(code="alfa", app_class=Alfa).keycloak(
-    url="https://auth.example.org")
-alfa.client(realm="softwell", client_id="alfa")
-alfa.selfregister(tags=["ALFA_USER"])
-alfa.invite(expires="72h", by="ALFA_ADMIN")
-alfa.phone(collect="optional", otp=False)
-alfa.username(chosen_by="person", when_taken="ask")
-```
-
-`selfregister` admits self registration: the person is born `waiting` with
-its `tags` and gets the message that an administrator must approve the
-registration, at every login until it is confirmed. Without `selfregister` an
-unknown person is refused. A known user entering through another application
-gets no tag from the login. The section is read back by
-`application.keycloak`; `client`, `invite`, `phone`, `username` and
-`shared_data` are the defaults the administration takes as initial values
-and are not applied by kajenn yet.
+   email is now;
+2. else, only when the token carries `email` and `email_verified` true, the one
+   user with that email (compared lowercased). `{iss, sub}` is added to its
+   `external_ids`: the next login finds it by `iss` + `sub`;
+3. else the `self_registration` setting. Without it the login is refused. With
+   it a user is written: identity = the verified email, `status` and `tags`
+   from the setting, no group, no password, `email`, `external_ids`.
 
 `self_registration(status="waiting")` writes a user that waits for approval
 and does not enter; `status="confirmed"` writes a user that enters at once. A
@@ -546,10 +516,9 @@ from the store, as a password login. The callback answers:
 - `302` to the stored `next` on success;
 - `400` for a flow error: a `state` missing or different from the session's,
   a failed token exchange, an `id_token` that does not verify or has no `sub`;
-- `403` for a refused login: the provider off, an application not enabled, no
-  verified email, an unknown user without `self_registration`, an identity
-  already taken, an email another user holds, a status other than
-  `confirmed`, a system user. Nothing is attached.
+- `403` for a refused login: no verified email, two users with that email, an
+  unknown user without `self_registration`, an identity already taken, a status
+  other than `confirmed`, a system user. Nothing is attached.
 
 ## Customising
 

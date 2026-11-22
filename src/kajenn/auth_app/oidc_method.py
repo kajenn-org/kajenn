@@ -18,23 +18,21 @@
 one instance per declared provider, with ``method_id`` ``oidc:<code>``. It owns
 two routes, so the registry attaches it under ``/_auth/oidc:<code>/``:
 
-- ``GET /_auth/oidc:<code>/start?next=<path>&app=<code>`` — begins the authorization-code
+- ``GET /_auth/oidc:<code>/start?next=<path>`` — begins the authorization-code
   flow with PKCE (S256). It stores a fresh ``state``, the PKCE verifier, a
   fresh ``nonce`` and the safe ``next`` path in the session's ``data`` under
   ``oidc.<method_id>.*`` and answers 302 to the provider's authorization
-  endpoint, with the ``nonce``. ``app``, optional, names the application the
-  person enters through; it is kept with the flow, and an unknown code
-  answers 400.
+  endpoint, with the ``nonce``.
 - ``GET /_auth/oidc:<code>/callback?state=...&code=...`` — the provider sends
   the browser here. It refuses an ``error`` answer of the provider and an
   ``iss`` parameter other than ``issuer`` (RFC 9207); ``session_state``, which
-  Keycloak adds, is accepted and not used. It checks the ``state``, exchanges
-  the ``code`` on the provider's token endpoint (PKCE verifier,
+  some providers add, is accepted and not used. It checks the ``state``,
+  exchanges the ``code`` on the provider's token endpoint (PKCE verifier,
   ``client_secret`` when declared), verifies the ``id_token`` (RS256 on the
   provider's JWKS, audience = ``client_id``, issuer = ``issuer``, ``nonce`` =
-  the one of the session, ``azp`` = ``client_id`` when present), finds the user in the ``AuthStore``, attaches the
-  avatar to the session, clears the ``oidc.<method_id>.*`` keys and answers
-  302 to the stored ``next``.
+  the one of the session, ``azp`` = ``client_id`` when present), finds the
+  user in the ``AuthStore``, attaches the avatar to the session, clears the
+  ``oidc.<method_id>.*`` keys and answers 302 to the stored ``next``.
 
 The provider metadata comes from ``<issuer>/.well-known/openid-configuration``,
 fetched at first use and kept on the instance: a server whose provider is
@@ -48,56 +46,33 @@ declare ``env_requires="external_links"``: on a server without
 ``not_available`` (see ``ServerCapabilities``), and ``login_methods`` leaves
 the provider out.
 
-The registration setting of a login. With ``app``: the ``keycloak`` section of
-that application (``BaseApplication.keycloak``). An application without the
-section offers no Keycloak login: ``start`` and the callback answer 403. Its
-``selfregister`` child admits self registration: the person is born
-``waiting`` with the child's ``tags``; without the child an unknown person is
-refused. Without ``app``: the ``self_registration`` setting of ``_auth``; one
-whose ``status`` is not a user status is not applied and a warning is logged.
-
 The user, from the verified ``id_token`` claims:
 
 - the user whose ``external_ids`` holds the token's ``iss`` + ``sub``, whatever
-  its email or username is now;
-- else nobody: the login never looks a user up by username or email. The
-  registration setting applies: absent or empty, refused. Present, a record is
-  written with identity = the verified email, ``status`` and ``tags`` from the
-  setting, ``groups`` [], ``primary_group`` None, ``system`` False,
-  ``password_hash`` None, the person fields, ``external_ids`` [{iss, sub}].
-  No verified email, an identity already taken, or a verified email another
-  user holds: refused, nothing written.
+  its email is now;
+- else, only when the token carries ``email`` and ``email_verified`` true: the
+  one user with that email (compared lowercased); ``{iss, sub}`` is appended to
+  its ``external_ids`` and the record is saved. A system user is never written.
+  Two or more users with that email: refused, nothing written;
+- else the ``self_registration`` setting of the application: absent, refused.
+  Present, a record is written with identity = the verified email, ``status``
+  and ``tags`` from the setting, ``groups`` [], ``primary_group`` None,
+  ``system`` False, ``password_hash`` None, the person fields,
+  ``external_ids`` [{iss, sub}]. An identity already taken: refused, nothing
+  written.
 
-A ``waiting`` user is refused with the message that an administrator must
-approve the registration. Another user that is not confirmed, or a system
-user, is refused. A known user entering through another application gets
-no tag from the login: an administrator assigns the tags of that application.
-
-Every user linked first. A provider is off while a user of the store is not
-linked to its issuer (``every_user_linked``): system users and
-``_temporary_admin`` are not counted. A site born with the provider has only
-linked users; a site that adds it later links every user first (a
-realignment that creates the users at the provider and writes the link), and
-until then ``start`` and the callback answer 403 and ``login_methods`` leaves
-the provider out. Without this rule a person already known to the site would
-be registered again as a new user.
-
-The ``app`` of a login must be an enabled application, at ``start`` and again
-at the callback, before the user is touched; otherwise 403 (400 at ``start``
-for an unknown code).
-
-After a login that wrote the user record, the credential cache of the server
-and of every joined process is emptied, so the next request reads the new
-tags and person fields.
+A user found or written whose ``status`` is not ``confirmed``, or that is a
+system user, is refused.
 
 Person fields: at every login the empty fields of the record take the claims
 (``given_name`` → ``firstname``, ``family_name`` → ``lastname``, ``picture`` →
 ``photo``, ``email`` → ``email`` only with ``email_verified`` true); a filled
 field is kept. The record is saved when a field changes. A system user is
-never written.
+never written. After a login that wrote the user record, the credential
+cache of the server and of every joined process is emptied, so the next
+request reads the new person fields.
 
-A user found or written whose ``status`` is not ``confirmed``, or that is a
-system user, is refused. The avatar is
+The avatar is
 ``Avatar(identity, store.get_user_tags(identity), group=primary_group)``.
 The callback does not touch the lockout counter.
 
@@ -114,23 +89,11 @@ Answers of the callback:
   taken, a status that does not authenticate, a system user. Nothing is
   attached.
 
-Desktop login. A desktop app cannot finish the login inside its webview: it
-lets the webview run ``start`` (the session, the PKCE verifier and the nonce
-stay in the webview's session), stops the navigation to the provider, listens
-on ``127.0.0.1`` on a free port and opens the same authorization URL in the
-system browser with the state rewritten as ``desktop.<port>.<state>``. When
-the provider sends the system browser to the callback with such a state, the
-callback checks the port (1024-65535) and the original state (43 characters of
-``secrets.token_urlsafe(32)``) and answers 302 to
-``http://127.0.0.1:<port>/oidc/callback`` with the original ``state`` and the
-``code`` (or the provider's ``error``), with ``Cache-Control: no-store`` and
-``Referrer-Policy: no-referrer``. It touches no session and exchanges nothing.
-The app then sends its webview to the callback with the original state and
-the code, and the login completes in the webview's session. The system browser
-never receives a session; the code is useless without the verifier. A
-malformed desktop state, or one without ``code`` and ``error``, answers 400.
-kajenn adds nothing to the authorization URL: the app recognises the
-provider's authorization endpoint by its own configuration.
+A subclass changes how the user is found by overriding ``link_user`` and
+``authenticate_claims``. Both receive ``flow``: the values the session holds
+for the keys named by ``flow_keys`` (``state``, ``verifier``, ``nonce``,
+``next``). A subclass that stores one more key in its ``start`` adds the name
+to ``flow_keys`` and reads it there.
 
 ``descriptor()`` is the public ``login_methods`` entry: ``id``, ``kind``,
 ``label`` and the relative ``url`` of ``start``; never the client id, the
@@ -142,9 +105,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
-import re
 import secrets
-from typing import Any
+from typing import Any, ClassVar
 from urllib.parse import urlencode
 
 import httpx
@@ -155,21 +117,11 @@ from kajenn.exceptions import HTTPBadRequest, HTTPForbidden, Redirect
 from kajenn.session import Avatar
 
 from .auth_method import AuthMethod
-from .auth_store import (
-    AUTHENTICATING_STATUS,
-    TEMPORARY_ADMIN,
-    USER_STATUSES,
-    WAITING_STATUS,
-    AuthStore,
-)
+from .auth_store import AUTHENTICATING_STATUS, USER_STATUSES, AuthStore
 
 __all__ = ["OidcMethod"]
 
 DEFAULT_SCOPES = "openid email profile"
-FLOW_KEYS = ("state", "verifier", "nonce", "next", "app")
-DESKTOP_STATE = re.compile(r"desktop\.([0-9]{4,5})\.([A-Za-z0-9_-]{43})")
-DESKTOP_CALLBACK_PATH = "/oidc/callback"
-DESKTOP_HEADERS = [(b"cache-control", b"no-store"), (b"referrer-policy", b"no-referrer")]
 
 
 class OidcMethod(AuthMethod):
@@ -177,6 +129,8 @@ class OidcMethod(AuthMethod):
 
     kind = "redirect"
     env_requires = "external_links"
+    #: The session keys of one flow, under ``oidc.<method_id>.``; cleared by the callback.
+    flow_keys: ClassVar[tuple[str, ...]] = ("state", "verifier", "nonce", "next")
 
     def __init__(
         self, application: Any, method_id: str, code: str, provider: dict[str, Any]
@@ -248,7 +202,7 @@ class OidcMethod(AuthMethod):
     # ── routes ─────────────────────────────────────────────────────────
 
     @route(media_type="text/plain", env_requires=env_requires)
-    async def start(self, next: str = "", app: str = "", _request=None) -> str:
+    async def start(self, next: str = "", _request=None) -> str:
         """Begin the authorization-code flow with PKCE: redirect to the provider.
 
         Raises:
@@ -257,14 +211,6 @@ class OidcMethod(AuthMethod):
         Note:
             Route: GET /_auth/oidc:<code>/start
         """
-        if app and self.application.server.applications.get(app) is None:
-            raise HTTPBadRequest(f"OIDC login for an unknown application: {app}")
-        if app and not self.application.server.is_enabled(app):
-            raise HTTPForbidden(f"OIDC login for a disabled application: {app}")
-        if app and self.application.server.applications[app].keycloak is None:
-            raise HTTPForbidden(f"The application {app} has no Keycloak login")
-        if not self.every_user_linked():
-            raise HTTPForbidden("OIDC login is off until every user is linked to the provider")
         discovery = await self.discovery()
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(64)
@@ -274,7 +220,6 @@ class OidcMethod(AuthMethod):
         session.data[f"oidc.{self.method_id}.verifier"] = verifier
         session.data[f"oidc.{self.method_id}.nonce"] = nonce
         session.data[f"oidc.{self.method_id}.next"] = self.get_safe_next_path(next)
-        session.data[f"oidc.{self.method_id}.app"] = app
         session.mark_dirty()
         params = {
             "response_type": "code",
@@ -312,16 +257,12 @@ class OidcMethod(AuthMethod):
         Note:
             Route: GET /_auth/oidc:<code>/callback
         """
-        if iss and iss != self.provider["issuer"]:
-            raise HTTPBadRequest("OIDC response issuer mismatch")
-        if state.startswith("desktop."):
-            raise self.desktop_redirect(state, code, error)
         metrics = self.application.server.event_metrics
         try:
+            if iss and iss != self.provider["issuer"]:
+                raise HTTPBadRequest("OIDC response issuer mismatch")
             if error:
                 raise HTTPBadRequest(f"OIDC login cancelled or refused by the provider: {error}")
-            if not self.every_user_linked():
-                raise HTTPForbidden("OIDC login is off until every user is linked to the provider")
             next_target = await self._attach_identity(state, code, _request.session)
         except (HTTPBadRequest, HTTPForbidden):
             metrics.record_credential_check("oidc", "refused")
@@ -343,69 +284,32 @@ class OidcMethod(AuthMethod):
             raise HTTPBadRequest("OIDC nonce mismatch")
         if not claims.get("sub"):
             raise HTTPBadRequest("OIDC id_token carries no sub")
-        app = session.data[f"oidc.{self.method_id}.app"] or ""
+        flow = {key: session.data[f"oidc.{self.method_id}.{key}"] for key in self.flow_keys}
         avatar, written = await self.application.server.run_sync(
-            self.authenticate_claims, claims, app
+            self.authenticate_claims, claims, flow
         )
         if written:
             await self.application.server.forget_credentials_everywhere()
         session.attach_avatar(avatar)
-        for suffix in FLOW_KEYS:
+        for suffix in self.flow_keys:
             session.data.pop(f"oidc.{self.method_id}.{suffix}", None)
         session.mark_dirty()
         return next_target
 
-    def desktop_redirect(self, state: str, code: str, error: str) -> Redirect:
-        """The redirect that sends the provider's answer back to a desktop app on ``127.0.0.1``.
-
-        Raises:
-            HTTPBadRequest: A malformed desktop state, or neither ``code`` nor ``error``.
-        """
-        match = DESKTOP_STATE.fullmatch(state)
-        if match is None or not 1024 <= int(match.group(1)) <= 65535:
-            raise HTTPBadRequest("Invalid desktop login state")
-        port, original = match.groups()
-        if error:
-            params = {"state": original, "error": error}
-        elif code:
-            params = {"state": original, "code": code}
-        else:
-            raise HTTPBadRequest("Incomplete desktop login")
-        return Redirect(
-            f"http://127.0.0.1:{port}{DESKTOP_CALLBACK_PATH}?{urlencode(params)}",
-            headers=list(DESKTOP_HEADERS),
-        )
-
     # ── the user in the AuthStore ──────────────────────────────────────
 
-    def every_user_linked(self) -> bool:
-        """Whether every user of the store is linked to this provider's issuer.
-
-        System users and ``_temporary_admin`` are not counted.
-        """
-        issuer = self.provider["issuer"]
-        store: AuthStore = self.application.store
-        for user in store.user_list:
-            if user.get("system", False) or user["identity"] == TEMPORARY_ADMIN:
-                continue
-            if not any(link.get("iss") == issuer for link in user.get("external_ids", [])):
-                return False
-        return True
-
-    def authenticate_claims(self, claims: dict[str, Any], app: str = "") -> tuple[Avatar, bool]:
+    def authenticate_claims(
+        self, claims: dict[str, Any], flow: dict[str, Any]
+    ) -> tuple[Avatar, bool]:
         """The avatar of the user the verified ``claims`` lead to, and whether the record was written.
 
-        Finds or registers the user (``link_user``), then refuses a status
-        that does not authenticate and a system user.
+        Finds, links or registers the user (``link_user``), then refuses a
+        status that does not authenticate and a system user.
 
         Raises:
             HTTPForbidden: A refused login.
         """
-        user, written = self.link_user(claims, app)
-        if user.get("status") == WAITING_STATUS and not user.get("system", False):
-            raise HTTPForbidden(
-                "Your registration is waiting: an administrator must approve it before you can enter"
-            )
+        user, written = self.link_user(claims, flow)
         if user.get("status") != AUTHENTICATING_STATUS or user.get("system", False):
             raise HTTPForbidden("OIDC login refused: the user cannot sign in")
         identity = user["identity"]
@@ -413,30 +317,12 @@ class OidcMethod(AuthMethod):
         avatar = Avatar(identity, store.get_user_tags(identity), group=user.get("primary_group"))
         return avatar, written
 
-    def registration_setting(self, app: str) -> dict[str, Any]:
-        """The registration setting of a login through ``app``.
+    def registration_setting(self, flow: dict[str, Any]) -> dict[str, Any]:
+        """The ``self_registration`` setting of the application for this login; ``{}`` when off.
 
-        With ``app``: ``{"status": "waiting", "tags": [...]}`` when the
-        ``keycloak`` section of the application has a ``selfregister`` child,
-        else ``{}``. Without ``app``: the ``self_registration`` setting of
-        ``_auth``; one whose ``status`` is not a user status counts as ``{}``
-        and logs a warning.
-
-        Raises:
-            HTTPForbidden: ``app`` is no longer an enabled application, or has
-                no ``keycloak`` section.
+        A setting whose ``status`` is not a user status counts as ``{}`` and
+        logs a warning.
         """
-        if app:
-            server = self.application.server
-            if server.applications.get(app) is None or not server.is_enabled(app):
-                raise HTTPForbidden(f"OIDC login for an application no longer enabled: {app}")
-            keycloak = server.applications[app].keycloak
-            if keycloak is None:
-                raise HTTPForbidden(f"The application {app} has no Keycloak login")
-            if "selfregister" not in keycloak:
-                return {}
-            tags = list(keycloak["selfregister"].get("tags") or [])
-            return {"status": WAITING_STATUS, "tags": tags}
         setting = self.application.self_registration
         if setting and setting.get("status") not in USER_STATUSES:
             logging.getLogger(__name__).warning(
@@ -445,40 +331,56 @@ class OidcMethod(AuthMethod):
                 setting.get("status"),
                 ", ".join(USER_STATUSES),
             )
-            setting = {}
+            return {}
         return setting or {}
 
-    def link_user(self, claims: dict[str, Any], app: str = "") -> tuple[dict[str, Any], bool]:
-        """The user record of ``claims`` by ``iss`` + ``sub``, else registered; and whether it was written.
+    def link_user(
+        self, claims: dict[str, Any], flow: dict[str, Any]
+    ) -> tuple[dict[str, Any], bool]:
+        """The user record of ``claims`` and whether it was written.
 
-        The empty person fields take the claims; a user that exists gets no
-        tag from the login.
+        By ``iss`` + ``sub``, else by verified email (the link is written),
+        else registered through ``register_user``. The empty person fields of
+        a user that is not a system user take the claims.
 
         Raises:
-            HTTPForbidden: An application no longer enabled, or a refused
+            HTTPForbidden: No verified email, an ambiguous email, a user found
+                by email that is not confirmed or is a system user, or a refused
                 registration.
         """
         store: AuthStore = self.application.store
-        setting = self.registration_setting(app)
-        user = store.get_user_by_external_id(claims["iss"], claims["sub"])
+        iss, sub = claims["iss"], claims["sub"]
+        user = store.get_user_by_external_id(iss, sub)
         written = False
         if user is None:
-            user = self.register_user(claims, setting)
+            email = claims.get("email")
+            if not email or claims.get("email_verified") is not True:
+                raise HTTPForbidden("OIDC login refused: no verified email")
+            matches = store.get_user_list_by_email(email)
+            if len(matches) > 1:
+                raise HTTPForbidden("OIDC login refused: more than one user has this email")
+            if not matches:
+                user = self.register_user(claims, self.registration_setting(flow))
+            else:
+                user = matches[0]
+                if user.get("status") != AUTHENTICATING_STATUS or user.get("system", False):
+                    raise HTTPForbidden("OIDC login refused: the user cannot sign in")
+                user["external_ids"] = [*user.get("external_ids", []), {"iss": iss, "sub": sub}]
+                store.save_user(user)
             written = True
         if user.get("system", False):
             return user, written
-        changed = self.fill_person_fields(user, claims)
-        if changed:
+        if self.fill_person_fields(user, claims):
             store.save_user(user)
-        return user, written or changed
+            written = True
+        return user, written
 
     def register_user(self, claims: dict[str, Any], setting: dict[str, Any]) -> dict[str, Any]:
         """Write the record of an unknown person under the registration ``setting``.
 
         Raises:
-            HTTPForbidden: An empty ``setting``, no verified email, the
-                identity (the verified email) already taken, or a user that
-                already holds that email.
+            HTTPForbidden: An empty ``setting``, no verified email, or the
+                identity (the verified email) already taken.
         """
         if not setting:
             raise HTTPForbidden("OIDC login refused: unknown user")
@@ -488,8 +390,6 @@ class OidcMethod(AuthMethod):
         store: AuthStore = self.application.store
         if store.get_user(email) is not None:
             raise HTTPForbidden("OIDC login refused: the identity is already taken")
-        if store.get_user_list_by_email(email):
-            raise HTTPForbidden("OIDC login refused: the email belongs to another user")
         record: dict[str, Any] = {
             "identity": email,
             "groups": [],

@@ -193,8 +193,7 @@ async def test_the_oidc_callback_is_counted(fake_provider: None) -> None:  # noq
         applications=[auth_application(oidc={"google": PROVIDER}),
                       (BaseApplication, {"mount": ""})],
         external_url=EXTERNAL_URL))
-    add_user(server, "alice", email="alice@example.com",
-             external_ids=[{"iss": "https://accounts.example.com", "sub": "google-sub-1"}])
+    add_user(server, "alice", email="alice@example.com")
     cookie, state = await begin_flow(server)
     sent = await drive(server, f"/_auth/oidc:google/callback?state={state}&code=c",
                        cookie=cookie)

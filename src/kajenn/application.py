@@ -77,10 +77,6 @@ An app READS that subtree back through ``self.config(path)``, which prefixes
 ``applications.<code>.`` and delegates to the server's own read door: the app
 never holds a slice of the tree, only an address in it.
 
-An application has a Keycloak login when its configuration carries a
-``keycloak`` section (``ApplicationGrammar.keycloak``), read back by the
-``keycloak`` property.
-
 An application declares the tags it owns in ``declared_tags`` and the system
 users it needs in ``system_users``; both are empty on the base. The
 authentication application creates the missing records. A tag is written by
@@ -203,60 +199,6 @@ class ApplicationGrammar(DatabaseGrammar):
         case answers 422, the convention a FastAPI client expects).
         """
 
-    @element(
-        node_label="keycloak",
-        sub_tags="client,selfregister,invite,phone,username,shared_data",
-    )
-    def keycloak(self, url: str = None) -> None:
-        """The Keycloak login of this application: its presence turns it on.
-
-        ``url`` is the base address of the Keycloak server. The children give
-        the defaults of the application; the administration (Authlot) takes
-        them as initial values. A missing child means "not admitted" for
-        ``selfregister`` and ``invite``, and the application defaults for the
-        others. Without the section the application offers no Keycloak login.
-        """
-
-    @element(parent_tags="keycloak", sub_tags="", node_label="client")
-    def client(
-        self, realm: str = None, client_id: str = None, client_secret: Any = None
-    ) -> None:
-        """The Keycloak client of the application: ``realm``, ``client_id``,
-        optional ``client_secret`` (written as a resolver)."""
-
-    @element(parent_tags="keycloak", sub_tags="", node_label="selfregister")
-    def selfregister(self, tags: list = None) -> None:
-        """Self registration is admitted. A person who registers is born
-        ``waiting``, with ``tags``, and enters only after an administrator
-        confirms it."""
-
-    @element(parent_tags="keycloak", sub_tags="", node_label="invite")
-    def invite(
-        self,
-        expires: str = None,
-        by: str = None,
-        first_steps: str | list = None,
-        return_to: str = None,
-    ) -> None:
-        """Invitations are admitted: ``expires`` (how long the link lasts),
-        ``by`` (the tag that may invite), ``first_steps`` (what the person
-        does at the first entry: ``password``, ``passkey``, ``verify_email``),
-        ``return_to`` (the page of the application the person lands on)."""
-
-    @element(parent_tags="keycloak", sub_tags="", node_label="phone")
-    def phone(self, collect: str = None, otp: bool = None) -> None:
-        """The phone of a person: ``collect`` is ``no``, ``optional`` or
-        ``required``; ``otp`` asks for a verification code."""
-
-    @element(parent_tags="keycloak", sub_tags="", node_label="username")
-    def username(self, chosen_by: str = None, when_taken: str = None) -> None:
-        """The local username: ``chosen_by`` is ``person`` or ``inviter``;
-        ``when_taken`` is ``ask`` or ``counter``."""
-
-    @element(parent_tags="keycloak", sub_tags="", node_label="shared_data")
-    def shared_data(self, **options: Any) -> None:
-        """The data of the person the application asks for (shape to define)."""
-
     @element(sub_tags="configure")
     def plugin_configuration(self, plugin: Annotated[str, Regex(CODE_PATTERN)]) -> None:
         """The options this installation gives to the routes for one plugin.
@@ -277,17 +219,6 @@ class ApplicationGrammar(DatabaseGrammar):
         (``rule`` for ``auth``, ``channels`` for ``channel``): they replace
         what ``@route(...)`` wrote for those routes.
         """
-
-
-KEYCLOAK_CHILDREN: dict[str, tuple[str, ...]] = {
-    "client": ("realm", "client_id", "client_secret"),
-    "selfregister": ("tags",),
-    "invite": ("expires", "by", "first_steps", "return_to"),
-    "phone": ("collect", "otp"),
-    "username": ("chosen_by", "when_taken"),
-    "shared_data": (),
-}
-"""The children of an application's ``keycloak`` section and the attributes each can write."""
 
 
 class BaseApplication:
@@ -537,32 +468,6 @@ class BaseApplication:
         ``parent`` (the full name of another tag). The base declares none.
         """
         return []
-
-    @property
-    def keycloak(self) -> dict[str, Any] | None:
-        """The ``keycloak`` section of this application, or ``None`` when it has none.
-
-        ``{"url": ..., "<child>": {attributes}}`` with one key per child the
-        section writes (``KEYCLOAK_CHILDREN``): a child written without
-        attributes is an empty dict, a child not written has no key. ``None``:
-        the application offers no Keycloak login. Read from the server's
-        configuration at every call, so a change of the live configuration
-        applies from the next login.
-        """
-        handler = getattr(self.server, "config", None)
-        section = f"applications.{self.code}.keycloak"
-        if handler is None or handler.node(section) is None:
-            return None
-        settings: dict[str, Any] = handler.closed_attrs(section, "url")
-        for child, names in KEYCLOAK_CHILDREN.items():
-            node = handler.node(f"{section}.{child}")
-            if node is None:
-                continue
-            settings[child] = (
-                handler.closed_attrs(f"{section}.{child}", *names) if names
-                else handler.open_attrs(node)
-            )
-        return settings
 
     @property
     def system_users(self) -> list[dict[str, Any]]:
