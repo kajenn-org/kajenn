@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<proposal id="proposal/keycloak-first-round" title="Keycloak in kajenn: the base and the first round" date="2026-11-22" status="review" lang="en" author="Giovanni Porcari">
+  <problem>
+    <p>Applications on kajenn authenticate people against a shared Keycloak. Meetlot (<c>kajenn-webrtc</c>) does it today with its own code. kajenn must offer it to every application, with or without Keycloak.</p>
+    <p>This document is the one place where the decisions live. Issues, pull requests and notes point here; when they disagree with it, this document wins. Each decision says who took it: <b>owner</b>, or <b>delegated</b> (a default chosen by the developer on the owner's request, to be confirmed).</p>
+  </problem>
+
+  <current>
+    <fact source="src/kajenn/auth_app/oidc_method.py" method="test" verified="2026-11-22">On branch <c>feat/keycloak-first-round</c> (PR #165) an OIDC login finds a user only by the <c>iss</c> + <c>sub</c> link, and a provider is off while a user of the store is not linked to its issuer.</fact>
+    <fact source="kajenn-authlot/docs/model/README.md" method="read" verified="2026-11-22">Authlot (draft, not deployed) declares <c>authlot.person_application</c> with <c>local_user_id</c> and <c>local_username</c> per person and application, and states that no link is made automatically by email.</fact>
+    <fact source="kajenn-authlot/src/kajenn_keycloak/keycloak_reader.py" method="read" verified="2026-11-22">Authlot reads the Keycloak Admin REST API with a service account (<c>client_credentials</c>); it writes nothing.</fact>
+  </current>
+
+  <solution>
+    <section title="The base: start from aligned stores">
+      <p>The scenarios are limited on purpose.</p>
+      <list ordered="true">
+        <item><b>Start empty or aligned.</b> A site born with Keycloak has no user that Keycloak does not know: every person enters from Keycloak and is born linked. A site that adds Keycloak later runs a realignment tool first: it creates (or finds) the Keycloak account of every kajenn user and writes the link both ways. Until every user is linked the provider stays off.</item>
+        <item><b>Stay aligned.</b> From then on kajenn keeps the two stores aligned when it creates, changes or disables a user.</item>
+        <item><b>Repair.</b> An interactive repair tool finds misalignments and problems and asks a person to decide each one.</item>
+      </list>
+      <p>Step 1 (the gate) is in PR #165. The realignment tool, the alignment of step 2 and the repair tool are not written yet; they are the base the rest builds on.</p>
+    </section>
+
+    <section title="Who decides what">
+      <p>Keycloak says who the person is. <c>_auth</c> (users, groups, tags, tokens) and the applications decide what the person can do. The <c>_auth</c> user record is the source of truth for the person's data.</p>
+    </section>
+  </solution>
+
+  <decisions>
+    <decision id="d-who-what" status="decided">
+      <question>Who decides what a person entering with Keycloak can do?</question>
+      <option id="d-who-what-auth" title="Keycloak says who; _auth and the applications decide what. Keycloak groups do not become tags"/>
+      <choice option="d-who-what-auth" by="owner" date="2026-11-20"/>
+    </decision>
+    <decision id="d-lookup" status="decided">
+      <question>How does a login find the kajenn user of a Keycloak person?</question>
+      <option id="d-lookup-username" title="By iss+sub, then preferred_username, then verified email. Withdrawn: a username can be chosen by another person, and _temporary_admin was among the candidates"/>
+      <option id="d-lookup-link" title="Only by iss+sub. Never by username or email (the email lookup of 0.10.0 is removed too)"/>
+      <choice option="d-lookup-link" by="owner" date="2026-11-22"/>
+    </decision>
+    <decision id="d-gate" status="decided">
+      <question>When can a provider be used?</question>
+      <option id="d-gate-linked" title="Only when every user of the store is linked to its issuer (system users and _temporary_admin do not count). Otherwise start and callback answer 403 and login_methods leaves it out. A computed condition, no switch"/>
+      <choice option="d-gate-linked" by="owner (rule); delegated (computed condition)" date="2026-11-22"/>
+    </decision>
+    <decision id="d-realign" status="open">
+      <question>Realignment tool: what it does with each kajenn user, where it runs, how passwords move.</question>
+      <option id="d-realign-kajenn" title="A kajenn command using the Keycloak Admin API with a service account, as Authlot's reader does; to be designed"/>
+    </decision>
+    <decision id="d-reverse-link" status="open">
+      <question>Where does the reverse link (Keycloak person → kajenn user) live? Issue #163.</question>
+      <option id="d-reverse-link-attr" title="An attribute on the Keycloak user, one per application"/>
+      <option id="d-reverse-link-authlot" title="Authlot's person_application table (local_user_id, local_username)"/>
+    </decision>
+    <decision id="d-app-rules" status="decided">
+      <question>Can two applications on one server have different registration rules?</question>
+      <option id="d-app-rules-yes" title="Yes: the application passes its rules (registration yes or no, status and tags of new users) to _auth, server side"/>
+      <choice option="d-app-rules-yes" by="owner" date="2026-11-20"/>
+    </decision>
+    <decision id="d-app-rules-where" status="open">
+      <question>Where are the rules written? kajenn declares them in the application code; Authlot (d-client-policy) keeps them in Keycloak client attributes set by an administrator.</question>
+      <option id="d-app-rules-where-code" title="BaseApplication.self_registration, chosen with ?app=&lt;code&gt;; an application in its own process presents it at joined. Implemented in #165 (delegated, to review)"/>
+      <option id="d-app-rules-where-client" title="Attributes of the Keycloak client, set by an administrator (Authlot)"/>
+    </decision>
+    <decision id="d-local-user-create" status="open">
+      <question>Who creates the local user of a new person? kajenn: _auth at the callback. Authlot (d-client-create): an endpoint of the application, called during registration.</question>
+      <option id="d-local-user-create-auth" title="_auth at the callback (implemented in #165)"/>
+      <option id="d-local-user-create-endpoint" title="An endpoint of the application, called by Authlot"/>
+    </decision>
+    <decision id="d-known-user-new-app" status="decided">
+      <question>A known user enters through another application that admits registration: does it get that application's tags?</question>
+      <option id="d-known-user-new-app-add" title="Yes, the tags it lacks are added"/>
+      <choice option="d-known-user-new-app-add" by="delegated, to review" date="2026-11-20"/>
+    </decision>
+    <decision id="d-app-enabled" status="decided">
+      <question>What if the application of a login is disabled or removed?</question>
+      <option id="d-app-enabled-refuse" title="Checked at start and at the callback; 403 before the user is touched"/>
+      <choice option="d-app-enabled-refuse" by="owner (approved review fix)" date="2026-11-22"/>
+    </decision>
+    <decision id="d-person-data" status="decided">
+      <question>Where do name, email and photo live?</question>
+      <option id="d-person-data-record" title="In the _auth user record (firstname, lastname, photo next to email), answered as avatar.data on every request. At every Keycloak login the empty fields take the claims; a filled field is kept"/>
+      <choice option="d-person-data-record" by="owner" date="2026-11-20"/>
+    </decision>
+    <decision id="d-login-mode" status="decided">
+      <question>With Keycloak, does the kajenn password stay?</question>
+      <option id="d-login-mode-choice" title="Each server chooses: login(password=False) turns it off; gak_ tokens stay valid; _temporary_admin keeps its password while it exists. Authlot states the opposite (every app works with its password when Keycloak is down): to align when Authlot resumes"/>
+      <choice option="d-login-mode-choice" by="owner" date="2026-11-20"/>
+    </decision>
+    <decision id="d-app-client" status="decided">
+      <question>Can an application have its own Keycloak client?</question>
+      <option id="d-app-client-provider" title="Yes (login page branding, azp check). The client of an application is one more provider of _auth; its secret stays in _auth"/>
+      <choice option="d-app-client-provider" by="owner (yes); delegated, to review (as a provider)" date="2026-11-20"/>
+    </decision>
+    <decision id="d-logout" status="decided">
+      <question>What does Esci close?</question>
+      <option id="d-logout-session" title="One command: the kajenn session of the server (every application); not the Keycloak login. The page offers a button to sign in again. POST only; an Origin other than the scheme, host and port of external_url gets 403"/>
+      <choice option="d-logout-session" by="owner" date="2026-11-20"/>
+    </decision>
+    <decision id="d-link-direction" status="decided">
+      <question>Two-way link in the first round?</question>
+      <option id="d-link-direction-base" title="It is part of the base (realignment), not later work: see d-realign and d-reverse-link"/>
+      <choice option="d-link-direction-base" by="owner" date="2026-11-22"/>
+    </decision>
+    <decision id="d-programs" status="decided">
+      <question>How do programs enter?</question>
+      <option id="d-programs-gak" title="gak_ tokens; Keycloak access tokens for MCP clients come later"/>
+      <choice option="d-programs-gak" by="owner" date="2026-11-20"/>
+    </decision>
+    <decision id="d-desktop" status="decided">
+      <question>Desktop sign-in.</question>
+      <option id="d-desktop-relay" title="In kajenn: state desktop.&lt;port&gt;.&lt;state&gt;, relay to http://127.0.0.1:&lt;port&gt;/oidc/callback, nothing added to the authorization URL, the app side stays in each desktop app. Booklet xmldocs/booklet/desktop-sign-in"/>
+      <choice option="d-desktop-relay" by="owner (in kajenn now); delegated, to review (names and path)" date="2026-11-20"/>
+    </decision>
+    <decision id="d-callback-checks" status="decided">
+      <question>Checks of the callback.</question>
+      <option id="d-callback-checks-set" title="nonce; iss of the response (before the desktop relay too); session_state accepted; error answered 400; azp; session cookie when the login is the first request; credential cache emptied after a login that wrote the user"/>
+      <choice option="d-callback-checks-set" by="delegated; review fixes approved by the owner" date="2026-11-22"/>
+    </decision>
+  </decisions>
+
+  <consequences>
+    <list>
+      <item>A site with users not linked to a provider has that provider off until the realignment tool exists and has run.</item>
+      <item>An OIDC login no longer links an existing user by email (breaking for 0.10.0 sites that relied on it).</item>
+      <item>Meetlot changes after #165: its KeycloakMethod follows the new start and callback.</item>
+      <item>The open decisions d-app-rules-where, d-local-user-create and d-reverse-link meet Authlot's model: decide them before Authlot writes anything.</item>
+    </list>
+  </consequences>
+
+  <related>
+    <doc id="booklet/desktop-sign-in"/>
+  </related>
+</proposal>
