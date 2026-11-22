@@ -493,16 +493,25 @@ each provider is addressed by its `code`: `applications._auth.oidc.google`. See
 [The public address](configuration.md#the-public-address).
 
 The user of a provider login is found in the store from the verified
-`id_token`:
+`id_token`, only by its link:
 
 1. the user whose `external_ids` holds the token's `iss` + `sub`, whatever its
-   email is now;
-2. else, only when the token carries `email` and `email_verified` true, the one
-   user with that email (compared lowercased). `{iss, sub}` is added to its
-   `external_ids`: the next login finds it by `iss` + `sub`;
-3. else the `self_registration` setting. Without it the login is refused. With
-   it a user is written: identity = the verified email, `status` and `tags`
-   from the setting, no group, no password, `email`, `external_ids`.
+   email or username is now;
+2. else nobody: the login never looks a user up by username or email. The
+   `self_registration` setting applies (the one the application named by
+   `?app=<code>` declares, else the one of `_auth`). Without it the login is
+   refused. With it a user is written: identity = the verified email,
+   `status` and `tags` from the setting, no group, no password, `email`,
+   `external_ids`. No verified email, an identity already taken, or an email
+   another user holds: refused.
+
+A provider is off while a user of the store is not linked to its issuer
+(system users and `_temporary_admin` do not count): `start` and the callback
+answer `403` and `/_auth/login_methods` leaves it out. A site born with the
+provider has only linked users. A site that adds the provider later links
+every user first, creating the users at the provider and writing their
+`{iss, sub}`; until then the provider stays off, so a person already known to
+the site is never registered a second time.
 
 `self_registration(status="waiting")` writes a user that waits for approval
 and does not enter; `status="confirmed"` writes a user that enters at once. A
@@ -515,9 +524,10 @@ from the store, as a password login. The callback answers:
 - `302` to the stored `next` on success;
 - `400` for a flow error: a `state` missing or different from the session's,
   a failed token exchange, an `id_token` that does not verify or has no `sub`;
-- `403` for a refused login: no verified email, two users with that email, an
-  unknown user without `self_registration`, an identity already taken, a status
-  other than `confirmed`, a system user. Nothing is attached.
+- `403` for a refused login: the provider off, an application not enabled, no
+  verified email, an unknown user without `self_registration`, an identity
+  already taken, an email another user holds, a status other than
+  `confirmed`, a system user. Nothing is attached.
 
 ## Customising
 

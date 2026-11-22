@@ -1329,3 +1329,38 @@ class TestSignOut:
         sent = await drive(server, "/_auth/logout", "GET", cookie=cookie)
         assert status(sent) == 405
         assert server.session_store.get(answer["session_id"]) is not None
+
+
+class TestSignOutBehindAPrefix:
+    """The Origin check compares scheme, host and port of ``external_url``, not its path."""
+
+    async def started_at(self, tmp_path: Path, external_url: str) -> AsgiServer:
+        server = AsgiServer(
+            applications=[(AuthApplicationBase, {}), (BaseApplication, {"mount": ""})],
+            storage=site_mounts(tmp_path),
+            storage_key=Fernet.generate_key().decode(),
+            external_url=external_url,
+        )
+        await start_server(server)
+        seed(server)
+        return server
+
+    async def test_the_origin_of_a_prefixed_external_url_is_accepted(self, tmp_path: Path) -> None:
+        server = await self.started_at(tmp_path, "https://example.org/kajenn")
+        answer = await login(server, "alice", "wonder")
+        cookie = f"session_id={answer['session_id']}"
+        sent = await drive(
+            server, "/_auth/logout", "POST", cookie=cookie, origin="https://example.org"
+        )
+        assert payload(sent) == {"status": "ok"}
+        assert server.session_store.get(answer["session_id"]) is None
+
+    async def test_the_default_port_is_the_same_origin(self, tmp_path: Path) -> None:
+        server = await self.started_at(tmp_path, "https://example.org:443/kajenn")
+        sent = await drive(server, "/_auth/logout", "POST", origin="https://example.org")
+        assert payload(sent) == {"status": "ok"}
+
+    async def test_another_port_is_another_origin(self, tmp_path: Path) -> None:
+        server = await self.started_at(tmp_path, "https://example.org/kajenn")
+        sent = await drive(server, "/_auth/logout", "POST", origin="https://example.org:8443")
+        assert status(sent) == 403

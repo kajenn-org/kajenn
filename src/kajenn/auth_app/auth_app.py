@@ -105,7 +105,8 @@ Routes called by a client:
   else the session of the request itself ("Esci": one session per browser
   and server, so every application of the server is signed out); answers
   ``{"status": "ok"}``. A request whose ``Origin`` header differs from the
-  server's ``external_url`` is refused with 403. The login at the external
+  origin of the server's ``external_url`` (scheme, host and port; the path of
+  a proxy prefix does not count) is refused with 403. The login at the external
   provider stays open;
 - ``login_methods`` — public: ``{"methods": [descriptor, ...]}`` from the
   registry of login methods: ``PasswordMethod`` first, then one ``OidcMethod``
@@ -178,6 +179,7 @@ import re
 import secrets
 import time
 from typing import Any, ClassVar
+from urllib.parse import urlsplit
 
 from genro_bag import BagResolver
 from genro_builders.builder import element
@@ -196,6 +198,7 @@ from .auth_sections.tags_section import ADMIN_TAG, NEW_TAG_DEFAULTS
 from .auth_store import (
     AUTHENTICATING_STATUS,
     PERSON_FIELDS,
+    TEMPORARY_ADMIN,
     TOKEN_PREFIX,
     USER_STATUSES,
     AuthStore,
@@ -237,7 +240,6 @@ def credential_scheme(credential: str) -> str:
 
 
 #: The identity of the temporary administrator of a site without an administrator.
-TEMPORARY_ADMIN = "_temporary_admin"
 
 #: Bytes of randomness in the generated password of the temporary administrator.
 TEMPORARY_PASSWORD_BYTES = 24
@@ -252,6 +254,17 @@ RULE_NAME = re.compile(r"[A-Za-z_]\w*")
 #: The operators of ``tags_match`` (any case): a tag code that is one of them
 #: cannot be named in a rule.
 RULE_KEYWORDS = frozenset({"and", "or", "not"})
+
+
+DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def web_origin(url: str) -> tuple[str, str, int | None]:
+    """Scheme, host and effective port of ``url``: what an ``Origin`` header names."""
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    port = parts.port or DEFAULT_PORTS.get(scheme)
+    return scheme, (parts.hostname or "").lower(), port
 
 
 class AuthApplicationGrammar(ApplicationGrammar):
@@ -917,7 +930,7 @@ class AuthApplicationBase(RoutedApplication):
         """
         origin = _request.headers.get("origin") if _request is not None else None
         external_url = self.server.external_url
-        if origin and external_url and origin.rstrip("/") != external_url.rstrip("/"):
+        if origin and external_url and web_origin(origin) != web_origin(external_url):
             raise HTTPForbidden("logout from another origin")
         if not session_id and _request is not None and _request.session is not None:
             session_id = _request.session.id
@@ -932,7 +945,17 @@ class AuthApplicationBase(RoutedApplication):
         Note:
             Route: GET /_auth/login_methods
         """
-        methods = self.auth_method_registry.descriptor_list
-        if not self.password_login and self.store.get_user(TEMPORARY_ADMIN) is None:
-            methods = [method for method in methods if method["kind"] != "form"]
+        registry = self.auth_method_registry
+        methods = []
+        for descriptor in registry.descriptor_list:
+            method = registry.methods[descriptor["id"]]
+            if isinstance(method, OidcMethod) and not method.every_user_linked():
+                continue
+            if (
+                descriptor["kind"] == "form"
+                and not self.password_login
+                and self.store.get_user(TEMPORARY_ADMIN) is None
+            ):
+                continue
+            methods.append(descriptor)
         return {"methods": methods}
