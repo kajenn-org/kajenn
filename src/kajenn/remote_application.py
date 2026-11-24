@@ -453,7 +453,7 @@ class RemoteApplication(BaseApplication):
                     return
 
         try:
-            meta = {"format": "websocket", "path": path}
+            meta: dict[str, Any] = {"format": "websocket", "path": path}
             if self.uses_session_websocket:
                 meta["spa_visit"] = scope["kajenn.spa_visit"]
                 if scope["auth"] is not None:
