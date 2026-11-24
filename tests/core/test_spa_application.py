@@ -246,3 +246,35 @@ async def test_oidc_callback_preserves_an_open_guest_page(tmp_path, monkeypatch)
     assert oidc.status(callback) in (302, 303, 307)
     read = await oidc.drive(server, f"/spa/read?pid={tab['pid']}", cookie)
     assert oidc.payload(read) == {"user": "alice", "draft": "saved"}
+
+
+async def test_native_socket_revocation_blocks_push_and_releases_handler(monkeypatch):
+    import asyncio
+    from kajenn import spa_transport
+
+    active = True
+    events = []
+    released = asyncio.Event()
+
+    async def visit(server, code, scope):
+        if active:
+            return {"cid": "visit", "identity": None, "login": True, "ttl": 60}
+
+    async def handler(scope, receive, send):
+        nonlocal active
+        await send({"type": "websocket.accept"})
+        active = False
+        await send({"type": "websocket.send", "text": "private"})
+        assert await receive() == {"type": "websocket.disconnect", "code": 1008}
+        released.set()
+
+    async def record(event):
+        events.append(event)
+
+    monkeypatch.setattr(spa_transport, "prepare_visit", visit)
+    await asyncio.wait_for(
+        spa_transport.serve_session_websocket(None, "demo", handler, {}, asyncio.Queue().get, record),
+        timeout=2,
+    )
+    assert released.is_set()
+    assert events == [{"type": "websocket.accept"}, {"type": "websocket.close", "code": 1008}]

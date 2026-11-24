@@ -711,6 +711,9 @@ class KBusMixin:
         mount closes its own.
         """
         scope = HttpRecord().decode_websocket(message.payload)
+        if message.meta.get("from") == SERVER_MEMBER and "spa_visit" in message.meta:
+            scope["kajenn.spa_visit"] = message.meta["spa_visit"]
+            scope["auth"] = avatar_from_auth(message.meta.get("auth"))
         app, target = self.demux(scope)
 
         async def receive() -> Message:

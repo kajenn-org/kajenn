@@ -182,6 +182,7 @@ class RemoteApplication(BaseApplication):
             code=app_kwargs.get("code", app_class.code) or app_class.__name__.lower(),
             mount=app_kwargs.get("mount", app_class.mount), mandatory=mandatory)
         self.app_class = app_class
+        self.uses_session_websocket = getattr(app_class, "uses_session_websocket", False)
         self.spawner = spawner
         self.request_timeout = request_timeout
         self.max_calls = max_calls
@@ -452,8 +453,12 @@ class RemoteApplication(BaseApplication):
                     return
 
         try:
-            async with self.server.open_external(self.code, kbus.Message(
-                    {"format": "websocket", "path": path}, record)) as stream:
+            meta = {"format": "websocket", "path": path}
+            if self.uses_session_websocket:
+                meta["spa_visit"] = scope["kajenn.spa_visit"]
+                if scope["auth"] is not None:
+                    meta["auth"] = avatar_auth(scope["auth"])
+            async with self.server.open_external(self.code, kbus.Message(meta, record)) as stream:
                 forwarding = asyncio.create_task(to_application(stream))
                 try:
                     async for message in stream:
