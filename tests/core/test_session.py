@@ -39,6 +39,7 @@ from kajenn import (
     SessionMixin,
     SessionStore,
 )
+from kajenn.exceptions import HTTPForbidden, Redirect
 from kajenn.middleware import MiddlewareMixin
 from kajenn.middleware.session import COOKIE_LIFETIME_FACTOR, SessionMiddleware
 from kajenn.types import Message, Receive, Scope, Send
@@ -532,6 +533,85 @@ class TestSessionCookieFlow:
         cookie = set_cookie_value(sent)
         assert cookie is not None
         assert f"Max-Age={3600 * COOKIE_LIFETIME_FACTOR}" in cookie
+
+
+class RaisingApp(BaseApplication):
+    """Writes ``flow=started`` in the session, then raises the exception of ``exc_factory``."""
+
+    exc_factory: Any = None
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        session = scope["session"]
+        session.data["flow"] = "started"
+        session.mark_dirty()
+        raise self.exc_factory()
+
+
+class RecordingSessionStore(MemorySessionStore):
+    """A memory store that keeps a copy of the data of every ``save``.
+
+    ``MemorySessionStore.save`` does nothing, so only a copy taken here shows
+    that the middleware wrote the session back.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.saved: dict[str, dict[str, Any]] = {}
+
+    def save(self, session: Session) -> None:
+        self.saved[session.id] = dict(session.data)
+        super().save(session)
+
+
+class TestCookieOnRaisedAnswers:
+    """A first request answered by a raised exception still gets its session cookie."""
+
+    async def test_a_redirect_on_the_first_request_sets_the_cookie(self) -> None:
+        app = RaisingApp(mount="")
+        app.exc_factory = lambda: Redirect("/elsewhere")
+        server = SessionServer(applications=[app])
+        _, sent = await http_get(server)
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        assert start["status"] == 302
+        assert dict(start["headers"])[b"location"] == b"/elsewhere"
+        assert set_cookie_value(sent) is not None
+
+    async def test_the_session_written_before_the_redirect_is_saved(self) -> None:
+        store = RecordingSessionStore()
+        app = RaisingApp(mount="")
+        app.exc_factory = lambda: Redirect("/elsewhere")
+        server = SessionServer(applications=[app], session_store=store)
+        _, sent = await http_get(server)
+        assert store.saved[cookie_token(sent)]["flow"] == "started"
+
+    async def test_a_known_session_written_before_an_error_is_saved(self) -> None:
+        store = RecordingSessionStore()
+        session = store.create()
+        app = RaisingApp(mount="")
+        app.exc_factory = lambda: HTTPForbidden("no")
+        server = SessionServer(applications=[app], session_store=store)
+        await http_get(server, cookie=f"session_id={session.id}")
+        assert store.saved[session.id]["flow"] == "started"
+
+    async def test_an_http_error_on_the_first_request_sets_the_cookie(self) -> None:
+        app = RaisingApp(mount="")
+        app.exc_factory = lambda: HTTPForbidden("no")
+        server = SessionServer(applications=[app])
+        _, sent = await http_get(server)
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        assert start["status"] == 403
+        assert set_cookie_value(sent) is not None
+
+    async def test_headers_of_a_shared_list_are_not_changed(self) -> None:
+        shared = [(b"x-shared", b"1")]
+        app = RaisingApp(mount="")
+        app.exc_factory = lambda: HTTPForbidden("no", headers=shared)
+        server = SessionServer(applications=[app])
+        await http_get(server)
+        _, sent = await http_get(server)
+        assert shared == [(b"x-shared", b"1")]
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        assert [name for name, _ in start["headers"]].count(b"set-cookie") == 1
 
 
 # --- attach_avatar (login seam): identity attached in place, id unchanged ---

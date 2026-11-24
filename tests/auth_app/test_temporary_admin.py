@@ -50,10 +50,10 @@ class Site:
         self.base_dir = tmp_path
         self.storage_key = Fernet.generate_key().decode()
 
-    async def start(self) -> AsgiServer:
+    async def start(self, **app_kwargs: Any) -> AsgiServer:
         """A started server with ``_auth`` over a ``FileAuthStore`` of this site."""
         server = AsgiServer(
-            applications=[(AuthApplicationBase, {}), (BaseApplication, {"mount": ""})],
+            applications=[(AuthApplicationBase, app_kwargs), (BaseApplication, {"mount": ""})],
             storage=site_mounts(self.base_dir),
             storage_key=self.storage_key,
         )
@@ -325,3 +325,28 @@ class TestRestart:
         assert await login(server, TEMPORARY, password) == {"error": "Invalid credentials"}
         boss = await cookie_of(server, "boss", "secret")
         assert await identities(server, boss) == ["boss"]
+
+
+class TestPasswordLoginOff:
+    """With ``login(password=False)`` only ``_temporary_admin`` enters with a password, while it exists."""
+
+    async def test_the_temporary_administrator_enters_with_its_password(
+        self, site: Site, log: pytest.LogCaptureFixture
+    ) -> None:
+        server = await site.start(login={"password": False})
+        answer = await login(server, TEMPORARY, logged_password(log))
+        assert answer["identity"] == TEMPORARY
+        methods = payload(await drive(server, "/_auth/login_methods"))["methods"]
+        assert [method["id"] for method in methods] == ["password"]
+
+    async def test_the_real_administrator_does_not_enter_with_a_password(
+        self, site: Site, log: pytest.LogCaptureFixture
+    ) -> None:
+        server = await site.start(login={"password": False})
+        temporary = await cookie_of(server, TEMPORARY, logged_password(log))
+        await create_user(server, temporary, "boss", tags=["AUTH_ADMIN"])
+        assert await login(server, "boss", "secret") == {"error": "Password login is disabled"}
+        refused = await drive(server, "/_auth/users/list", authorization=basic("boss", "secret"))
+        assert status(refused) == 401
+        methods = payload(await drive(server, "/_auth/login_methods"))["methods"]
+        assert methods == []

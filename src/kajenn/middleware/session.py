@@ -41,6 +41,7 @@ from __future__ import annotations
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING, Any
 
+from ..exceptions import HTTPException
 from .base import BaseMiddleware, cookie_value
 
 if TYPE_CHECKING:
@@ -130,26 +131,45 @@ class SessionMiddleware(BaseMiddleware):
         issued is when the store had no session for the incoming token (none
         arrived, expired, or unknown) and a fresh anonymous one was created
         here. In either path the session is written back at request end when
-        dirty (``_write_back``). A session created here is counted in
-        ``server.event_metrics``.
+        dirty (``_write_back``), also when the chain raises. A session created
+        here is counted in ``server.event_metrics``.
+
+        A handler may answer by raising (``Redirect``, an ``HTTPException``):
+        the errors middleware, outside this one, builds that response and sends
+        it on its own ``send``. For a session created here the ``Set-Cookie``
+        then travels on the exception's ``headers``, which the errors
+        middleware forwards; the list is rebound, never changed in place,
+        because a caller may have passed a shared one. Any other exception
+        gets no cookie: its 500 answer carries no session.
         """
         store = self.server.session_store
         session = self.get_session(scope)
         if session is not None:
             scope["session"] = session
-            await self.app(scope, receive, send)
-            self._write_back(session)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                self._write_back(session)
             return
         session = store.create()
         self.server.event_metrics.record_session_created()
         scope["session"] = session
+        cookie_sent = False
 
         async def send_with_cookie(message: MutableMapping[str, Any]) -> None:
+            nonlocal cookie_sent
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
                 headers.append(self._set_cookie(session))
                 message = {**message, "headers": headers}
+                cookie_sent = True
             await send(message)
 
-        await self.app(scope, receive, send_with_cookie)
-        self._write_back(session)
+        try:
+            await self.app(scope, receive, send_with_cookie)
+        except HTTPException as exc:
+            if not cookie_sent:
+                exc.headers = [*exc.headers, self._set_cookie(session)]
+            raise
+        finally:
+            self._write_back(session)

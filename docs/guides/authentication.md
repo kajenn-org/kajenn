@@ -104,8 +104,14 @@ The recipe writes `code="_auth"`. The words:
 - `store(store_class, ...)` — the store of the records. Without `store_class`
   the store is `FileAuthStore`; the other attributes are the kwargs of the
   store class. Without the word the store is `FileAuthStore` on `site:auth`.
-- `login(max_attempts, backoff)` — the lockout policy. Defaults: 5 attempts,
-  30 seconds.
+- `login(max_attempts, backoff, password)` — the lockout policy and the
+  password login. Defaults: 5 attempts, 30 seconds, `password=True`.
+  `password=False` turns the password login off for every user except
+  `_temporary_admin` while it exists: `/_auth/login` and a Basic header are
+  refused, `gak_` tokens and OIDC providers keep working, and
+  `/_auth/login_methods` lists the password method only while
+  `_temporary_admin` exists. A refused password login answers
+  `{"error": "Password login is disabled"}`.
 - `oidc()` with one `provider(code, issuer, client_id, client_secret, scopes)`
   per external provider. `client_secret` is optional and is written as a
   resolver. `scopes` defaults to `openid email profile`. See [OIDC](#oidc).
@@ -132,7 +138,15 @@ A **user**:
 | `system` | `true` for a program: it never verifies a password and enters only with a token |
 | `password_hash` | the scrypt hash of the password, or `None`: the user does not enter with a password |
 | `email` | the email address, or `None` |
+| `firstname` | the first name, or `None` |
+| `lastname` | the last name, or `None` |
+| `photo` | the URL of a picture, or `None` |
 | `external_ids` | a list of `{iss, sub}`, one per external provider the user is linked to |
+
+`email`, `firstname`, `lastname` and `photo` are the person fields. The
+record is their source: every answer of `_auth` carries them as the `data` of
+the avatar (`{email, firstname, lastname, photo}`), so an application reads
+them on `avatar.data` at every request.
 
 `waiting` is a user that waits for approval. `banned` is a user an
 administrator switched off. Neither enters. The store refuses a user record
@@ -229,7 +243,12 @@ Called by a client:
   attaches nothing: a missing identity or password, wrong credentials, an
   active lockout, a group the user does not belong to.
 - `POST /_auth/logout?session_id=...` — deletes that session; answers
-  `{"status": "ok"}`. Without `session_id` no session is deleted.
+  `{"status": "ok"}`. Without `session_id` it deletes the session of the
+  request itself: a browser signs out of every application of the server at
+  once. Only `POST` is answered (another method gets 405), and a request whose
+  `Origin` header differs from the origin of the server's `external_url`
+  (scheme, host and port) gets 403. The login at an external provider stays
+  open.
 - `GET /_auth/login_methods` — public: `{"methods": [descriptor, ...]}`. The
   password method comes first (`{"id": "password", "kind": "form", "label",
   "action": "/_auth/login"}`), then one `redirect` method per OIDC provider.
@@ -505,12 +524,23 @@ and does not enter; `status="confirmed"` writes a user that enters at once. A
 setting whose `status` is not `waiting`, `confirmed` or `banned` is not
 applied: self registration stays off and a warning is logged.
 
+At every provider login the **empty** person fields of the user take the
+claims: `given_name` → `firstname`, `family_name` → `lastname`, `picture` →
+`photo`, and `email` when `email_verified` is true and no other user has that
+email. A filled field is kept. A `banned` user and a system user are refused
+and their record is not written; a `waiting` user is refused and takes the
+fields, so whoever approves it reads them.
+
 The avatar of a provider login carries the user's primary group and its tags
 from the store, as a password login. The callback answers:
 
 - `302` to the stored `next` on success;
-- `400` for a flow error: a `state` missing or different from the session's,
-  a failed token exchange, an `id_token` that does not verify or has no `sub`;
+- `400` for a flow error: an `error` parameter from the provider (the login
+  was cancelled or refused there; no token exchange), an `iss` parameter other
+  than the provider's issuer, a `state` missing or different from the
+  session's, a failed token exchange, an `id_token` that does not verify, has
+  no `sub`, has no `nonce` or another one than the session's, or has an `azp`
+  other than the `client_id`;
 - `403` for a refused login: no verified email, two users with that email, an
   unknown user without `self_registration`, an identity already taken, a status
   other than `confirmed`, a system user. Nothing is attached.
@@ -543,7 +573,7 @@ class SiteAuth(AuthApplicationBase):
             "identity": identity,
             "group": user.get("primary_group"),
             "tags": self.store.get_user_tags(identity),
-            "data": {},
+            "data": self.person_data(user),
             "valid_until": None,
         }
 ```
@@ -553,6 +583,23 @@ class SiteAuth(AuthApplicationBase):
 same code:
 `application(code="_auth", app_class=SiteAuth)`. A store on another backend is
 a subclass of `AuthStore`, named with `store(store_class=...)`.
+
+The provider login is customised with a subclass of `OidcMethod`:
+
+- `flow_keys` — the session values the flow keeps between `start` and the
+  callback: `("state", "verifier", "nonce", "next")`. A subclass adds its own
+  keys, writes them in `start` under `oidc.<method_id>.<key>` and receives
+  them in `flow`; the callback clears them.
+- `authenticate_claims(claims, flow)` — from the verified claims to
+  `(avatar, written)`; `written` is true when the user record was written. It
+  calls `link_user` and refuses a user that cannot sign in.
+- `link_user(claims, flow)` — finds, links or registers the user:
+  `(user, written)`.
+- `registration_setting(flow)` — the `self_registration` setting for this
+  login; the base answers the one of the application.
+
+When `written` is true the callback empties the credential cache, so the next
+request reads the record.
 
 ## The Avatar
 

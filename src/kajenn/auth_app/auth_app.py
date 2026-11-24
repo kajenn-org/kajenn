@@ -46,9 +46,13 @@ Configuration, under the application element (``AuthApplicationGrammar``)::
   ``store_class`` is omitted. Without the word: ``FileAuthStore(server.storage)``.
   A hand-built server passes the same dict as the ``store`` kwarg. The store
   is built on first use: a server without storage raises ``RuntimeError``.
-- ``login(max_attempts, backoff)`` — the lockout policy, defaults 5 attempts
-  and 30 seconds. A hand-built server passes the same dict as the ``login``
-  kwarg.
+- ``login(max_attempts, backoff, password)`` — the lockout policy, defaults 5
+  attempts and 30 seconds. ``password=False`` turns the password login off:
+  ``/_auth/login`` and an ``Authorization: Basic`` header refuse every
+  identity except ``_temporary_admin`` while its record exists, and
+  ``login_methods`` lists the password form only then. ``gak_`` tokens stay
+  valid. Without the attribute the password login is on. A hand-built server
+  passes the same dict as the ``login`` kwarg.
 - ``oidc()`` with one ``provider(code, issuer, client_id, client_secret,
   scopes)`` per external provider; ``client_secret`` is optional and is
   written as a resolver; ``scopes`` defaults to ``openid email profile``. Each
@@ -94,7 +98,13 @@ Routes called by a client:
   of the user. A refusal answers ``{"error": ...}`` and attaches nothing:
   missing identity or password, wrong credentials, an active lockout, a group
   the user does not belong to;
-- ``logout(session_id)`` — deletes the session; answers ``{"status": "ok"}``;
+- ``logout(session_id)`` — POST only. Deletes ``session_id`` when given,
+  else the session of the request itself (one session per browser and
+  server, so every application of the server is signed out); answers
+  ``{"status": "ok"}``. A request whose ``Origin`` header differs from the
+  origin of the server's ``external_url`` (scheme, host and port; the path of
+  a proxy prefix does not count) is refused with 403. The login at the external
+  provider stays open;
 - ``login_methods`` — public: ``{"methods": [descriptor, ...]}`` from the
   registry of login methods: ``PasswordMethod`` first, then one ``OidcMethod``
   per declared provider. On a server without ``external_url`` the OIDC
@@ -166,6 +176,7 @@ import re
 import secrets
 import time
 from typing import Any, ClassVar
+from urllib.parse import urlsplit
 
 from genro_bag import BagResolver
 from genro_builders.builder import element
@@ -181,7 +192,15 @@ from kajenn.session import Avatar
 from .auth_method import AuthMethod, AuthMethodRegistry, PasswordMethod
 from .auth_sections import GroupsSection, TagsSection, TokensSection, UsersSection
 from .auth_sections.tags_section import ADMIN_TAG, NEW_TAG_DEFAULTS
-from .auth_store import AUTHENTICATING_STATUS, TOKEN_PREFIX, USER_STATUSES, AuthStore, FileAuthStore
+from .auth_store import (
+    AUTHENTICATING_STATUS,
+    PERSON_FIELDS,
+    TEMPORARY_ADMIN,
+    TOKEN_PREFIX,
+    USER_STATUSES,
+    AuthStore,
+    FileAuthStore,
+)
 from .oidc_method import OidcMethod
 
 __all__ = ["AuthApplicationBase", "AuthApplicationGrammar"]
@@ -218,7 +237,6 @@ def credential_scheme(credential: str) -> str:
 
 
 #: The identity of the temporary administrator of a site without an administrator.
-TEMPORARY_ADMIN = "_temporary_admin"
 
 #: Bytes of randomness in the generated password of the temporary administrator.
 TEMPORARY_PASSWORD_BYTES = 24
@@ -235,6 +253,17 @@ RULE_NAME = re.compile(r"[A-Za-z_]\w*")
 RULE_KEYWORDS = frozenset({"and", "or", "not"})
 
 
+DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def web_origin(url: str) -> tuple[str, str, int | None]:
+    """Scheme, host and effective port of ``url``: what an ``Origin`` header names."""
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    port = parts.port or DEFAULT_PORTS.get(scheme)
+    return scheme, (parts.hostname or "").lower(), port
+
+
 class AuthApplicationGrammar(ApplicationGrammar):
     """The words the ``_auth`` application adds to a recipe, under its own element."""
 
@@ -243,8 +272,10 @@ class AuthApplicationGrammar(ApplicationGrammar):
         """The AuthStore: ``store_class`` (``FileAuthStore`` when omitted) and its own kwargs."""
 
     @element(sub_tags="", node_label="login")
-    def login(self, max_attempts: int = None, backoff: float = None) -> None:
-        """Lockout policy of the password check: ``max_attempts`` and ``backoff`` seconds."""
+    def login(
+        self, max_attempts: int = None, backoff: float = None, password: bool = None
+    ) -> None:
+        """Password login: lockout ``max_attempts`` and ``backoff`` seconds; ``password=False`` turns it off."""
 
     @element(sub_tags="provider", collection_key="code", node_label="oidc")
     def oidc(self) -> None:
@@ -321,7 +352,9 @@ class AuthApplicationBase(RoutedApplication):
         if store_node is not None:
             self._store_options = handler.open_attrs(store_node)
         if handler.node(f"{section}.login") is not None:
-            self._login_policy = handler.closed_attrs(f"{section}.login", "max_attempts", "backoff")
+            self._login_policy = handler.closed_attrs(
+                f"{section}.login", "max_attempts", "backoff", "password"
+            )
         if handler.node(f"{section}.self_registration") is not None:
             self.self_registration = handler.closed_attrs(
                 f"{section}.self_registration", "status", "tags"
@@ -377,8 +410,17 @@ class AuthApplicationBase(RoutedApplication):
 
     @property
     def login_policy(self) -> dict[str, Any]:
-        """The lockout policy from the ``login`` word (may be empty)."""
+        """The policy from the ``login`` word (may be empty)."""
         return self._login_policy
+
+    @property
+    def password_login(self) -> bool:
+        """False when the ``login`` word says ``password=False``."""
+        return self.login_policy.get("password") is not False
+
+    def accepts_password_of(self, identity: str) -> bool:
+        """Whether a password check runs for ``identity``: always, or only ``_temporary_admin``."""
+        return self.password_login or identity == TEMPORARY_ADMIN
 
     @property
     def oidc_providers(self) -> dict[str, dict[str, Any]]:
@@ -472,7 +514,7 @@ class AuthApplicationBase(RoutedApplication):
             "identity": verified["identity"],
             "group": verified["group"],
             "tags": verified["tags"],
-            "data": {},
+            "data": self.person_data(self.store.get_user(verified["identity"])),
             "valid_until": verified["expires_at"],
         }
 
@@ -494,9 +536,19 @@ class AuthApplicationBase(RoutedApplication):
             "identity": identity,
             "group": group if group is not None else user.get("primary_group"),
             "tags": tags,
-            "data": {},
+            "data": self.person_data(user),
             "valid_until": None,
         }
+
+    def person_data(self, user: dict[str, Any] | None) -> dict[str, Any]:
+        """The person fields of ``user`` (``PERSON_FIELDS``), each ``None`` when unknown.
+
+        This is the ``data`` of every avatar answer: the user record is the
+        source of truth, whatever the way of entering. No record: ``{}``.
+        """
+        if user is None:
+            return {}
+        return {field: user.get(field) for field in PERSON_FIELDS}
 
     def _verify_login(
         self, identity: str, password: str
@@ -505,8 +557,12 @@ class AuthApplicationBase(RoutedApplication):
 
         The refusal is the ``{"error": ...}`` shape, with ``remaining_attempts``
         when the identity has a record. A refused attempt during a lockout
-        leaves the counter as it is; a failure counts; a success resets.
+        leaves the counter as it is; a failure counts; a success resets. With
+        the password login off (``accepts_password_of``) the check does not
+        run and the counter is not touched.
         """
+        if not self.accepts_password_of(identity):
+            return None, {"error": "Password login is disabled"}
         record = self.store.get_user(identity)
         failures = self.store.get_login_failures(identity)
         if (
@@ -859,13 +915,28 @@ class AuthApplicationBase(RoutedApplication):
             "groups": list(user.get("groups", [])),
         }
 
-    @route(media_type="application/json")
-    def logout(self, session_id: str = "") -> dict[str, Any]:
-        """Delete a session; no error when it is unknown.
+    @route(media_type="application/json", openapi_method="post")
+    def logout(self, session_id: str = "", _request=None) -> dict[str, Any]:
+        """Delete ``session_id``, else the session of the request; no error when there is none.
+
+        Raises:
+            HTTPForbidden: An ``Origin`` header other than ``external_url``,
+                or one that is not a valid origin.
 
         Note:
             Route: POST /_auth/logout
         """
+        origin = _request.headers.get("origin") if _request is not None else None
+        external_url = self.server.external_url
+        if origin and external_url:
+            try:
+                same_origin = web_origin(origin) == web_origin(external_url)
+            except ValueError:
+                same_origin = False
+            if not same_origin:
+                raise HTTPForbidden("logout from another origin")
+        if not session_id and _request is not None and _request.session is not None:
+            session_id = _request.session.id
         if session_id:
             self.server.session_store.delete(session_id)
         return {"status": "ok"}
@@ -877,4 +948,7 @@ class AuthApplicationBase(RoutedApplication):
         Note:
             Route: GET /_auth/login_methods
         """
-        return {"methods": self.auth_method_registry.descriptor_list}
+        methods = self.auth_method_registry.descriptor_list
+        if not self.password_login and self.store.get_user(TEMPORARY_ADMIN) is None:
+            methods = [method for method in methods if method["kind"] != "form"]
+        return {"methods": methods}
