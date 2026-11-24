@@ -368,6 +368,10 @@ class BaseApplication:
         """
         return BODY_MODES[self.config("request.body", default="decoded")]
 
+    def raw_body_for_path(self, path: str) -> bool:
+        """Whether this mount-relative path receives bytes in the request."""
+        return self.raw_body
+
     @property
     def validation_error_status(self) -> int:
         """The status a value rejected by validation answers: 400, or 422.

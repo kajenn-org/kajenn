@@ -431,7 +431,8 @@ class WsxConnection:
             # The application said yes: now the page speaks on THIS socket.
             # Bound only after the answer, so a page that was refused — not
             # this connection's, or never born — is never bound at all.
-            self.server.websockets.bind_page(envelope.page_id, self.socket)
+            self.server.websockets.bind_page(
+                envelope.page_id, self.socket, application=getattr(app, "code", None))
         return app, target, status, data
 
     def _request_scope(self, envelope: WsxEnvelope) -> Scope:

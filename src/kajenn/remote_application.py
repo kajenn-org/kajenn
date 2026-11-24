@@ -54,6 +54,7 @@ from .http_record import HttpRecord
 from .middleware.base import headers_dict
 from .response import Response
 from .session.avatar import Avatar
+from .spa_transport import prepare_visit
 from .transport_limits import HttpBodyTooLarge, http_max_body_size
 
 __all__ = ["PROXY_OPTIONS", "RemoteApplication", "avatar_auth", "avatar_from_auth",
@@ -181,6 +182,7 @@ class RemoteApplication(BaseApplication):
             code=app_kwargs.get("code", app_class.code) or app_class.__name__.lower(),
             mount=app_kwargs.get("mount", app_class.mount), mandatory=mandatory)
         self.app_class = app_class
+        self.uses_session_websocket = getattr(app_class, "uses_session_websocket", False)
         self.spawner = spawner
         self.request_timeout = request_timeout
         self.max_calls = max_calls
@@ -328,6 +330,8 @@ class RemoteApplication(BaseApplication):
                     if not message.get("more_body", False):
                         break
                 meta: dict[str, Any] = {"format": "http"}
+                if self.server is not None and getattr(self.app_class, "uses_spa_visits", False):
+                    meta["spa_visit"] = await prepare_visit(self.server, self.code, scope)
                 avatar = await self._trusted_avatar(scope)
                 if avatar is not None:
                     meta["auth"] = avatar_auth(avatar)
@@ -449,8 +453,12 @@ class RemoteApplication(BaseApplication):
                     return
 
         try:
-            async with self.server.open_external(self.code, kbus.Message(
-                    {"format": "websocket", "path": path}, record)) as stream:
+            meta: dict[str, Any] = {"format": "websocket", "path": path}
+            if self.uses_session_websocket:
+                meta["spa_visit"] = scope["kajenn.spa_visit"]
+                if scope["auth"] is not None:
+                    meta["auth"] = avatar_auth(scope["auth"])
+            async with self.server.open_external(self.code, kbus.Message(meta, record)) as stream:
                 forwarding = asyncio.create_task(to_application(stream))
                 try:
                     async for message in stream:

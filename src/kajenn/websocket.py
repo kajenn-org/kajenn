@@ -303,7 +303,7 @@ class WebSocketRegistry:
 
     def __init__(self) -> None:
         self._sockets: list[WebSocket] = []
-        self._page_sockets: dict[str, WebSocket] = {}
+        self._page_sockets: dict[str, tuple[WebSocket, str | None]] = {}
 
     def register(self, socket: WebSocket) -> None:
         """Take one accepted socket into the picture.
@@ -327,10 +327,10 @@ class WebSocketRegistry:
         """
         if socket in self._sockets:
             self._sockets.remove(socket)
-        for page_id in [page for page, bound in self._page_sockets.items() if bound is socket]:
+        for page_id in [page for page, bound in self._page_sockets.items() if bound[0] is socket]:
             del self._page_sockets[page_id]
 
-    def bind_page(self, page_id: str, socket: WebSocket) -> None:
+    def bind_page(self, page_id: str, socket: WebSocket, *, application: str | None = None) -> None:
         """Say that this page speaks on this socket.
 
         Args:
@@ -342,9 +342,9 @@ class WebSocketRegistry:
         it. One socket carries as many pages as the browser has under that
         connection.
         """
-        self._page_sockets[page_id] = socket
+        self._page_sockets[page_id] = (socket, application)
 
-    def get_page_socket(self, page_id: str) -> WebSocket | None:
+    def get_page_socket(self, page_id: str, *, application: str | None = None) -> WebSocket | None:
         """The socket that page speaks on, or ``None`` when it speaks on none.
 
         Args:
@@ -354,7 +354,10 @@ class WebSocketRegistry:
             Its socket, or ``None`` — the page never opened a channel, its
             socket is gone, or the page itself is.
         """
-        return self._page_sockets.get(page_id)
+        binding = self._page_sockets.get(page_id)
+        if binding is None or (application is not None and binding[1] != application):
+            return None
+        return binding[0]
 
     def snapshot(self) -> list[WebSocket]:
         """The live sockets, in the order they were accepted."""

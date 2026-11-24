@@ -7,6 +7,12 @@ on [GitHub Releases](https://github.com/kajenn-org/kajenn/releases).
 
 ## [Unreleased]
 
+## [0.10.1]
+
+### SPA applications
+
+- Add session-backed SPA applications with live pages, native WebSocket delivery and support for mounting the application in a subprocess.
+
 ### Added
 
 - `SecurityHeadersMiddleware`, registered as `security_headers` (order 50,

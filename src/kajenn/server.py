@@ -88,6 +88,7 @@ from .lifespan import QUITTING, RUNNING, STOPPING, Lifespan
 from .pool import WorkPool
 from .request_registry import RegisteredRequest, RequestRegistry
 from .response import Response
+from .spa_transport import serve_session_websocket
 from .websocket import WebSocket, WebSocketRegistry
 from .well_known import HIDDEN_SEGMENT_PREFIX, WELL_KNOWN_PATTERN
 from .wsx_payload import SerializedWsxPayload
@@ -944,11 +945,17 @@ class BaseServer:
         app, target = self.demux(scope)
         code = app.code if isinstance(app, BaseApplication) else ""
         raw_seam = getattr(app, "serve_websocket", None)
+        session_socket = getattr(app, "uses_session_websocket", False)
+        if session_socket and target["path"] == "/_wsx":
+            raw_seam = None
         kind = "raw" if raw_seam is not None else "wsx"
         self.event_metrics.record_websocket_opened(code, kind)
         try:
             if raw_seam is not None:
-                await raw_seam(target, receive, send)
+                if session_socket:
+                    await serve_session_websocket(self, code, raw_seam, target, receive, send)
+                else:
+                    await raw_seam(target, receive, send)
             else:
                 await WsxConnection(self, scope, receive, send).serve()
         finally:

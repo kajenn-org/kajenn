@@ -244,7 +244,7 @@ class Request:
         ``decode_body`` on the declared content-type.
         """
         application = self._application
-        if application.raw_body:
+        if application.raw_body_for_path(self.path):
             return body or None
         return self.decode_body(body, str(self.content_type or ""))
 

@@ -69,6 +69,9 @@ from .session import (
     SessionMixin,
     SessionStore,
 )
+from .spa_application import SpaApplicationBase
+from .spa_page import Page
+from .spa_registry import SpaRegistry
 from .site_home import SiteHome
 from .storage_mixin import StorageMixin
 from .tasks import TaskGrammar
@@ -109,6 +112,7 @@ __all__ = [
     "MiddlewareMixin",
     "OpenAPIPlugin",
     "OpenAPITranslator",
+    "Page",
     "PluginMixin",
     "Receive",
     "Redirect",
@@ -123,6 +127,8 @@ __all__ = [
     "SessionMixin",
     "SessionStore",
     "SiteHome",
+    "SpaApplicationBase",
+    "SpaRegistry",
     "StorageMixin",
     "TaskGrammar",
     "UploadedFile",
