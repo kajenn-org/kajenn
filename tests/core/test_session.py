@@ -547,6 +547,22 @@ class RaisingApp(BaseApplication):
         raise self.exc_factory()
 
 
+class RecordingSessionStore(MemorySessionStore):
+    """A memory store that keeps a copy of the data of every ``save``.
+
+    ``MemorySessionStore.save`` does nothing, so only a copy taken here shows
+    that the middleware wrote the session back.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.saved: dict[str, dict[str, Any]] = {}
+
+    def save(self, session: Session) -> None:
+        self.saved[session.id] = dict(session.data)
+        super().save(session)
+
+
 class TestCookieOnRaisedAnswers:
     """A first request answered by a raised exception still gets its session cookie."""
 
@@ -560,14 +576,22 @@ class TestCookieOnRaisedAnswers:
         assert dict(start["headers"])[b"location"] == b"/elsewhere"
         assert set_cookie_value(sent) is not None
 
-    async def test_the_session_written_before_the_redirect_is_kept(self) -> None:
+    async def test_the_session_written_before_the_redirect_is_saved(self) -> None:
+        store = RecordingSessionStore()
         app = RaisingApp(mount="")
         app.exc_factory = lambda: Redirect("/elsewhere")
-        server = SessionServer(applications=[app])
+        server = SessionServer(applications=[app], session_store=store)
         _, sent = await http_get(server)
-        stored = server.session_store.get(cookie_token(sent))
-        assert stored is not None
-        assert stored.data["flow"] == "started"
+        assert store.saved[cookie_token(sent)]["flow"] == "started"
+
+    async def test_a_known_session_written_before_an_error_is_saved(self) -> None:
+        store = RecordingSessionStore()
+        session = store.create()
+        app = RaisingApp(mount="")
+        app.exc_factory = lambda: HTTPForbidden("no")
+        server = SessionServer(applications=[app], session_store=store)
+        await http_get(server, cookie=f"session_id={session.id}")
+        assert store.saved[session.id]["flow"] == "started"
 
     async def test_an_http_error_on_the_first_request_sets_the_cookie(self) -> None:
         app = RaisingApp(mount="")

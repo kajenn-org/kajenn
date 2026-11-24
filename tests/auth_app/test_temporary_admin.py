@@ -327,7 +327,7 @@ class TestRestart:
         assert await identities(server, boss) == ["boss"]
 
 
-class TestKeycloakOnly:
+class TestPasswordLoginOff:
     """With ``login(password=False)`` only ``_temporary_admin`` enters with a password, while it exists."""
 
     async def test_the_temporary_administrator_enters_with_its_password(
@@ -345,7 +345,7 @@ class TestKeycloakOnly:
         server = await site.start(login={"password": False})
         temporary = await cookie_of(server, TEMPORARY, logged_password(log))
         await create_user(server, temporary, "boss", tags=["AUTH_ADMIN"])
-        assert "session_id" not in await login(server, "boss", "secret")
+        assert await login(server, "boss", "secret") == {"error": "Password login is disabled"}
         refused = await drive(server, "/_auth/users/list", authorization=basic("boss", "secret"))
         assert status(refused) == 401
         methods = payload(await drive(server, "/_auth/login_methods"))["methods"]

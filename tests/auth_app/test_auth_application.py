@@ -1235,14 +1235,12 @@ class TestAvatarGroup:
         assert Avatar("ann", ["x"]).group is None
 
 
-class TestKeycloakOnly:
+class TestPasswordLoginOff:
     """``login(password=False)``: no password login; tokens stay valid."""
 
     async def test_a_right_password_is_refused_on_the_login_route(self, tmp_path: Path) -> None:
         server = await started(tmp_path, login={"password": False})
-        answer = await login(server, "alice", "wonder")
-        assert "session_id" not in answer
-        assert "error" in answer
+        assert await login(server, "alice", "wonder") == {"error": "Password login is disabled"}
 
     async def test_a_basic_header_is_refused(self, tmp_path: Path) -> None:
         server = await started(tmp_path, login={"password": False})
@@ -1266,7 +1264,7 @@ class TestKeycloakOnly:
         assert (await login(server, "alice", "wonder"))["identity"] == "alice"
 
     async def test_the_recipe_word_turns_the_password_login_off(self, tmp_path: Path) -> None:
-        class KeycloakOnlySite(AsgiConfigBuilder):
+        class PasswordOffSite(AsgiConfigBuilder):
             def main(self, root: Any) -> None:
                 apps = root.configuration().applications()
                 apps.application(code="home", mount="", app_class=BaseApplication)
@@ -1274,13 +1272,13 @@ class TestKeycloakOnly:
                 auth_app.login(password=False)
 
         server = AsgiServer(
-            KeycloakOnlySite,
+            PasswordOffSite,
             storage=site_mounts(tmp_path),
             storage_key=Fernet.generate_key().decode(),
         )
         await start_server(server)
         seed(server)
-        assert "session_id" not in await login(server, "alice", "wonder")
+        assert await login(server, "alice", "wonder") == {"error": "Password login is disabled"}
 
 
 PUBLIC_URL = "https://shop.example.com"
@@ -1300,7 +1298,7 @@ async def started_public(tmp_path: Path) -> AsgiServer:
 
 
 class TestSignOut:
-    """Esci: one POST closes the session of the request, for every application of the server."""
+    """One POST closes the session of the request, for every application of the server."""
 
     async def test_a_logout_without_session_id_closes_the_session_of_the_request(
         self, tmp_path: Path
@@ -1320,6 +1318,15 @@ class TestSignOut:
             server, "/_auth/logout", "POST", cookie=cookie, origin="https://evil.example"
         )
         assert status(sent) == 403
+        assert server.session_store.get(answer["session_id"]) is not None
+
+    async def test_an_origin_with_an_invalid_port_is_refused(self, tmp_path: Path) -> None:
+        server = await started_public(tmp_path)
+        answer = await login(server, "alice", "wonder")
+        cookie = f"session_id={answer['session_id']}"
+        for origin in ("https://shop.example.com:abc", "https://shop.example.com:99999"):
+            sent = await drive(server, "/_auth/logout", "POST", cookie=cookie, origin=origin)
+            assert status(sent) == 403
         assert server.session_store.get(answer["session_id"]) is not None
 
     async def test_a_get_is_refused(self, tmp_path: Path) -> None:

@@ -437,7 +437,7 @@ class TestStart:
 
 
 class TestProviderAnswer:
-    """The nonce of the flow and the parameters Keycloak adds to the authorization response."""
+    """The nonce of the flow and the parameters a provider adds to the authorization response."""
 
     async def test_start_sends_a_nonce_and_keeps_it_in_the_session(self, tmp_path: Path) -> None:
         server = await started(tmp_path)
@@ -464,7 +464,7 @@ class TestProviderAnswer:
         )
         assert status(sent) == 400
 
-    async def test_the_iss_and_session_state_parameters_of_keycloak_are_accepted(
+    async def test_the_iss_and_session_state_parameters_are_accepted(
         self, tmp_path: Path
     ) -> None:
         server = await started(tmp_path)
@@ -884,7 +884,7 @@ PROVIDER_PERSON = {
 
 
 class TestPersonData:
-    """The user record holds the person; Keycloak fills only its empty fields."""
+    """The user record holds the person; a login fills only its empty fields."""
 
     async def test_a_login_fills_the_empty_fields_and_the_next_request_reads_them(
         self, tmp_path: Path
@@ -921,6 +921,46 @@ class TestPersonData:
         )
         record = auth_store(server).get_user("bob")
         assert (record["email"], record["firstname"]) == (None, "Bob")
+
+    async def test_a_banned_user_is_refused_and_its_record_is_not_written(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_with_whoami(tmp_path)
+        auth_store(server).save_user(
+            user("carol", status="banned", external_ids=[{"iss": ISSUER, "sub": "kc-carol"}])
+        )
+        _, sent = await oidc_login(
+            server, sub="kc-carol", email="carol@example.com", given_name="Carol"
+        )
+        assert status(sent) == 403
+        record = auth_store(server).get_user("carol")
+        assert (record["email"], record["firstname"]) == (None, None)
+
+    async def test_a_waiting_user_is_refused_and_takes_the_person_fields(
+        self, tmp_path: Path
+    ) -> None:
+        server = await started_with_whoami(tmp_path)
+        auth_store(server).save_user(
+            user("dave", status="waiting", external_ids=[{"iss": ISSUER, "sub": "kc-dave"}])
+        )
+        _, sent = await oidc_login(
+            server, sub="kc-dave", email="dave@example.com", given_name="Dave"
+        )
+        assert status(sent) == 403
+        record = auth_store(server).get_user("dave")
+        assert (record["email"], record["firstname"]) == ("dave@example.com", "Dave")
+
+    async def test_an_email_held_by_another_user_is_not_written(self, tmp_path: Path) -> None:
+        server = await started_with_whoami(tmp_path)
+        auth_store(server).save_user(user("bob", external_ids=[{"iss": ISSUER, "sub": "kc-bob"}]))
+        _, sent = await oidc_login(
+            server, sub="kc-bob", email="alice@example.com", given_name="Bob"
+        )
+        assert status(sent) == 302
+        record = auth_store(server).get_user("bob")
+        assert (record["email"], record["firstname"]) == (None, "Bob")
+        holders = auth_store(server).get_user_list_by_email("alice@example.com")
+        assert [holder["identity"] for holder in holders] == ["alice"]
 
     async def test_a_registered_user_is_born_with_the_person_fields(self, tmp_path: Path) -> None:
         server = AsgiServer(

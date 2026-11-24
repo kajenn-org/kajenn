@@ -104,7 +104,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import logging
 import secrets
 from typing import Any, ClassVar
 from urllib.parse import urlencode
@@ -117,7 +116,7 @@ from kajenn.exceptions import HTTPBadRequest, HTTPForbidden, Redirect
 from kajenn.session import Avatar
 
 from .auth_method import AuthMethod
-from .auth_store import AUTHENTICATING_STATUS, USER_STATUSES, AuthStore
+from .auth_store import AUTHENTICATING_STATUS, AuthStore
 
 __all__ = ["OidcMethod"]
 
@@ -318,21 +317,13 @@ class OidcMethod(AuthMethod):
         return avatar, written
 
     def registration_setting(self, flow: dict[str, Any]) -> dict[str, Any]:
-        """The ``self_registration`` setting of the application for this login; ``{}`` when off.
+        """The ``self_registration`` setting for this login; ``{}`` when off.
 
-        A setting whose ``status`` is not a user status counts as ``{}`` and
-        logs a warning.
+        The base answers the setting of the application and does not read
+        ``flow``. A subclass overrides it to choose the setting from the values
+        of the flow (``flow_keys``).
         """
-        setting = self.application.self_registration
-        if setting and setting.get("status") not in USER_STATUSES:
-            logging.getLogger(__name__).warning(
-                "application %s: self_registration not applied, status %r is not one of %s",
-                self.application.code,
-                setting.get("status"),
-                ", ".join(USER_STATUSES),
-            )
-            return {}
-        return setting or {}
+        return self.application.self_registration or {}
 
     def link_user(
         self, claims: dict[str, Any], flow: dict[str, Any]
@@ -341,7 +332,9 @@ class OidcMethod(AuthMethod):
 
         By ``iss`` + ``sub``, else by verified email (the link is written),
         else registered through ``register_user``. The empty person fields of
-        a user that is not a system user take the claims.
+        the user take the claims, except for a system user and a ``banned``
+        one: their login is refused and their record is not written. A
+        ``waiting`` user takes them, so whoever approves it reads the person.
 
         Raises:
             HTTPForbidden: No verified email, an ambiguous email, a user found
@@ -368,7 +361,7 @@ class OidcMethod(AuthMethod):
                 user["external_ids"] = [*user.get("external_ids", []), {"iss": iss, "sub": sub}]
                 store.save_user(user)
             written = True
-        if user.get("system", False):
+        if user.get("system", False) or user.get("status") == "banned":
             return user, written
         if self.fill_person_fields(user, claims):
             store.save_user(user)
@@ -408,14 +401,22 @@ class OidcMethod(AuthMethod):
         return record
 
     def fill_person_fields(self, user: dict[str, Any], claims: dict[str, Any]) -> bool:
-        """Write the claims into the empty person fields of ``user``; True when one changed."""
+        """Write the claims into the empty person fields of ``user``; True when one changed.
+
+        The email is written only when verified and held by no other user:
+        two records with one email would refuse every login by that email.
+        """
         values = {
             "firstname": claims.get("given_name"),
             "lastname": claims.get("family_name"),
             "photo": claims.get("picture"),
         }
-        if claims.get("email_verified") is True:
-            values["email"] = claims.get("email")
+        email = claims.get("email")
+        if email and claims.get("email_verified") is True:
+            store: AuthStore = self.application.store
+            holders = store.get_user_list_by_email(email)
+            if all(holder["identity"] == user["identity"] for holder in holders):
+                values["email"] = email
         changed = False
         for field, value in values.items():
             if value and not user.get(field):
