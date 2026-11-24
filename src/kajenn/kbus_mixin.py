@@ -47,7 +47,7 @@ import shutil
 import signal
 import ssl
 import tempfile
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import kbus
 from genro_tytx import from_tytx, to_tytx
@@ -62,9 +62,11 @@ from .remote_application import (
     avatar_auth, avatar_from_auth, failure_message, websocket_event, websocket_message,
 )
 from .session.avatar import Avatar
+from .spa_transport import deliver_page_message
 from .spawner import PARENT_VARIABLE, SPAWNERS, Spawner
 
 if TYPE_CHECKING:
+    from .server import BaseServer
     from .types import Message, Receive, Scope, Send
 
 __all__ = ["KBusMixin"]
@@ -400,6 +402,16 @@ class KBusMixin:
             self._external_joined(message.meta["from"], message.meta)
             await reply.send(kbus.Message())
             return
+        if message.meta["route"] == "spa_push":
+            source = message.meta["from"]
+            if self.kbus_role is not None or source not in self.external_applications:
+                raise kbus.Refused("SPA push requires a mounted application's process")
+            meta = message.meta
+            delivered = await deliver_page_message(
+                cast("BaseServer", self), source, meta["cid"], meta["user"], meta["page_id"], meta["path"],
+                message.payload.decode() if message.payload else None)
+            await reply.send(kbus.Message({"delivered": delivered}))
+            return
         if message.meta["route"] == "remote_call":
             await reply.send(await self._serve_remote_call(message))
             return
@@ -414,6 +426,19 @@ class KBusMixin:
         answer = await self.serve_kbus_message(message)
         if reply is not None:
             await reply.send(answer)
+
+    async def forward_spa_message(
+        self, cid: str, user: str, page_id: str, path: str, payload: str | None,
+    ) -> bool:
+        """Ask the front to deliver on a page channel opened by this application."""
+        if self.kbus_member is None:
+            return False
+        reply = await self.kbus_member.call(
+            f"{SERVER_MEMBER}.spa_push",
+            kbus.Message({"cid": cid, "user": user, "page_id": page_id, "path": path},
+                         payload.encode() if payload is not None else b""),
+        )
+        return bool(reply.meta["delivered"])
 
     async def _serve_remote_call(self, message: kbus.Message) -> kbus.Message:
         """Run ``meta["method"]`` on the hosted application and answer with its result.
@@ -626,6 +651,8 @@ class KBusMixin:
         auth = message.meta.get("auth")
         scope["auth"] = avatar_from_auth(auth)
         scope["session"] = None
+        if message.meta.get("from") == SERVER_MEMBER and "spa_visit" in message.meta:
+            scope["kajenn.spa_visit"] = message.meta["spa_visit"]
         if message.meta.get("kbus"):
             scope["kajenn.kbus"] = True
         if "channel" in message.meta:

@@ -92,3 +92,66 @@ process, reached over the bus. A session lives in the server: the proxy
 forwards its identity, and only when the request carries no `Authorization`
 header. In the process `scope["session"]` is `None`: a handler reads the
 identity, not the session object.
+
+### Pages that retain server-side state
+
+Use `SpaApplicationBase` when a browser opens several pages that share a
+login and each page needs its own server-side data. A page can call its
+owning application's methods through `self.application`.
+
+```python
+from genro_routes import route
+from kajenn import Page, SpaApplicationBase
+
+
+class Editor(Page):
+    def title(self):
+        return self.store["title"]
+
+
+class Notebook(SpaApplicationBase):
+    page_class = Editor
+
+    @route()
+    def tab(self, _request=None):
+        page = self.open_page(_request)
+        page.store["title"] = "Untitled"
+        return {"page_id": page.page_id}
+
+    @route()
+    def title(self, page_id, _request=None):
+        page = self.get_page(_request, page_id)
+        return {"title": page.title()}
+```
+
+Mount `Notebook` like any routed application. Kajenn creates one registry in
+the process serving that mount. With `persistent=True` (the default), a page
+ID reuses one instance. Set `persistent=False` on the application declaration
+to construct one instance per request, or set `persistent` on a page class
+to override the application setting. In both modes the page store survives
+instance recreation. `registry.release_page_instance(page_id, connection_id=cid)`
+evicts only the cached instance.
+
+The browser uses the Kajenn session cookie. Its session data holds a separate
+connection ID for each SPA. After a password or OIDC login through `_auth`,
+the next page operation adopts the verified session identity. The first login
+can carry a guest's user store forward. A second browser joining an existing
+user sees that user's store. Each browser keeps its connection and page stores.
+A credential presented for a single request cannot claim a visit.
+
+A client opens its page channel with a WSX envelope addressed to
+`/<mount>/_wsx/openchannel`, carrying the page ID in the envelope. The
+application checks the page against the session before Kajenn binds the
+socket. A coroutine can then call `await page.send_message(path, data)`.
+The result reports whether the message was written to the socket. With
+`spawner="subprocess"`, the SPA keeps the stores and the front delivers
+messages to the browser.
+
+Use `close_page(request, page_id)` when a tab closes, or `close_connection(request)`
+to release the whole visit. An inactive visit expires after the session TTL.
+Page operations collect expired visits opportunistically. The built-in stores
+live in memory for the lifetime of their registration. To bind application
+data, set `registry_class` to a `SpaRegistry` subclass and override
+`new_store`, `page_attached`, `page_user_changed` or `page_detached`.
+Those hooks run while the registry lock is held. Keep them short and
+synchronize application updates that span multiple store reads or writes.

@@ -118,6 +118,11 @@ dependency; design churn continues upstairs. The upper package uses ONLY the
 public API of the lower — if building the SPA requires touching a private of
 the minimal package, the contract is wrong and it shows immediately.
 
+The opt-in local SPA in `SpaApplicationBase` adds page instances and a
+user/connection/page registry to the minimal package. A mounted application
+has one owner process for its state. Worker assignment, transfer and
+rebalancing remain in the orchestration package.
+
 ### D11 — Form C: one protocol, two placements (the group manager)
 The commander speaks **one protocol** to "the manager of a group". Two
 implementations:

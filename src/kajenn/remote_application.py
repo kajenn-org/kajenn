@@ -54,6 +54,7 @@ from .http_record import HttpRecord
 from .middleware.base import headers_dict
 from .response import Response
 from .session.avatar import Avatar
+from .spa_transport import prepare_visit
 from .transport_limits import HttpBodyTooLarge, http_max_body_size
 
 __all__ = ["PROXY_OPTIONS", "RemoteApplication", "avatar_auth", "avatar_from_auth",
@@ -328,6 +329,8 @@ class RemoteApplication(BaseApplication):
                     if not message.get("more_body", False):
                         break
                 meta: dict[str, Any] = {"format": "http"}
+                if self.server is not None and getattr(self.app_class, "uses_spa_visits", False):
+                    meta["spa_visit"] = await prepare_visit(self.server, self.code, scope)
                 avatar = await self._trusted_avatar(scope)
                 if avatar is not None:
                     meta["auth"] = avatar_auth(avatar)
