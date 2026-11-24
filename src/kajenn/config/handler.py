@@ -155,7 +155,7 @@ class ConfigurationHandler(ConfigHandler):
         (the composition's own defaults then apply).
 
         The element's signature is OPEN, so the attributes ARE the switches: the
-        four the grammar declares and any name a registry added from outside, read
+        five the grammar declares and any name a registry added from outside, read
         in bulk with no list to keep in step."""
         node = self.node("middleware")
         if node is None:

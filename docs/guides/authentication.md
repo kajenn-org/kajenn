@@ -620,7 +620,7 @@ HTTP/1.1 401 Unauthorized
 - An OIDC provider needs `external_url`, and the resulting callback URL must be
   registered verbatim with the provider — a mismatch is refused by the provider,
   not by us. Without `external_url` the server starts and the OIDC routes
-  answer `404`; the provider is still listed in `/_auth/login_methods`.
+  answer `404`; `/_auth/login_methods` leaves the provider out.
 - `AuthApplicationBase`, `AuthStore`, `FileAuthStore`, `AuthMixin` and `Avatar`
   import from `kajenn`. The login methods `AuthMethod`, `PasswordMethod` and
   `OidcMethod` import from `kajenn.auth_app`.

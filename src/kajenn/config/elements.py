@@ -264,6 +264,7 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
     @element(parent_tags="configuration", sub_tags="")
     def middleware(
         self,
+        security_headers: bool | dict = None,
         errors: bool | dict = None,
         logging: bool | dict = None,
         cors: bool | dict = None,
@@ -272,7 +273,7 @@ class AsgiServerGrammar(TaskGrammar, DatabaseGrammar):
     ) -> None:
         """Global middleware switches: one ``{name: bool | dict}`` kwarg per
         middleware. A dict value enables the middleware and becomes its
-        constructor options. The four declared names are the core's own registry
+        constructor options. The five declared names are the core's own registry
         (``middleware.default_registry()``); a middleware registered from
         outside (``middleware_registry=``) is written by its own name and rides
         through ``**extra`` — the signature is OPEN so that the switches have
