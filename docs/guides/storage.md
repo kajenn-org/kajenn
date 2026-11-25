@@ -5,6 +5,8 @@ Prerequisites: [configuration](../configuration.md) and
 such as `files:` identifies a backend and location; it does not publish an HTTP
 route. `server.storage` is a genro-storage StorageManager.
 
+For a site that exports database records to a named mount, follow [Configure storage and Asqueel together](configuration-by-example.md#configure-storage-and-asqueel-together).
+
 ## Write and read a file
 
 Create an empty writable directory and run the example there. Save as `files.py`.

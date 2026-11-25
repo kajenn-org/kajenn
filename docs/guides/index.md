@@ -24,6 +24,8 @@ cli
 lifecycle
 middleware
 hidden-paths
+configuration-by-example
+site-recipe-reference
 configuration
 ```
 
@@ -60,6 +62,8 @@ configuration
 
 - [Middleware](middleware.md): shared request behaviour and custom stages.
 - [Hidden paths and well-known URLs](hidden-paths.md): dotted path segments, the `well_known` class dict, the `_server` documents and the mobile mixin.
+- [Configure a site by example](configuration-by-example.md) walks through working API, SPA, storage and Asqueel deployments.
+- [Site recipe reference](site-recipe-reference.md) lists sections, parents, settings and defaults.
 - [Configuration reference](configuration.md): defaults, resolvers and grammar composition.
 - [Architecture](../architecture/overview.md): how the components fit together.
 

@@ -210,6 +210,8 @@ supports them.
 
 ## Where to go next
 
+Follow [Configure a site by example](guides/configuration-by-example.md) for a two-application site, a Gramlot workspace, and an Asqueel service with a standalone batch job. Look up individual settings in the [site recipe reference](guides/site-recipe-reference.md).
+
 See the [configuration guide](guides/configuration.md) for recipe loading,
 layered defaults, resolvers, constructor overrides and extension details.
 A value being readable through configuration does not imply it can be changed

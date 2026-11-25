@@ -3,6 +3,8 @@
 New to recipes? Start with [Configuration is part of the application](../configuration.md)
 for the rationale, the comparison with YAML and an example spanning several components.
 
+For runnable deployments, follow [Configure a site by example](configuration-by-example.md). For the complete section tree, use the [site recipe reference](site-recipe-reference.md).
+
 ## What it does
 
 A configuration is a **recipe**: a Python class that writes down what the site is
@@ -243,7 +245,7 @@ site.config("parameters.theme")                          # 'dark'
 server.config("applications.site.parameters.theme")      # 'dark'
 ```
 
-Every application inherits one element, `parameters`, whose kwargs are free —
+Every application inherits `parameters`, `request`, `databases` and `plugin_configuration`. The keywords of `parameters` are free —
 enough for a handful of options. An app with a real vocabulary of its own
 declares a **grammar**, and `application(app_class=...)` mounts it for that
 node's children: the site dialect never validates an app's internal words, the
@@ -439,8 +441,7 @@ missing directory is a boot error.
 `site:` is where the server's own state lands, all in one tree: `site:auth`,
 the records of `FileAuthStore` (written `encrypted=True`), `site:tasks` and
 `site:batches` (plain). Sessions are not on `site:`: they live in a `MemorySessionStore`, and
-a pickle snapshot is written on the session's `save_path` when one is set. Encryption is declared per **write**, not per mount, and
-what lands on disk is self-describing — an envelope whose first line starts
+a pickle snapshot is written on the session's `save_path` when one is set. A mount may set `default_encrypted`; an individual write can override it. The bytes on disk carry an envelope whose first line starts
 `#GNRE1:` — so reads declare nothing.
 
 Outside a recipe the same shapes reach the constructor as `storage=`: `None` for

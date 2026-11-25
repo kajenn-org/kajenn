@@ -8,6 +8,8 @@ the object it works on. The core never imports a database driver: the
 handlers for asqueel, SQLAlchemy and Django live in the
 [kajenn-db](https://kajenn-db.readthedocs.io) package.
 
+For a real SQLite database, run the [Asqueel service and standalone job](configuration-by-example.md#configure-storage-and-asqueel-together).
+
 ## Observe selection and cleanup
 
 The complete example below is an **in-memory contract probe**, not a database
@@ -130,7 +132,7 @@ cfg.databases(handler_class=AsqueelDbHandler).database(
 )
 ```
 
-The params (`source` here) are the handler's own. What each handler accepts,
+The params (`source` here) are the handler's own. Point `SHOP_DB_SOURCE` at the database model recipe, for example an absolute path to `model.py`. What each handler accepts,
 how its async view works and which methods it refuses on an `async def` route
 are documented with the package: see
 [kajenn-db](https://kajenn-db.readthedocs.io).
